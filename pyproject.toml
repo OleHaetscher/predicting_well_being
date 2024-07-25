@@ -1,0 +1,18 @@
+[tool.poetry]
+name = "code for the prediction of well-being using machine learning"
+version = "0.1.0"
+description = "This is the analysis code for the paper project where we predict individual differences in well-being using machine learning methods across several large-scale ESM samples"
+authors = ["OleHaetscher <olehaetscher@web.de>"]
+license = "CC-By Attribution 4.0 International"
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.10"
+numpy = "^2.0.0"
+pandas = "^2.2.2"
+scikit-learn = "^1.5.0"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
