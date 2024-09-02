@@ -1,0 +1,32 @@
+general:
+  datasets_to_be_included: [cocoesm, cocoms, cocout, emotions, pia] # cocoesm, cocoms, cocout, emotions, pia, zpid
+  log_dir: "../logs/tests"
+  log_name: tests
+
+prelimpreprocessor:
+  path_to_raw_data: "../data/raw"
+  trait_id_cols:
+    cocoesm: participant
+    cocoms: unique_id
+    cocout: pID
+    emotions: id_for_merging  # id_for_merging, id_not_for_merging ???
+    pia: id
+    zpid: p_0001
+  state_id_cols:
+
+  common_id_col: id
+  raw_timestampe_cols:
+    cocoesm: created_individual
+    cocoms: questionnaireStartedTimestamp  # questionnaireEndedTimestamp?
+    cocout: RecordedDateConvert
+    emotions: created_esm  # id_for_merging, id_not_for_merging ???
+    pia: created
+    zpid: questionnaireStartedTimestamp
+  common_timestamp_col: timestamp_esm
+
+
+
+
+
+
+
