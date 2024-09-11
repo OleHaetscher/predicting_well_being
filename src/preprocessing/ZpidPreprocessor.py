@@ -30,3 +30,6 @@ class ZpidPreprocessor(BasePreprocessor):
         """
         df_traits.loc[df_traits['Demo_GL2'] == 5, 'Demo_GL2'] = np.nan
         df_traits.loc[df_traits['Polit_Ein_4'] == 12, 'Polit_Ein_4'] = np.nan
+        return df_traits
+
+

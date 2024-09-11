@@ -1,7 +1,7 @@
 general:
-  datasets_to_be_included: [cocoesm, cocoms, cocout, emotions, pia] # cocoesm, cocoms, cocout, emotions, pia, zpid
-  log_dir: "../logs/tests"
-  log_name: tests
+  datasets_to_be_included: [cocoesm]  # , cocoms, cocout, emotions, pia] # cocoesm, cocoms, cocout, emotions, pia, zpid
+  log_dir: "../logs/tests_10092024"
+  log_name: cocoesm
 
 prelimpreprocessor:
   path_to_raw_data: "../data/raw"

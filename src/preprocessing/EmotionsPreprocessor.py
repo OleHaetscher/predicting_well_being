@@ -1,3 +1,5 @@
+import numpy as np
+
 from src.preprocessing.BasePreprocessor import BasePreprocessor
 import pandas as pd
 
@@ -93,3 +95,60 @@ class EmotionsPreprocessor(BasePreprocessor):
                            if grouped[col].nunique().gt(1).any()]
         state_df_filtered = state_df[varying_columns]
         return state_df_filtered
+
+    def dataset_specific_state_processing(self, df_states: pd.DataFrame) -> pd.DataFrame:
+        """
+        This method may be adjusted in specific subclasses that need dataset-specific processing
+        that applies to special usecases.
+
+        Args:
+            df_states:
+
+        Returns:
+            pd.DataFrame:
+        """
+        df_states = self.create_close_interactions(df_states=df_states)
+        return df_states
+
+    def create_close_interactions(self, df_states: pd.DataFrame) -> pd.DataFrame:
+        """
+        In Emotions, we need another custom logic. With each prompt, we refer to 5 interaction partners
+        (interaction_partner1 - interaction_partner5). We only consider an interaction close tie,
+        if all interaction partners are close ties (and weak ties, if all interaction partners are weak ties,
+        respectively).
+
+        Args:
+            df_states:
+
+        Returns:
+            df_states
+        """
+        close_interaction_cfg = [entry for entry in self.fix_cfg["predictors"]["self_reported_micro_context"]
+                                 if entry["name"] == "close_interactions"][0]
+        int_partner_cols = close_interaction_cfg["special_mappings"]["emotions"]["columns"]
+        cat_mapping = close_interaction_cfg["special_mappings"]["emotions"]["mapping"]
+
+        # Apply the categorical mapping to each interaction partner column
+        for col in int_partner_cols:
+            df_states[col] = df_states[col].replace(cat_mapping)
+
+        # Define the close and weak tie logic
+        all_close_mask = df_states[int_partner_cols].eq(1).all(axis=1)  # All columns are close ties (1)
+        all_weak_mask = df_states[int_partner_cols].eq(0).all(axis=1)  # All columns are weak ties (0)
+
+        # Create the "close_interactions_raw" column
+        df_states['close_interactions_raw'] = np.where(all_close_mask, 1,
+                                                       np.where(all_weak_mask, 0, np.nan))
+
+        # Calculate the percentage of close ties per person (grouped by unique_id)
+        interaction_stats = df_states.groupby('unique_id')['close_interactions_raw'].apply(
+            lambda x: x.sum() / x.count() if x.count() > 0 else np.nan
+        )
+
+        # Create the "close_interactions" column
+        df_states['close_interactions'] = df_states['unique_id'].map(interaction_stats)
+
+        return df_states
+
+
+

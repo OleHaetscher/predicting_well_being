@@ -1,3 +1,5 @@
+import numpy as np
+
 from src.preprocessing.BasePreprocessor import BasePreprocessor
 import pandas as pd
 import re
@@ -59,7 +61,7 @@ class CocoesmPreprocessor(BasePreprocessor):
         df_traits.columns = updated_columns
         return df_traits
 
-    def dataset_specific_esm_processing(self, df_states: pd.DataFrame) -> pd.DataFrame:
+    def dataset_specific_state_processing(self, df_states: pd.DataFrame) -> pd.DataFrame:
         """
         No custom adjustments necessary in cocoesm.
 
@@ -69,4 +71,44 @@ class CocoesmPreprocessor(BasePreprocessor):
         Returns:
             pd.DataFrame
         """
+        df_states = self.create_relationship(df_states=df_states)
+        return df_states
+
+    def create_relationship(self, df_states: pd.DataFrame) -> pd.DataFrame:
+        """
+        Infers the relationship status from the ESM surveys based on interactions with a partner. If any row for a
+        person has a value of 4 in the "selection_partners" column, all rows for that person are inferred to be in a
+        relationship. Otherwise, the relationship status is set to 0.
+
+        Args:
+            df_states (pd.DataFrame): The DataFrame containing the ESM data with interaction information.
+
+        Returns:
+            pd.DataFrame: The modified DataFrame with an added column 'relationship' indicating inferred relationship status.
+        """
+        # Parse the configuration for the relationship status (can be useful for future expansion)
+        relationship_cfg = self.config_parser(self.fix_cfg["esm_based"]["self_reported_micro_context"],
+                                              "binary",
+                                              "relationship")[0]
+        ia_partner_col = relationship_cfg["item_names"]["cocoesm"]
+        ia_partner_val = relationship_cfg["special_mappings"]["cocoesm"]
+
+        # Check if 'selection_partners' exists in the DataFrame
+        if ia_partner_col in df_states.columns:
+            # Apply the _map_comma_separated function to each row to check for interaction
+            df_states['interaction'] = df_states[ia_partner_col].apply(
+                lambda x: self._map_comma_separated(x, {ia_partner_val: 1})
+            )
+
+            # Group by person ID (self.raw_esm_id_col) and check if any interaction occurred for the person
+            partner_interaction = df_states.groupby(self.raw_esm_id_col)['interaction'].transform('max')
+
+            # Assign 1 to 'relationship' if the person interacted with their partner in any row, otherwise 0
+            df_states['relationship'] = np.where(partner_interaction == 1, 1, 0)
+
+            # Drop the intermediate 'interaction' column
+            df_states.drop(columns=['interaction'], inplace=True)
+        else:
+            raise KeyError(f"Column {ia_partner_col} not in {self.dataset}")
+
         return df_states
