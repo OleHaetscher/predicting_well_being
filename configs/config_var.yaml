@@ -1,32 +1,37 @@
 general:
-  datasets_to_be_included: [cocoesm]  # , cocoms, cocout, emotions, pia] # cocoesm, cocoms, cocout, emotions, pia, zpid
-  log_dir: "../logs/tests_10092024"
-  log_name: cocoesm
+  datasets_to_be_included: [cocoesm]  # cocoesm, cocoms, cocout, emotions, pia, zpid
+  log_dir: "../logs/logging"
+  log_name: test_logging_15092024
 
-prelimpreprocessor:
+preprocessing:
   path_to_raw_data: "../data/raw"
-  trait_id_cols:
-    cocoesm: participant
-    cocoms: unique_id
-    cocout: pID
-    emotions: id_for_merging  # id_for_merging, id_not_for_merging ???
-    pia: id
-    zpid: p_0001
-  state_id_cols:
-
-  common_id_col: id
-  raw_timestampe_cols:
-    cocoesm: created_individual
-    cocoms: questionnaireStartedTimestamp  # questionnaireEndedTimestamp?
-    cocout: RecordedDateConvert
-    emotions: created_esm  # id_for_merging, id_not_for_merging ???
-    pia: created
-    zpid: questionnaireStartedTimestamp
-  common_timestamp_col: timestamp_esm
-
-
+  path_to_preprocessed_data: "../data/preprocessed"
+  min_num_esm_measures: 5
+  nrows: 9999
+  need_inverse_coding: ["cocout", "emotions", "pia", "zpid", "cocoms"]  # cocoesm ist schon rekodiert, der Rest nicht
+  # joint id col -> ID is the index in every dataset
+  sanity_checking:
+    nan_thresh: 0.3  # 30% NaNs -> warn
+    cron_alpha_thresh: 0.5
+    expected_pos_corrs:
+    - self_esteem
+    - social_status
+    - trust_government
+    - education_level
+    - pa_state
+    - pa_trait
+    - sleep_quality_mean
+    - number_of_interactions_mean
+    - gdp_capita
 
 
+    number_of_features:  # as in PreReg Table, without sensing ye
+      cocoesm: 139 # davon MAC 53
+      cocoms: 84
+      cocout: 64
+      emotions: 50
+      pia: 34
+      zpid: 62
 
 
 

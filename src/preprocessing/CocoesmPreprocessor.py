@@ -1,3 +1,5 @@
+from functools import reduce
+
 import numpy as np
 
 from src.preprocessing.BasePreprocessor import BasePreprocessor
@@ -61,6 +63,23 @@ class CocoesmPreprocessor(BasePreprocessor):
         df_traits.columns = updated_columns
         return df_traits
 
+    def dataset_specific_trait_processing(self, df_traits: pd.DataFrame) -> pd.DataFrame:
+        """
+        This method may be adjusted in specific subclasses that need dataset-specific processing
+        that applies to special usecases. In CoCo ESM, this includes
+        - Filling NaNs in 'living_other', 'living_partner', and 'living_children' with zero
+          if 'living_alone' == 1.
+
+        Args:
+            df_traits (pd.DataFrame): The DataFrame containing trait data.
+
+        Returns:
+            pd.DataFrame: The modified DataFrame after dataset-specific processing.
+        """
+        # Define the columns to fill if the condition is met
+        df_traits.loc[df_traits['quantity_household'] == 1, "relationship_household"] = '0'
+        return df_traits
+
     def dataset_specific_state_processing(self, df_states: pd.DataFrame) -> pd.DataFrame:
         """
         No custom adjustments necessary in cocoesm.
@@ -112,3 +131,36 @@ class CocoesmPreprocessor(BasePreprocessor):
             raise KeyError(f"Column {ia_partner_col} not in {self.dataset}")
 
         return df_states
+
+    def merge_trait_df_country_vars(self, country_var_dct: dict[str, pd.DataFrame], df_traits: pd.DataFrame) -> pd.DataFrame:
+        """
+        This method
+            a) merges the 3 country-level var dfs (health, psycho-political, socio-economic)
+            b) merges the df_traits with the country-level df
+        For the second step, we need to create a column that contains the year of the assessment. Because the assessment
+        is about several weeks, it is possible that some participants started in one year and ended in a second year (but this
+        case is negligible small, only around 50 participants are affected). Therefore, we just take the "demographics_created_t1"
+        column as a reference for the year of participation.
+
+
+        Args:
+            country_var_dct:
+            df_traits:
+
+        Returns:
+
+        """
+        df_country_level = reduce(
+            lambda left, right: pd.merge(
+                left=left,
+                right=right,
+                on=["country", "year"],
+                how="outer"),
+            country_var_dct.values())
+        df_country_level.columns = [f"{col}" for col in df_country_level.columns]  # add column prefix
+        df_traits["year"] = pd.to_datetime(df_traits["created_demographics"]).dt.year
+        df_traits = pd.merge(left=df_traits,
+                             right=df_country_level,
+                             on=["country", "year"],
+                             how="left")  # TODO which join?
+        return df_traits

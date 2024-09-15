@@ -23,6 +23,10 @@ class CocoutPreprocessor(BasePreprocessor):
             df_dct[f"data_self_esteem_{dataset}"] = df_dct[f"data_self_esteem_{dataset}"].dropna(subset="pID_se")
             df_dct[f"data_demographics_{dataset}"] = df_dct[f"data_demographics_{dataset}"].add_suffix('_dem')
             df_dct[f"data_demographics_{dataset}"] = df_dct[f"data_demographics_{dataset}"].dropna(subset="pID_dem")
+
+            # some variable names differ across waves -> Fix this here
+            self.fix_col_name_issues(df_dct, dataset)
+
             # Merge Dataframes along the columns
             df_traits = (
                 df_dct[f"data_traits_t1_{dataset}"]
@@ -44,6 +48,32 @@ class CocoutPreprocessor(BasePreprocessor):
         # Concat Dataframes along the rows (ut1 and ut2)
         concatenated_traits = pd.concat(dataset_lst, axis=0)
         return concatenated_traits
+
+    def fix_col_name_issues(self, df_dct: dict, dataset):
+        """
+        There are some colname differences between CoCo UT1 and CoCo UT2. We fix this before merging the data
+
+        Args:
+            df_dct:
+            dataset: "ut1" or "ut2
+
+        Returns:
+            dict:
+        """
+        if dataset == "ut2":
+            df = df_dct[f"data_personality_{dataset}"]
+            cmq_cols = [col for col in df.columns if "cms_" in col]
+            df = df.rename(columns={col: col.replace("cms_", "cmq_") for col in cmq_cols})
+            df_dct[f"data_personality_{dataset}"] = df
+            # test2 = [i for i in df.columns if "political_orientation in i"]
+        #elif dataset == "ut1":
+        #    df = df_dct[f"data_personality_{dataset}"]
+        #    test1 = [i for i in df.columns if "political_orientation" in i]
+        #    df["political_orientation"] = df["political_orientation_t2"]
+        #else:
+        #    raise ValueError(f"dataset {dataset} not supported")
+        # df_dct[f"data_personality_{dataset}"] = df
+
 
     def clean_trait_col_duplicates(self, df_traits: pd.DataFrame) -> pd.DataFrame:
         """
@@ -76,11 +106,9 @@ class CocoutPreprocessor(BasePreprocessor):
         Returns:
             pd.DataFrame:
         """
-        # TODO: replace through generic function in BaseProcessor that is called only in this subclass?
         df_traits["professional_status"] = 1
         df_traits["educational_attainment"] = 6  # higher secondary education in 1-10 scale
         return df_traits
-
 
     def merge_states(self, df_dct):
         df_lst = []
@@ -113,7 +141,7 @@ class CocoutPreprocessor(BasePreprocessor):
             pd.DataFrame:
         """
         df_states = self.clean_number_interaction_partners(df_states=df_states)
-        df_states = self.clean_days_infected(df_states=df_states)
+        # df_states = self.clean_days_infected(df_states=df_states)
         return df_states
 
     def clean_number_interaction_partners(self, df_states: pd.DataFrame) -> pd.DataFrame:
@@ -128,14 +156,15 @@ class CocoutPreprocessor(BasePreprocessor):
         Returns:
             pd.DataFrame:
         """
-        number_int_partners_cfg = [entry for entry in self.fix_cfg["predictors"]["self_reported_micro_context"]
+        number_int_partners_cfg = [entry for entry in self.fix_cfg["esm_based"]["self_reported_micro_context"]
                                    if entry["name"] == "number_interaction_partners"][0]
-        col_name = number_int_partners_cfg["item_names"]["coco_ut"]
+        col_name = number_int_partners_cfg["item_names"]["cocout"]
         df_states[col_name] = df_states[col_name].replace(
             number_int_partners_cfg["special_mappings"]["cocout"]["str_to_num"])
         df_states[col_name] = pd.to_numeric(df_states[col_name], errors='coerce')
         return df_states
 
+    # TODO Not used anymore
     def clean_days_infected(self, df_states: pd.DataFrame) -> pd.DataFrame:
         """
         In CoCo UT, have only an appriximation of the number of days people were infected with COVID, because

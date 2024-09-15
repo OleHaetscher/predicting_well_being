@@ -32,15 +32,9 @@ class EmotionsPreprocessor(BasePreprocessor):
                           with columns filtered to include only those that do not vary across
                           rows with the same 'id_for_merging'.
         """
-        trait_df = df_dct["data_traits_esm"]
-
-        # Filter columns to include only those that do not vary by 'id_for_merging'
-        grouped = trait_df.groupby('id')   # TODO "id" in old data, "id_for_merging" in new, incomplete data
-        consistent_columns = [col for col in trait_df.columns
-                              if grouped[col].nunique().eq(1).all()]
-        collapsed_df = grouped.first().reset_index()
-        only_trait_df = collapsed_df[consistent_columns]
-        return only_trait_df
+        trait_esm_df = df_dct["data_traits_esm"]
+        trait_df = trait_esm_df.drop_duplicates(subset=self.raw_trait_id_col, keep="first").reset_index(drop=True)
+        return trait_df
 
     def clean_trait_col_duplicates(self, df_traits: pd.DataFrame) -> pd.DataFrame:
         """
@@ -90,10 +84,10 @@ class EmotionsPreprocessor(BasePreprocessor):
         """
         state_df = df_dct["data_traits_esm"]
         # Filter columns to include only those that vary by 'id_for_merging'
-        grouped = state_df.groupby('id')  # TODO "id" in old data, "id_for_merging" in new, incomplete data
+        grouped = state_df.groupby(self.raw_esm_id_col)
         varying_columns = [col for col in state_df.columns
                            if grouped[col].nunique().gt(1).any()]
-        state_df_filtered = state_df[varying_columns]
+        state_df_filtered = state_df[varying_columns + [self.raw_esm_id_col]]
         return state_df_filtered
 
     def dataset_specific_state_processing(self, df_states: pd.DataFrame) -> pd.DataFrame:
@@ -123,7 +117,7 @@ class EmotionsPreprocessor(BasePreprocessor):
         Returns:
             df_states
         """
-        close_interaction_cfg = [entry for entry in self.fix_cfg["predictors"]["self_reported_micro_context"]
+        close_interaction_cfg = [entry for entry in self.fix_cfg["esm_based"]["self_reported_micro_context"]
                                  if entry["name"] == "close_interactions"][0]
         int_partner_cols = close_interaction_cfg["special_mappings"]["emotions"]["columns"]
         cat_mapping = close_interaction_cfg["special_mappings"]["emotions"]["mapping"]
@@ -141,12 +135,12 @@ class EmotionsPreprocessor(BasePreprocessor):
                                                        np.where(all_weak_mask, 0, np.nan))
 
         # Calculate the percentage of close ties per person (grouped by unique_id)
-        interaction_stats = df_states.groupby('unique_id')['close_interactions_raw'].apply(
+        interaction_stats = df_states.groupby(self.raw_esm_id_col)['close_interactions_raw'].apply(
             lambda x: x.sum() / x.count() if x.count() > 0 else np.nan
         )
 
         # Create the "close_interactions" column
-        df_states['close_interactions'] = df_states['unique_id'].map(interaction_stats)
+        df_states['close_interactions'] = df_states[self.raw_esm_id_col].map(interaction_stats)
 
         return df_states
 

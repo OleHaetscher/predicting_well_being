@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
 from copy import deepcopy
+from functools import reduce
 from typing import Union, List
 
 import numpy as np
@@ -8,6 +9,7 @@ import pandas as pd
 from src.utils.configparser import *
 from src.utils.logger import *
 from src.utils.timer import *
+from src.utils.sanitychecker import *
 
 import re
 
@@ -27,19 +29,34 @@ class BasePreprocessor(ABC):
         self.fix_cfg = fix_cfg
         self.var_cfg = var_cfg
         self.dataset = None  # assigned in the subclasses
-        # self.raw_trait_id_col = self.fix_cfg["person_level"]["other_trait_columns"][0]["item_names"][self.dataset]
-        # self.raw_esm_id_col = self.fix_cfg["esm_based"]["other_esm_columns"][0]["item_names"][self.dataset]
-        # self.esm_timestamp = self.fix_cfg["esm_based"]["other_esm_columns"][1]["item_names"][self.dataset]
+
         self.logger = Logger(log_dir=self.var_cfg["general"]["log_dir"], log_file=self.var_cfg["general"]["log_name"])
-        self.timer = Timer(self.logger)  # composition
-        self.config_parser = ConfigParser().cfg_parser
+        self.timer = Timer(self.logger)
+        self.config_parser = ConfigParser().cfg_parser   # rethink?
+        self.config_key_finder = ConfigParser().find_key_in_config # TODO Could be refactored
         self.apply_preprocessing_methods = self.timer._decorator(self.apply_preprocessing_methods)
+        self.sanity_checker = SanityChecker(logger=self.logger,
+                                            fix_cfg=self.fix_cfg,
+                                            cfg_sanity_checks=self.var_cfg["preprocessing"]["sanity_checking"],
+                                            config_parser_class=ConfigParser(),
+                                            apply_to_full_df=False
+                                            )
+
+        self.df_before_final_selection = None  # filled later
         self.data = None  # assigned at the end, preprocessed data, if at all
 
     @property
     def path_to_raw_data(self):
         """Path to the folder containing the raw files for self.dataset."""
-        return os.path.join(self.var_cfg["prelimpreprocessor"]["path_to_raw_data"], self.dataset)
+        return os.path.join(self.var_cfg["preprocessing"]["path_to_raw_data"], self.dataset)
+
+    @property
+    def path_to_country_level_data(self):
+        """Path to the folder containing the raw files for self.dataset."""
+        if self.dataset == "cocoesm": # os.path.join(self.path_to_raw_data, "country_level_vars")
+            return os.path.join(self.var_cfg["preprocessing"]["path_to_raw_data"], "cocoesm", "country_level_vars")
+        else:
+            return None
 
     @property
     def raw_trait_id_col(self):
@@ -56,8 +73,6 @@ class BasePreprocessor(ABC):
         """Dataset specific ID col, must be instantiated after the super.init of the subclasses."""
         return self.fix_cfg["esm_based"]["other_esm_columns"][1]["item_names"][self.dataset]
 
-
-
     def apply_preprocessing_methods(self):
         """
         This function applies the preprocessing methods
@@ -65,6 +80,7 @@ class BasePreprocessor(ABC):
         Returns:
 
         """
+        self.logger.log(f"--------------------------------------------------------")
         self.logger.log(f".")
         self.logger.log(f"Starting preprocessing pipeline for >>>{self.dataset}<<<")
 
@@ -72,8 +88,12 @@ class BasePreprocessor(ABC):
         df_dct = self.load_data(path_to_dataset=self.path_to_raw_data)
         df_traits = None  # Initialize df_traits as None
         df_states = None
+        df_country_level = None
+        df_sensed = None
+        df_joint = None
 
         # Step 2: Process and transform trait data
+        self.logger.log(f"  Preprocess trait-survey-based data")
         preprocess_steps_traits = [
             (self.merge_traits, {'df_dct': df_dct}),
             (self.clean_trait_col_duplicates, {'df_traits': None}),
@@ -93,9 +113,11 @@ class BasePreprocessor(ABC):
             # Ensure df_traits is passed as needed
             kwargs = {k: v if v is not None else df_traits for k, v in kwargs.items()}
             df_traits = self._log_and_execute(method, **kwargs)
+            print()
         print()
 
         # Step 3: Process and transform esm data
+        self.logger.log(f"  Preprocess esm-based data")
         preprocess_steps_esm = [
             (self.merge_states, {'df_dct': df_dct}),
             (self.dataset_specific_state_processing, {'df_states': None}),
@@ -106,17 +128,51 @@ class BasePreprocessor(ABC):
                 'df_type': "esm_based",
                 'cat_list': ['self_reported_micro_context', 'criterion'],  # sensed microcontext?
             }),
-            (self.create_person_level_vars_from_esm, {'df_states': None})
+            (self.create_person_level_vars_from_esm, {'df_states': None}),
+            (self.filter_min_num_esm_measures, {'df_states': None}),
+            # >>> may store the ESM data at this point or directly compute the descriptive where we need the ESM data <<<
+            (self.collapse_esm_df, {'df_states': None}),
         ]
         for method, kwargs in preprocess_steps_esm:
             # Ensure df_traits is passed as needed
             kwargs = {k: v if v is not None else df_states for k, v in kwargs.items()}
             df_states = self._log_and_execute(method, **kwargs)
+
+        # Step 4 (optional): Specific sensed data processing?
+        # ...
+        if self.dataset in ["cocoms", "zpid"]:
+            self.logger.log(f"  Preprocess sensed data")
+            # Some function that merges the sensed data to the state df
+            # TODO DONT FORGET TO ADD PREFIX (e.g., smc or sens)
+
+        # Step 5 (optional): Specific country-data processing?
+        if self.dataset == "cocoesm":
+            self.logger.log(f"  Preprocess country-level data")
+            df_dct = self.load_data(path_to_dataset=self.path_to_country_level_data)
+            df_traits = self.merge_trait_df_country_vars(country_var_dct=df_dct, df_traits=df_traits)
             print()
 
         # Step 4: merge data
+        self.logger.log(f"  Preprocess joint data")
+        preprocess_steps_joint = [
+            (self.merge_dfs_on_id, {"df_states": df_states, "df_traits": df_traits}),
+            (self.set_id_as_index, {'df': None}),
+            (self.inverse_coding, {'df': None}),  # this makes sense here
+            (self.create_scale_means, {'df': None}),
+            (self.create_criteria, {'df': None}),
+            (self.set_full_col_df_as_attr, {'df': None}),
+            (self.select_final_columns, {'df': None}),
+            (self.sanity_checking, {'df': None}),  # this includes selecting the final columns
+        ]
+
+        for method, kwargs in preprocess_steps_joint:
+            # Ensure df_traits is passed as needed
+            kwargs = {k: v if v is not None else df_joint for k, v in kwargs.items()}
+            df_joint = self._log_and_execute(method, **kwargs)
+            print()
 
         self.logger.log(f"Finished preprocessing pipeline for >>>{self.dataset}<<<")
+        self.logger.log(f"--------------------------------------------------------")
         return df_traits
 
     def _log_and_execute(self, method: Callable, *args: Any, **kwargs: Any):
@@ -130,7 +186,7 @@ class BasePreprocessor(ABC):
         Returns:
 
         """
-        self.logger.log(f"   Executing {method.__name__}")
+        self.logger.log(f"    Executing {method.__name__}")
         return method(*args, **kwargs)
 
     def load_data(self, path_to_dataset):
@@ -144,10 +200,14 @@ class BasePreprocessor(ABC):
 
 
         """
+        nrows = self.var_cfg["preprocessing"]["nrows"]
         files = os.listdir(path_to_dataset)
         if files:
-            df_dct = {file[:-4]: pd.read_csv(os.path.join(path_to_dataset, file), encoding="latin", nrows=1000)
-                      for file in files}
+            df_dct = {file[:-4]: pd.read_csv(os.path.join(path_to_dataset, file), encoding="latin", nrows=nrows)
+                      for file in files if os.path.isfile(os.path.join(path_to_dataset, file))}
+            for key, df in df_dct.items():
+                if "Unnamed: 0" in df.columns:
+                    df_dct[key] = df.drop(["Unnamed: 0"], axis=1)
             return df_dct
         else:
             raise FileNotFoundError(f"Not datasets found in {self.path_to_raw_data}")
@@ -179,7 +239,7 @@ class BasePreprocessor(ABC):
         Returns:
             pd.DataFrame: A DataFrame with clean columns names
         """
-    pass
+        return df_traits
 
     def exclude_flagged_rows(self, df_traits) -> pd.DataFrame:
         """
@@ -193,10 +253,12 @@ class BasePreprocessor(ABC):
 
         """
         flags = self.config_parser(self.fix_cfg["person_level"]["other_trait_columns"], "binary", "trait_flags")[0]
-        flag_col = flags["item_names"][self.dataset]
-        df_traits[flag_col] = df_traits[flag_col].map(flags["category_mappings"][self.dataset]).fillna(np.nan)
-        flag_filtered_df = df_traits[df_traits[flag_col] == 1]
-        return flag_filtered_df
+        if self.dataset in flags["item_names"]:
+            flag_col = flags["item_names"][self.dataset]
+            df_traits[flag_col] = df_traits[flag_col].map(flags["category_mappings"][self.dataset]).fillna(1)
+            df_traits = df_traits[df_traits[flag_col] == 1]
+            # df_traits = df_traits.drop([flag_col], axis=1)
+        return df_traits
 
     def select_columns(self, df: pd.DataFrame, df_type: str = "person_level") -> pd.DataFrame:
         """
@@ -349,6 +411,9 @@ class BasePreprocessor(ABC):
         if pd.isna(value):
             return value  # Return NaN values as is
 
+        if isinstance(value, str):
+            value = pd.to_numeric(value, errors='coerce')
+
         # Scale the value from the old range to the new range
         if old_min == old_max:
             return new_min  # Avoid division by zero if old_min and old_max are the same
@@ -374,16 +439,22 @@ class BasePreprocessor(ABC):
                 new_column_name = entry['name']
                 category_mappings = entry.get('category_mappings', {}).get(self.dataset, {})
                 match item_names:
-                    case str(column_name):  # TODO: Can I make this more generic? to use with micro context?
-                        df_traits[new_column_name] = self._map_column_to_binary(df_traits, column_name, category_mappings)
+                    case str(column_name):
+                        df_traits[new_column_name] = self._map_column_to_binary(df=df_traits,
+                                                                                column=column_name,
+                                                                                mapping=category_mappings,
+                                                                                fill_na_with_zeros=False) # this may cause to many danger
                     case list(columns):
-                        df_traits[new_column_name] = self._map_columns_to_binary(df_traits, columns, category_mappings)
+                        df_traits[new_column_name] = self._map_columns_to_binary(df=df_traits,
+                                                                                 columns=column_name,
+                                                                                 mapping=category_mappings,
+                                                                                 fill_na_with_zeros=False)
                     case _:
                         raise ValueError("item_names must be either a string or a list of strings")
         print("success returning ", self.dataset)
         return df_traits
 
-    def _map_column_to_binary(self, df: pd.DataFrame, column: str, mapping: dict) -> pd.Series:
+    def _map_column_to_binary(self, df: pd.DataFrame, column: str, mapping: dict, fill_na_with_zeros: bool = False) -> pd.Series:
         """
         Maps a single column to a binary column based on the provided mapping.
         If a cell contains multiple values separated by commas, the mapping will be applied if any value matches the mapping.
@@ -399,12 +470,19 @@ class BasePreprocessor(ABC):
         # Check if the column is of type object (comma-separated values) or something else
         if df[column].dtype == object:
             # Apply conversion for object columns
-            return df[column].apply(lambda x: self._map_comma_separated(x, mapping))
+            return df[column].apply(lambda x: self._map_comma_separated(cell_value=x,
+                                                                        mapping=mapping,
+                                                                        map_ambiguous=True,
+                                                                        fill_na_with_zeros=fill_na_with_zeros))
 
         # Apply the mapping directly for non-object columns
-        return df[column].map(lambda x: self._map_single_value(x, mapping))
+        return df[column].map(lambda x: self._map_single_value(cell_value=x, mapping=mapping, fill_na_with_zeros=fill_na_with_zeros))
 
-    def _map_comma_separated(self, cell_value: str, mapping: dict, map_ambiguous: bool = True) -> Union[int, float]:  # or bool? 0/1?
+    def _map_comma_separated(self,
+                             cell_value: str,
+                             mapping: dict,
+                             map_ambiguous: bool = True,
+                             fill_na_with_zeros: bool = False) -> Union[int, float]:  # or bool? 0/1?
         """
         Processes cells that may contain comma-separated values or a single value.
         map_ambiguous determines how it handles comma-separated values where one value is contained in the mapping,
@@ -414,8 +492,10 @@ class BasePreprocessor(ABC):
         interactions). The rest should be set to np.nan, so that the percentage calculations are valid.
         """
         if pd.isna(cell_value):
-            return np.nan  # return 0
-        # TODO: For map_ambiuous == False, this must return np.nan. Also for the others?
+            if fill_na_with_zeros:
+                return 0
+            else:
+                return np.nan  # return 0
 
         # Split if comma-separated, map each value, and return the maximum mapped value
         values = cell_value.split(',')
@@ -423,21 +503,24 @@ class BasePreprocessor(ABC):
 
         if not map_ambiguous:
             if len(set(mapped_values)) > 1:
-                mapped_values = [np.nan]
-        return max(mapped_values)  # , default=0)
+                mapped_values = [np.nan]  # thats stil valid
+        return max(mapped_values)
 
     @staticmethod
-    def _map_single_value(value, mapping: dict) -> Union[int, float]:
+    def _map_single_value(cell_value, mapping: dict, fill_na_with_zeros: bool = False) -> Union[int, float]:
         """
         Maps a single value using the provided mapping dictionary. If the input value is np.nan
         it should return np.nan ("real" missings).
         If the value is a number but not specified in the mapping, it should return zero.
         """
-        if pd.isna(value):
-            return np.nan
-        return mapping.get(value, 0)  # mapping.get(value, 0)
+        if pd.isna(cell_value):
+            if fill_na_with_zeros:
+                return 0
+            else:
+                return np.nan  # return 0
+        return mapping.get(cell_value, 0)  # mapping.get(value, 0)
 
-    def _map_columns_to_binary(self, df: pd.DataFrame, columns: list[str], mapping: dict) -> pd.Series:
+    def _map_columns_to_binary(self, df: pd.DataFrame, columns: list[str], mapping: dict, fill_na_with_zeros: bool = False) -> pd.Series:
         """
         Maps multiple columns to a single binary column based on the provided mapping.
 
@@ -450,7 +533,7 @@ class BasePreprocessor(ABC):
             pd.Series: A binary column derived from the categorical columns.
         """
         return df[columns].apply(lambda row: max(
-            [self._map_column_to_binary(pd.DataFrame({col: [row[col]]}), col, mapping).iloc[0] for col in columns]
+            [self._map_column_to_binary(pd.DataFrame({col: [row[col]]}), col, mapping, fill_na_with_zeros).iloc[0] for col in columns]
         ), axis=1)
 
     @abstractmethod
@@ -499,9 +582,8 @@ class BasePreprocessor(ABC):
         df_states = self.create_early_day_responses(df_states=df_states)
         df_states = self.create_number_responses(df_states=df_states)
         df_states = self.create_percentage_responses(df_states=df_states)
-
-        df_states_person_level = self.collapse_state_df(df_states=df_states)
-        return df_states_person_level
+        df_states = self.average_criterion_items(df_states=df_states)
+        return df_states
 
     def create_person_level_desc_stats(self, df_states: pd.DataFrame) -> pd.DataFrame:
         """
@@ -594,6 +676,8 @@ class BasePreprocessor(ABC):
                 if isinstance(column, str):
                     if column in df_states.columns:
                         df_copied = deepcopy(df_states)
+                        if column == "situation_type":
+                            print()
 
                         # We only need to apply the mapping if there is an entry in category_mapping
                         if 'category_mappings' in entry and self.dataset in entry['category_mappings']:
@@ -609,9 +693,10 @@ class BasePreprocessor(ABC):
                             else:
                                 raise ValueError(f"{column} dtype must be object, str, int, or float")
 
-                        # for day-level variables (e.g., days_infected)
+                        # for day-level variables (e.g., home_office)
                         if "per_day" in entry:
-                            df_copied[self.esm_timestamp] = pd.to_datetime(df_copied[self.esm_timestamp]).dt.date
+                            df_copied[self.esm_timestamp] = pd.to_datetime(df_copied[self.esm_timestamp],
+                                                                           errors="coerce").dt.date
 
                         # Select only relevant columns for this processing step
                         df_copied = (df_copied[[self.raw_esm_id_col, self.esm_timestamp, column]]
@@ -621,20 +706,19 @@ class BasePreprocessor(ABC):
                         grouped_df = df_copied.groupby(self.raw_esm_id_col)
 
                         # Group by person ID and calculate the percentage of 1s for each person
+                        # If no valid values are found np.nan is assigned (also results in RuntimeWarning)
                         stats = grouped_df[column].apply(
                             lambda group: (group == 1).sum() / group.isin([0, 1]).sum()
                         ).reset_index()
 
-                        # Rename the column with the format "name_perc"
-                        stats.columns = [self.raw_esm_id_col, var_name]
-
-                        # Append to the list of dataframes
+                        stats.columns = [self.raw_esm_id_col, f"{var_name}"]
                         person_level_stats.append(stats)
 
                     else:
                         raise KeyError(f"Column: {column} not found in {self.dataset} state_df")
                 else:
-                    # Skip the entry if it's a list (as the custom function has already built the variable)
+                    self.logger.log(f"      Skipping var {var_name} in dataset {self.dataset}, has custom method")
+                    print(f"Skipping var {var_name} in dataset {self.dataset}, has custom method")
                     continue
 
         # Merge all the person-level percentage dataframes on the person ID column
@@ -758,38 +842,139 @@ class BasePreprocessor(ABC):
 
         return df_states
 
-
-
-
-    def set_common_id_as_index(self, df_dct: dict[str, pd.DataFrame], dataset_name: str) -> dict[str, pd.DataFrame]:
+    def average_criterion_items(self, df_states: pd.DataFrame) -> pd.DataFrame:
         """
-        Set a common ID column as the index for dataframes in df_dct that contain "traits" in the key
-        and do not contain "esm".
+        In this method, we compute averages of the items assessing positive and negative
+        state effect to generate person-level scores of these items
 
         Args:
-            df_dct (dict): Dictionary containing the dataframes.
-            dataset_name (str): Name of the dataset to map the raw ID column.
+            df_states:
 
         Returns:
-            dict: Updated dictionary with the common ID column set as index for relevant dataframes.
+            pd.DataFrame
         """
-        raw_id_col = self.var_cfg["prelimpreprocessor"]['raw_id_cols'].get(dataset_name)
-        common_id_col = self.var_cfg["prelimpreprocessor"]['common_id_col']
+        # Extract the esm_based criterion variables from the config
+        affect_var_entries = self.config_parser(self.fix_cfg["esm_based"]["criterion"],
+                                                "continuous",
+                                                "pa_state",
+                                                "na_state")
+        # Extract the relevant variables for both positive and negative affect states
+        affect_states_dct = {val["name"]: val["item_names"][self.dataset] for val in affect_var_entries
+                             if self.dataset in val["item_names"]}
 
-        if not raw_id_col:
-            raise ValueError(f"No raw ID column specified for dataset {dataset_name}")
+        # Iterate over affect traits (positive and negative)
+        for affect_state, affect_cols in affect_states_dct.items():
+            # Extract relevant item names for the current dataset from the configuration
+            if affect_cols:
+                # Compute mean for each person and assign it back to the original columns
+                person_avg = df_states.groupby(self.raw_esm_id_col)[affect_cols].transform('mean')
+                df_states[affect_cols] = person_avg
 
-        updated_df_dct = {}
-        for key, df in df_dct.items():
-            if "esm" not in key:  # currently, this excludes the emotions dataset
-                try:
-                    df[common_id_col] = df[raw_id_col]
-                except KeyError:
-                    print(f"Key Error, no ID column was set as index for {key}, {common_id_col} already exists")
-                df.set_index(common_id_col, inplace=True)
-            updated_df_dct[key] = df
+        return df_states
 
-        return updated_df_dct
+    def filter_min_num_esm_measures(self, df_states: pd.DataFrame) -> pd.DataFrame:
+        """
+        We only include participants who provided at least 5 ESM measurements with non-missing data on the
+        momentary well-being indicators. For the paper, we require 5 measurements
+
+        Args:
+            df_states: df containing the states of a given ESM-sample
+            soc_int_var: social situation variable, e.g. "social_interaction"
+            min_number_esm_measures: min number of measurements for the continuous variable, specified in config
+            id_col: column indicating the person id in the state df
+
+        Returns:
+            filtered_df: Filtered state df
+        """
+        affect_var_entries = self.config_parser(self.fix_cfg["esm_based"]["criterion"],
+                                                "continuous",
+                                                "pa_state",
+                                                "na_state")
+        # Extract the relevant variables for both positive and negative affect states
+        affect_states_dct = {val["name"]: val["item_names"][self.dataset] for val in affect_var_entries
+                             if self.dataset in val["item_names"]}
+        min_num_esm = self.var_cfg["preprocessing"]["min_num_esm_measures"]
+        pos_affect_cols = affect_states_dct.get('pa_state', [])
+        neg_affect_cols = affect_states_dct.get('na_state', [])
+
+        # Filter rows where at least one positive and one negative affect item is not NaN
+        if pos_affect_cols and neg_affect_cols:
+            # Both positive and negative affect columns are non-empty
+            valid_measurements = df_states[pos_affect_cols].notna().any(axis=1) & df_states[
+                neg_affect_cols].notna().any(axis=1)
+        elif pos_affect_cols:
+            # Only positive affect columns exist
+            valid_measurements = df_states[pos_affect_cols].notna().any(axis=1)
+        elif neg_affect_cols:
+            # Only negative affect columns exist
+            valid_measurements = df_states[neg_affect_cols].notna().any(axis=1)
+        else:
+            raise ValueError(f"No positive or negative items found in config for {self.dataset}")
+
+        # Count the number of valid rows per participant
+        valid_count_per_person = df_states[valid_measurements].groupby(self.raw_esm_id_col).size()
+
+        # Filter participants who meet the minimum number of valid measurements
+        filtered_df = df_states[
+            df_states[self.raw_esm_id_col].isin(valid_count_per_person[valid_count_per_person >= min_num_esm].index)
+        ]
+        persons_in_df = filtered_df[self.raw_esm_id_col].nunique()
+        self.logger.log(f">>> N included in f{self.dataset} after require at least {min_num_esm}: {persons_in_df}<<<")
+        return filtered_df
+
+    def set_full_col_df_as_attr(self, df: pd.DataFrame) -> None:
+        """
+        This method sets the state_df as a class attribute before collapsing it, so that we can refer to
+        it later when we do the sanity checks (e.g., for calculating scale reliabilities).
+
+        Args:
+            df_states:
+
+        Returns:
+            None
+        """
+        self.df_before_final_selection = deepcopy(df)
+        return df
+
+
+    def collapse_esm_df(self, df_states: pd.DataFrame) -> pd.DataFrame:
+        """
+        This method transforms the esm_based df (that varies by person and esm measurement) into a person-level df
+        (that only differs by person, one row per person). Therefore, it removes all variables that vary in-person.
+
+        Args:
+            df_states:
+
+        Returns:
+            pd.DataFrame: A person-level df containing the aggregated information from the ESM-surveys.
+
+        """
+        constant_cols = []
+        for col in df_states.columns:
+            # Check if the column has only one unique value per person
+            if df_states.groupby(self.raw_esm_id_col)[col].nunique().max() == 1:
+                constant_cols.append(col)
+
+        # Select only the constant columns and drop duplicates (one row per person)
+        df_person_level = df_states[constant_cols].drop_duplicates(subset=self.raw_esm_id_col)
+        return df_person_level
+
+    def set_id_as_index(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Creates a new ID column in the form of 'self.dataset_<integer>' and sets it as the index
+        of the DataFrame. The index will be unique for each row.
+
+        Args:
+            df (pd.DataFrame): The input DataFrame to set the new index for.
+
+        Returns:
+            pd.DataFrame: The DataFrame with the new ID column set as the index.
+        """
+        # Create the new ID column by combining the dataset name with an integer index
+        df['new_id'] = self.dataset + "_" + (df.reset_index().index + 1).astype(str)
+        # Set the new_id as the index
+        df = df.set_index('new_id', drop=True)
+        return df
 
     def extract_columns(self, config_data: Union[dict, list, str]) -> list[str]:
         """
@@ -812,6 +997,218 @@ class BasePreprocessor(ABC):
                 if key == self.dataset:
                     columns.append(value)
         return columns
+
+    def merge_trait_df_country_vars(self, country_var_dct: dict[str, pd.DataFrame], df_traits: pd.DataFrame) -> pd.DataFrame:
+        """Only implemented in the CoCo ESM subclass."""
+        pass
+
+    def merge_dfs_on_id(self, df_states: pd.DataFrame, df_traits: pd.DataFrame) -> pd.DataFrame:
+        """
+        This function merges a variable number of dataframes into a single dataframe.
+        The merging is done along the columns, ensuring that the rows remain aligned,
+        and the DataFrames are merged on common columns like 'country' and 'year'.
+
+        Args:
+            *args: Variable number of pandas DataFrames to be merged.
+
+        Returns:
+            pd.DataFrame: A merged DataFrame along the columns.
+        """
+        df_joint = pd.merge(df_states, df_traits, left_on=self.raw_esm_id_col, right_on=self.raw_trait_id_col, how="left")
+        return df_joint
+
+    def inverse_coding(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Recodes the items in the DataFrame based on the configuration entries for each variable.
+        Only items that need recoding for the specific dataset (self.dataset) are processed, and
+        the recoding is done using the provided scale endpoints (min and max).
+        Importantly, the differing scales need to be aligned before this processing step.
+
+        Args:
+            df (pd.DataFrame): The DataFrame containing the items to be recoded.
+
+        Returns:
+            pd.DataFrame: DataFrame with recoded items (where applicable).
+        """
+        cont_pers_entries = self.config_parser(self.fix_cfg["person_level"]["personality"],
+                                               "continuous")
+        if self.dataset != "cocoesm":  # already recoded
+            for entry in cont_pers_entries:
+                # Check if the entry has "items_to_recode" and if there are items to recode for the given dataset
+                if "items_to_recode" in entry and entry["items_to_recode"].get(self.dataset):
+                    items_to_recode = entry["items_to_recode"][self.dataset]  # Items to be recoded for this dataset
+                    scale_min = entry["scale_endpoints"]["min"]
+                    scale_max = entry["scale_endpoints"]["max"]
+
+                    # Perform inverse recoding: new_value = scale_max + scale_min - old_value
+                    for item in items_to_recode:
+                        df[item] = pd.to_numeric(df[item])
+                        if item in df.columns:  # Ensure the column exists in the DataFrame
+                            df[item] = scale_max + scale_min - df[item]
+                        else:
+                            raise KeyError(f"col {item} not found in {self.dataset} df")
+        return df
+
+    def create_scale_means(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Creates scale means based on the item columns specified in the config entries for the given dataset.
+        A new column will be created for each entry, named after the 'name' key, and its value will be the
+        mean of the corresponding item columns for the dataset.
+
+        Args:
+            df (pd.DataFrame): The DataFrame containing the items.
+            cont_pers_entries (list): List of configuration entries that specify the item columns to average.
+
+        Returns:
+            pd.DataFrame: The DataFrame with new columns for the scale means.
+        """
+        cont_pers_entries = self.config_parser(self.fix_cfg["person_level"]["personality"],
+                                               "continuous")
+        for entry in cont_pers_entries:
+            # Get the item names for the current dataset (self.dataset)
+            if self.dataset in entry["item_names"]:
+                item_cols = entry["item_names"][self.dataset]
+                # Create a new column with the name from 'name' and the mean of the valid item columns
+                df[item_cols] = df[item_cols].apply(pd.to_numeric, errors='coerce')
+                df[entry['name']] = df[item_cols].mean(axis=1, skipna=True)
+                print()
+        return df
+
+    def create_criteria(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        This method is used to aggregate the items assessing trait and state wb to create the 6 different criteria.
+            - state_wb
+            - state_pa
+            - state_na
+            - trait_wb
+            - trait_pa
+            - trait_na
+        To do so, we average across the items to create the pa and na scores, and we inverse code the na score and then
+        average the two composite scores to create the wb score
+
+        Args:
+            df (pd.DataFrame): The input dataframe containing well-being item data for individuals.
+
+        Returns:
+            pd.DataFrame: DataFrame with additional columns for the calculated criteria.
+        """
+        # TODO: A bit messy, may be improved, but handles all edgecases (emotions, zpid)
+        criteria_types = {'trait': "person_level", 'state': "esm_based"}
+        # Loop over trait and state criteria
+        for criterion_type, config_lvl in criteria_types.items():
+            wb_items = self.config_parser(self.fix_cfg[config_lvl]["criterion"], var_type=None)
+
+            # pa
+            if self.dataset in wb_items[0]["item_names"]:
+                pa_items = wb_items[0]["item_names"][self.dataset]
+                df[f'crit_{criterion_type}_pa'] = df[pa_items].mean(axis=1)
+            else:
+                df[f'crit_{criterion_type}_pa'] = np.nan
+
+            # na
+            if self.dataset in wb_items[1]["item_names"]:
+                na_items = wb_items[1]["item_names"][self.dataset]
+                df[f'crit_{criterion_type}_na'] = df[na_items].mean(axis=1)
+            else:
+                na_items = None
+                df[f'crit_{criterion_type}_na'] = np.nan
+
+            # wb
+            scale_min = wb_items[1]["scale_endpoints"]["min"]
+            scale_max = wb_items[1]["scale_endpoints"]["max"]
+            if na_items:
+                df[f'{criterion_type}_na_tmp'] = self.inverse_code(df[na_items], min_scale=scale_min, max_scale=scale_max).mean(axis=1)
+                df[f'crit_{criterion_type}_wb'] = df[[f'crit_{criterion_type}_pa', f'{criterion_type}_na_tmp']].mean(axis=1)
+                df = df.drop([f'{criterion_type}_na_tmp'], axis=1)
+            else:
+                df[f'crit_{criterion_type}_wb'] = df[f'crit_{criterion_type}_pa']
+        return df
+
+    @staticmethod
+    def inverse_code(df: pd.DataFrame, min_scale: int, max_scale: int) -> pd.DataFrame:
+        """
+        Inverse codes the negative affect items by subtracting each value from the maximum value of the scale.
+
+        Args:
+            df (pd.DataFrame): The DataFrame containing the negative affect items.
+            min_scale (int): The minimum value of the scale.
+            max_scale (int): The maximum value of the scale.
+
+        Returns:
+            pd.DataFrame: DataFrame with inverse-coded negative affect items.
+        """
+        return max_scale + min_scale - df
+
+    def sanity_checking(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        This function executes several sanity checks using the Sa
+        Args:
+            df:
+
+        Returns:
+
+        """
+        self.sanity_checker.run_sanity_checks(df=df, dataset=self.dataset, df_before_final_sel=self.df_before_final_selection)
+        return df
+
+    def select_final_columns(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        This function selects the final columns that we include in the final dataframe. This includes
+            - person-level variables (pl)
+            - self-reported micro context (srmc)
+            # - sensed micro context (sensed) #> later
+            - macro context (macro)
+        It further adds a prefix so that we can more easy identify the columns
+
+        Args:
+            df: DataFrame containing the data with a subset of columns from different categories.
+
+        Returns:
+            pd.DataFrame: A filtered DataFrame with only the selected columns and prefixes added.
+        """
+
+        # Dictionary of column categories and their respective column lists
+        col_dct = {
+            "pl": self.fix_cfg["predictor_assignments"]["pl"],
+            'srmc': self.fix_cfg["predictor_assignments"]["srmc"],
+            'mac': self.fix_cfg["predictor_assignments"]["mac"],
+            'crit': self.fix_cfg["predictor_assignments"]["crit"]
+        }
+        self.logger.log(f"    predictor count for {self.dataset}")
+        # Initialize an empty DataFrame to hold the selected columns
+        final_df = pd.DataFrame()
+
+        # Loop over each category, check if columns exist in df, add the prefix, and concatenate to final_df
+        for prefix, columns in col_dct.items():
+            # Select columns that exist in df
+            selected_columns = [col for col in columns if col in df.columns]
+            self.logger.log(f"      n {prefix} column for {self.dataset}: {len(selected_columns)}")
+
+            # Add the prefix to the selected columns
+            renamed_columns = {col: f"{prefix}_{col}" for col in selected_columns}
+
+            # Filter and rename the selected columns in df
+            prefixed_df = df[selected_columns].rename(columns=renamed_columns)
+
+            # Concatenate the selected prefixed columns to the final DataFrame
+            final_df = pd.concat([final_df, prefixed_df], axis=1)
+
+        return final_df
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
