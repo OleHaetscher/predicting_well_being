@@ -55,8 +55,10 @@ class SanityChecker:
             (self.check_nans, {'df': None}),
             (self.check_dtypes, {'df': None}),
             (self.check_num_features, {'df': None, 'dataset': dataset}),
+            (self.check_num_rows, {'df': None, 'dataset': dataset}),
             (self.calc_reliability, {'df': df_before_final_sel, 'dataset': dataset}),
             (self.check_zero_variance, {'df': None}),
+            (self.check_scale_endpoints, {'df': None}),
             (self.calc_correlations, {'df': None}),
         ]
         for method, kwargs in sanity_checks:
@@ -75,7 +77,8 @@ class SanityChecker:
         Returns:
 
         """
-        self.logger.log(f"    Executing {method.__name__}")
+        self.logger.log(".")
+        self.logger.log(f"Executing {method.__name__}")
         return method(*args, **kwargs)
 
     def check_nans(self, df: pd.DataFrame) -> None:
@@ -84,16 +87,18 @@ class SanityChecker:
         """
         nan_thresh = self.cfg_sanity_checks["nan_thresh"]
 
+        self.logger.log(f"  Check if some columns have a certain percentage of NaNs")
         nan_per_col_summary = df.isna().mean()
         for col, nan_ratio_col in nan_per_col_summary.items():
             if nan_ratio_col > nan_thresh:
-                self.logger.log("""""")
-                self.logger.log(f" WARNING: Column '{col}' has more than {nan_thresh * 100}% NaNs.")
+                self.logger.log(f"  WARNING: Column '{col}' has more than {nan_thresh * 100}% NaNs.")
 
+        self.logger.log(".")
+        self.logger.log(f"  Check if some rows contain a certain percentage of NaNs")
         nan_per_row_summary = df.isna().mean(axis=1)
         for row, nan_ratio_row in nan_per_row_summary.items():
             if nan_ratio_row > nan_thresh:
-                self.logger.log(f"WARNING: Row '{row}' has more than {nan_thresh * 100}% NaNs.")
+                self.logger.log(f"  WARNING: Row '{row}' has more than {nan_thresh * 100}% NaNs.")
 
     def check_dtypes(self, df: pd.DataFrame) -> None:
         """
@@ -105,13 +110,16 @@ class SanityChecker:
         Returns:
 
         """
+        self.logger.log("  Check if all dtypes are numeric")
         for col, dtype in df.dtypes.items():
             if not pd.api.types.is_numeric_dtype(dtype):
-                self.logger.log(f"WARNING: Column '{col}' has non-numeric dtype: {dtype}, try to convert")
+                self.logger.log(f"  WARNING: Column '{col}' has non-numeric dtype: {dtype}, try to convert")
+                df[col] = df[col].replace("not_a_number", np.nan)
                 try:
-                    df[col] = pd.to_numeric(df[col], errors='coerce')
+                    df[col] = pd.to_numeric(df[col])
+                    self.logger.log(f"  Conversion successful for column '{col}'")
                 except ValueError:
-                    self.logger.log(f"WARNING: Conversion was not successful.")
+                    self.logger.log(f"  WARNING: Conversion was not successful.")
 
     def check_num_features(self, df: pd.DataFrame, dataset: str) -> None:
         """
@@ -124,11 +132,26 @@ class SanityChecker:
 
         Returns:
         """
+        self.logger.log("  Check if the number of features correspond to the PreReg")
         num_cols_expected = self.cfg_sanity_checks["number_of_features"][dataset]
+        self.log_num_features_per_cat(df, dataset)  # do it either way to check unexpected things
         if len(df.columns) != num_cols_expected:
-            self.logger.log(f"WARNING: Number of columns in PreReg: {num_cols_expected} Number of columns in df: {len(df.columns)}")
-            self.log_num_features_per_cat(df, dataset)
-            # raise AssertionError("Number of columns in PreReg: ", num_cols_expected, "Number of columns in df: ", len(df.columns))
+            self.logger.log(f"  WARNING: Number of columns in PreReg: {num_cols_expected} Number of columns in df: {len(df.columns)}")
+        else:
+            self.logger.log(f"  Number of columns in PreReg corresponds to number of columns in data")
+
+    def check_num_rows(self, df: pd.DataFrame, dataset: str) -> None:
+        """
+
+        Args:
+            df:
+            dataset:
+
+        Returns:
+
+        """
+        self.logger.log("  Check if the number of rows is reasonable")
+        self.logger.log(f"  Num rows of df for {dataset}: {len(df)}")
 
     def log_num_features_per_cat(self, df: pd.DataFrame, dataset: str) -> None:
         """
@@ -141,13 +164,22 @@ class SanityChecker:
 
         Returns:
         """
-        for cat in ["pl", "srmc", "mac"]:   # later add "sensing"
-            col_lst_per_cat = [f"{cat}_{col}" for col in self.cfg_fix["predictor_assignments"][cat]]
+        features_cats = ["pl", "srmc"]
+        if dataset == "cocoesm":
+            features_cats.append("mac")
+        # if dataset in ["coco_ms", "zpid"]:
+            # cats.append("sens")
+        for cat in features_cats:
+            col_lst_per_cat = [f"{cat}_{col}" for col in self.cfg_fix["var_assignments"][cat]]
             cols_in_df = [col for col in df.columns if col in col_lst_per_cat]
             cols_not_in_df = set(col_lst_per_cat) - set(cols_in_df)
-            self.logger.log(f"Number of columns for feature category {cat}: {len(cols_in_df)}")
-            self.logger.log(f"Cols not in df but in col lst in config: {cols_not_in_df}")
-            # Could also print the diverging columns? But would require more concrete assignment
+            cols_not_in_cfg = set(cols_in_df) - set(col_lst_per_cat)
+            self.logger.log(f"    Number of columns for feature category {cat}: {len(cols_in_df)}")
+            self.logger.log(f"    Cols not in df but in col lst in config: {cols_not_in_df}")
+            self.logger.log(f"    Cols not in cfg list but in df: {cols_not_in_cfg}")
+            self.logger.log(f"    Cols in df: ")
+            for i in cols_in_df:
+                self.logger.log(f"                     {i}")
 
     def check_scale_endpoints(self, df: pd.DataFrame) -> None:
         """
@@ -160,15 +192,18 @@ class SanityChecker:
         Returns:
 
         """
+        self.logger.log("  Check if their are numerical values outside the defined scale endpoints in certain columns")
         errors = []  # To collect any errors found
 
         for meta_cat in ["person_level", "esm_based"]:
             for cat, cat_entries in self.cfg_fix[meta_cat].items():
                 for var in cat_entries:
                     if 'scale_endpoints' in var:
-                        column_names = [i for i in df.columns if var['name'] in i]
+                        col_names_org = [col.split('_', 1)[1] if '_' in col else col for col in df.columns]
+                        column_names = [i for i in df.columns if i in col_names_org]
                         scale_min = var['scale_endpoints']['min']
                         scale_max = var['scale_endpoints']['max']
+                        print(var, scale_min, scale_max)
 
                         for col in column_names:
                             # Get the column values
@@ -179,18 +214,14 @@ class SanityChecker:
 
                             if not outside_values.empty:
                                 # Log the offending values
-                                self.logger.log(f"WARNING: Values out of scale bounds in column '{col}': {outside_values.tolist()}")
+                                self.logger.log(f"  WARNING: Values out of scale bounds in column '{col}': {outside_values.tolist()}")
                                 errors.append(
-                                    f"Column '{col}' contains values outside of scale endpoints {scale_min}-{scale_max}. "
-                                    f"Outliers: {outside_values.tolist()}")
+                                    f"  Column '{col}' contains values outside of scale endpoints {scale_min}-{scale_max}. "
+                                    f"  Outliers: {outside_values.tolist()}")
 
                 # Raise an assertion error if any issues were found
                 if errors:
                     raise AssertionError("Scale validation failed:\n" + "\n".join(errors))
-        """
-        Placeholder for calculating scale reliability, correlations, etc.
-        """
-        self.logger.info("Calculating statistics...")
 
     def check_zero_variance(self, df: pd.DataFrame) -> None:
         """
@@ -202,6 +233,7 @@ class SanityChecker:
         Returns:
             None: Logs the columns with zero variance but doesn't return any value.
         """
+        self.logger.log("  Check if there are columns with zero variance")
         zero_variance_columns = []
 
         # Iterate through each column in the DataFrame
@@ -210,7 +242,7 @@ class SanityChecker:
                 zero_variance_columns.append(column)
 
         if zero_variance_columns:
-            self.logger.log(f"WARNING: Columns with zero variance: {zero_variance_columns}")
+            self.logger.log(f"  WARNING: Columns with zero variance: {zero_variance_columns}")
 
     def calc_reliability(self, df: pd.DataFrame, dataset: str) -> None:
         """
@@ -223,28 +255,37 @@ class SanityChecker:
         Returns:
             None
         """
+        self.logger.log("  Check if there are scales with unexpected low reliability")
         # Get all scale entries with the 'scale_endpoints' key
         scale_entries = self.config_parser_class.find_key_in_config(cfg=self.cfg_fix, key="scale_endpoints")
 
         for scale in scale_entries:
             scale_name = scale['name']
-            item_names = scale["item_names"][dataset]
+            print(scale_name)
+            if dataset in scale["item_names"]:
+                item_names = scale["item_names"][dataset]
 
-            if len(item_names) < 2:
+                if isinstance(item_names, str):
+                    continue
+
+                if isinstance(item_names, list):
+                    if len(item_names) < 2:
+                        continue
+
+                # Extract the relevant columns (items) from the DataFrame
+                items_df = df[item_names].dropna()
+
+                # Calculate Cronbach's alpha
+                alpha = pg.cronbach_alpha(data=items_df)[0]
+                if np.isnan(alpha):
+                    self.logger.log(f"  Not enough items to calculate Cronbach's alpha for {scale_name} in {dataset}.")
+                    continue
+
+                # Log only if Cronbach's alpha is below the threshold
+                if alpha < self.cfg_sanity_checks["cron_alpha_thresh"]:
+                    self.logger.log(f"  Low reliability (Cronbach's alpha = {alpha:.3f}) for {scale_name} in {dataset}.")
+            else:
                 continue
-
-            # Extract the relevant columns (items) from the DataFrame
-            items_df = df[item_names].dropna()
-
-            # Calculate Cronbach's alpha
-            alpha = pg.cronbach_alpha(data=items_df)[0]
-            if np.isnan(alpha):
-                self.logger.log(f"Not enough items to calculate Cronbach's alpha for {scale_name} in {dataset}.")
-                continue
-
-            # Log only if Cronbach's alpha is below the threshold
-            if alpha < self.cfg_sanity_checks["cron_alpha_thresh"]:
-                self.logger.log(f"Low reliability (Cronbach's alpha = {alpha:.3f}) for {scale_name} in {dataset}.")
 
     def calc_correlations(self, df: pd.DataFrame) -> None:
         """
@@ -256,8 +297,11 @@ class SanityChecker:
         Returns:
             None
         """
-        dataset_spec_cols = [col for col in df.columns if col in self.cfg_sanity_checks["expected_pos_corrs"]]
-        corr_table = df[dataset_spec_cols].corr()
+        self.logger.log("  Check if there are some unexpected correlations")
+        df_cols_adjusted = df.copy()
+        df_cols_adjusted.columns = [col.split('_', 1)[1] if '_' in col else col for col in df.columns]
+        dataset_spec_cols = [col for col in df_cols_adjusted.columns if col in self.cfg_sanity_checks["expected_pos_corrs"]]
+        corr_table = df_cols_adjusted[dataset_spec_cols].corr()
 
         # Iterate through the correlation matrix and find negative correlations
         negative_correlations = []
@@ -270,4 +314,4 @@ class SanityChecker:
         # Log any negative correlations
         if negative_correlations:
             for col1, col2, corr in negative_correlations:
-                self.logger.log(f"Negative correlation detected between '{col1}' and '{col2}': {corr:.3f}")
+                self.logger.log(f"  WARNING: Negative correlation detected between '{col1}' and '{col2}': {corr:.3f}")

@@ -1,5 +1,6 @@
 import re
 from copy import deepcopy
+from datetime import timedelta
 
 import numpy as np
 import pandas as pd
@@ -18,6 +19,14 @@ class CocomsPreprocessor(BasePreprocessor):
         """
         super().__init__(fix_cfg, var_cfg)
         self.dataset = "cocoms"
+        self.relationship = None  # will be assigned and holded
+        self.work_conversations = None
+        self.personal_conversations = None
+        self.societal_conversations = None
+
+        # Track persons that are in multiple waves
+        self.person_in_two_waves = None
+        self.person_in_three_waves = None
 
     def merge_traits(self, df_dct):
         df_dct_proc = self.cocoms_processing_before_merging(deepcopy(df_dct))
@@ -54,12 +63,6 @@ class CocomsPreprocessor(BasePreprocessor):
         df_dct["data_esm_w2"] = df_w2
         df_dct["data_esm_w3"] = df_w3
         return df_dct
-
-
-
-
-
-
 
     def merge_states(self, df_dct):
         esm_dfs = [df for key, df in df_dct.items() if 'esm' in key]
@@ -113,8 +116,6 @@ class CocomsPreprocessor(BasePreprocessor):
 
         df_traits.columns = updated_columns
 
-        test = df_traits["hex_60_01"].value_counts(dropna=False)
-
         # Check for duplicates after renaming
         assert len(df_traits.columns) == len(set(df_traits.columns)), "Duplicate column names found after renaming!"
 
@@ -150,6 +151,7 @@ class CocomsPreprocessor(BasePreprocessor):
         df_states = self.create_close_interactions(df_states=df_states)
         df_states = self.create_conversation_topic_columns(df_states=df_states)
         df_states = self.create_relationship(df_states=df_states)
+        df_states = self.adjust_number_interactions_col(df_states=df_states)
         return df_states
 
     def create_close_interactions(self, df_states: pd.DataFrame) -> pd.DataFrame:
@@ -208,6 +210,8 @@ class CocomsPreprocessor(BasePreprocessor):
         df_states.loc[df_states['studyWave'] == 2, 'close_interactions'] = np.nan
 
         df_states['close_interactions'] = df_states['unique_id'].map(interaction_stats)
+
+        self.close_interactions = deepcopy(df_states[['close_interactions', self.raw_esm_id_col]].drop_duplicates(keep="first"))
         return df_states
 
     def create_conversation_topic_columns(self, df_states: pd.DataFrame) -> pd.DataFrame:
@@ -260,8 +264,6 @@ class CocomsPreprocessor(BasePreprocessor):
             )
             df_states[conversation_type] = np.where(topic_mask, 1, np.where(other_mask, 0, np.nan))
             cols = [i for i in df_states.columns if "selection_topics" in i] + [conversation_type, "unique_id"]
-            test = df_states[cols]
-            print()
 
         # the topics were only assessed in wave1
         df_states.loc[df_states['studyWave'] != 1, ['work_conversations', 'personal_conversations',
@@ -274,6 +276,9 @@ class CocomsPreprocessor(BasePreprocessor):
             )
             df_states[col] = df_states['unique_id'].map(interaction_stats)
 
+        self.work_conversations = deepcopy(df_states[["work_conversations", self.raw_esm_id_col]].drop_duplicates(keep="first"))
+        self.personal_conversations = deepcopy(df_states[["personal_conversations", self.raw_esm_id_col]].drop_duplicates(keep="first"))
+        self.societal_conversations = deepcopy(df_states[["societal_conversations", self.raw_esm_id_col]].drop_duplicates(keep="first"))
         return df_states
 
     def create_relationship(self, df_states: pd.DataFrame) -> pd.DataFrame:
@@ -327,4 +332,65 @@ class CocomsPreprocessor(BasePreprocessor):
             else:
                 raise KeyError(f"Column {ia_partner_col} not in {self.dataset}")
 
+        self.relationship = deepcopy(df_states[["relationship", self.raw_esm_id_col]].drop_duplicates(keep="first"))
         return df_states
+
+    def adjust_number_interactions_col(self, df_states: pd.DataFrame) -> pd.DataFrame:
+        """
+        Adjusts the 'selection_medium_00' column based on the time difference between
+        'time_social_interaction' and the questionnaire time ('self.esm_timestamp').
+        If the interaction occurred more than one hour before the questionnaire, the
+        corresponding value in 'selection_medium_00' will be set to 0.
+
+        The 'time_social_interaction' column is in fractional hours format (e.g., 16.75 = 16:45),
+        and the 'questionnaireStartedTimestamp' is the time the survey was started.
+
+        Args:
+            df_states (pd.DataFrame): DataFrame containing the following columns:
+                - 'questionnaireStartedTimestamp': The timestamp when the questionnaire was started.
+                - 'time_social_interaction': Time of the interaction, represented in fractional hours.
+                - 'selection_medium_00': Column indicating if an interaction took place (1 for yes, 0 for no).
+
+        Returns:
+            pd.DataFrame: The adjusted DataFrame with updated 'selection_medium_00' column.
+        """
+
+        # Ensure 'questionnaireStartedTimestamp' is in datetime format and fix format differences (remove milliseconds)
+        df_states[self.esm_timestamp] = df_states[self.esm_timestamp].apply(lambda x: x.split('.')[0] if isinstance(x, str) else x)
+        df_states[f"{self.esm_timestamp}_dt"] = pd.to_datetime(df_states[self.esm_timestamp])
+
+        # Convert 'questionnaireStartedTimestamp' to Timedelta (hours, minutes, seconds of the day)
+        df_states['esm_timedelta'] = df_states[f"{self.esm_timestamp}_dt"].dt.hour * 3600 + \
+                                     df_states[f"{self.esm_timestamp}_dt"].dt.minute * 60 + \
+                                     df_states[f"{self.esm_timestamp}_dt"].dt.second
+        df_states['esm_timedelta'] = pd.to_timedelta(df_states['esm_timedelta'], unit='s')
+
+        # Convert 'time_social_interaction' from fractional hours to a timedelta object
+        df_states['interaction_time'] = df_states['time_social_interaction'].apply(
+            lambda x: timedelta(hours=int(x), minutes=int((x % 1) * 60)) if pd.notna(x) else pd.NaT
+        )
+
+        # Adjust 'selection_medium_00' based on whether the interaction happened within 1 hour of the questionnaire
+        df_states['selection_medium_00'] = df_states.apply(
+            lambda row: 1 if (row['esm_timedelta'] - row['interaction_time']) > timedelta(hours=1)
+            else row['selection_medium_00'],
+            axis=1
+        )
+        return df_states
+
+    def dataset_specific_post_processing(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        No custom adjustments necessary in cocoesm.
+
+        Args:
+            df:
+
+        Returns:
+            pd.DataFrame
+        """
+        df = df.merge(self.relationship, on=self.raw_esm_id_col, how="left")
+        df = df.merge(self.close_interactions, on=self.raw_esm_id_col, how="left")
+        df = df.merge(self.work_conversations, on=self.raw_esm_id_col, how="left")
+        df = df.merge(self.personal_conversations, on=self.raw_esm_id_col, how="left")
+        df = df.merge(self.societal_conversations, on=self.raw_esm_id_col, how="left")
+        return df

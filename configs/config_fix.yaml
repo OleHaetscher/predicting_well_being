@@ -1,11 +1,10 @@
-# TODO: Reliability checks / correlations / etc before computing the ML-BASED Analysis
 person_level:
   other_trait_columns:
     - name: id_col
       var_type: continuous
       item_names:
         cocoesm: participant
-        cocoms: unique_id # unique id -> person-id matching across waves
+        cocoms: original_id # unique id PreReg: Report why original ID -> TODO: keep somehow track
         cocout: id
         emotions: id
         pia: id
@@ -24,6 +23,11 @@ person_level:
     - name: wave
       item_names:
         cocoms: studyWave
+
+    # we need to track this for the machine learning part
+    - name: unique_col_id
+      item_names:
+        cocoms: unique_id
 
     - name: time_col  # only for cocoesm to merge the country-level vars
       item_names:
@@ -46,11 +50,11 @@ person_level:
         cocoms: [ bfi_e01, bfi_e04, bfi_e07, bfi_e10 ] # 1-5
       }
       items_to_recode: {
-        emotions: [ bfi2s_1, bfi2s_16 ],
+        emotions: [ bfi2s_1],
         zpid: [BFI_2XS_E1],
         cocout: [ Q1_16_bfi, Q1_31_bfi ],
         pia: [ bfi2_16, bfi2_31 ],
-        cocoesm: [ bfi2_16, bfi2_31 ],
+        # cocoesm: [ bfi2_16, bfi2_31 ],
         cocoms: [ bfi_e04, bfi_e07 ]
       }
       scale_endpoints: # in all samples and all BFI variables
@@ -74,7 +78,7 @@ person_level:
         zpid: [ ],
         cocout: [ Q1_36_bfi, Q1_51_bfi ],
         pia: [  bfi2_36, bfi2_51 ],
-        cocoesm: [ bfi2_36, bfi2_51 ],
+        # cocoesm: [ bfi2_36, bfi2_51 ],
         cocoms: [ bfi_e08, bfi_e11 ]
       }
       scale_endpoints:
@@ -97,8 +101,8 @@ person_level:
         emotions: [ bfi2s_26 ],
         zpid: [ ],
         cocout: [ Q1_11_bfi, Q1_26_bfi ],
-        pia: [ bfi2_1, bfi2_26 ],
-        cocoesm: [ bfi2_1, bfi2_26 ],
+        pia: [ bfi2_11, bfi2_26 ],
+        # cocoesm: [ bfi2_1, bfi2_26 ],
         cocoms: [ bfi_e03, bfi_e06 ]
       }
       scale_endpoints:
@@ -122,7 +126,7 @@ person_level:
         zpid: [ ],
         cocout: [ Q1_17_bfi, Q1_47_bfi ],
         pia: [ bfi2_17, bfi2_47 ],
-        cocoesm: [ bfi2_17, bfi2_47 ],
+        # cocoesm: [ bfi2_17, bfi2_47 ],
         cocoms: [ bfi_a04, bfi_a10 ]
       }
       scale_endpoints:
@@ -146,7 +150,7 @@ person_level:
         zpid: [ BFI_2XS_A2 ],
         cocout: [ Q1_22_bfi, Q1_37_bfi ],
         pia: [ bfi2_22, bfi2_37 ],
-        cocoesm: [ bfi2_22, bfi2_37 ],
+        # cocoesm: [ bfi2_22, bfi2_37 ],
         cocoms: [ bfi_a05, bfi_a08, ]
       }
       scale_endpoints:
@@ -170,7 +174,7 @@ person_level:
         zpid: [ ],
         cocout: [ Q1_12_bfi, Q1_42_bfi],
         pia: [ bfi2_12, bfi2_42  ],
-        cocoesm: [ bfi2_12, bfi2_42  ],
+        # cocoesm: [ bfi2_12, bfi2_42  ],
         cocoms: [ bfi_a03, bfi_a09  ]
       }
       scale_endpoints:
@@ -194,7 +198,7 @@ person_level:
         zpid: [ BFI_2XS_C1 ],
         cocout: [ Q1_3_bfi, Q1_48_bfi ],
         pia: [ bfi2_3, bfi2_48 ],
-        cocoesm: [ bfi2_3, bfi2_48 ],
+        # cocoesm: [ bfi2_3, bfi2_48 ],
         cocoms: [ bfi_c01, bfi_c10 ]
       }
       scale_endpoints:
@@ -214,11 +218,11 @@ person_level:
         cocoms: [ bfi_c02, bfi_c05, bfi_c08, bfi_c11 ]
       }
       items_to_recode: {
-        emotions: [ bfi2s_8, bfi2s_23 ],
+        emotions: [ bfi2s_8 ],
         zpid: [ BFI_2XS_C2 ],
         cocout: [ Q1_8_bfi, Q1_23_bfi ],
         pia: [ bfi2_8, bfi2_23 ],
-        cocoesm: [ bfi2_8, bfi2_23 ],
+        # cocoesm: [ bfi2_8, bfi2_23 ],
         cocoms: [ bfi_c02, bfi_c05 ]
       }
       scale_endpoints:
@@ -242,7 +246,7 @@ person_level:
         zpid: [ ],
         cocout: [ Q1_28_bfi, Q1_58_bfi ],
         pia: [ bfi2_28, bfi2_58 ],
-        cocoesm: [ bfi2_28, bfi2_58 ],
+        # cocoesm: [ bfi2_28, bfi2_58 ],
         cocoms: [ bfi_c06, bfi_c12]
       }
       scale_endpoints:
@@ -266,7 +270,7 @@ person_level:
         zpid: [ ],
         cocout: [ Q1_4_bfi, Q1_49_bfi  ],
         pia: [ bfi2_4, bfi2_49  ],
-        cocoesm: [ bfi2_4, bfi2_49  ],
+        # cocoesm: [ bfi2_4, bfi2_49  ],
         cocoms: [ bfi_n01, bfi_n10 ]
       }
       scale_endpoints:
@@ -290,7 +294,7 @@ person_level:
         zpid: [ ],
         cocout: [ Q1_9_bfi, Q1_24_bfi ],
         pia: [ bfi2_9, bfi2_24 ],
-        cocoesm: [ bfi2_9,bfi2_24 ],
+        # cocoesm: [ bfi2_9,bfi2_24 ],
         cocoms: [ bfi_n02, bfi_n05 ]
       }
       scale_endpoints:
@@ -314,7 +318,7 @@ person_level:
         zpid: [ BFI_2XS_N3 ],
         cocout: [ Q1_29_bfi, Q1_44_bfi ],
         pia: [ bfi2_29, bfi2_44 ],
-        cocoesm: [ bfi2_29, bfi2_44 ],
+        # cocoesm: [ bfi2_29, bfi2_44 ],
         cocoms: [ bfi_n06, bfi_n09 ]
       }
       scale_endpoints:
@@ -338,7 +342,7 @@ person_level:
         zpid: [ BFI_2XS_O2 ],
         cocout: [ Q1_25_bfi, Q1_55_bfi ],
         pia: [ bfi2_25, bfi2_55 ],
-        cocoesm: [ bfi2_25, bfi2_55 ],
+        # cocoesm: [ bfi2_25, bfi2_55 ],
         cocoms: [ bfi_o05, bfi_o11 ]
       }
       scale_endpoints:
@@ -362,7 +366,7 @@ person_level:
         zpid: [ ],
         cocout: [ Q1_5_bfi, Q1_50_bfi ],
         pia: [ bfi2_5, bfi2_50 ],
-        cocoesm: [ bfi2_5, bfi2_50 ],
+        # cocoesm: [ bfi2_5, bfi2_50 ],
         cocoms: [ bfi_o01, bfi_o10 ]
       }
       scale_endpoints:
@@ -384,9 +388,9 @@ person_level:
       items_to_recode: {
         emotions: [ bfi2s_30 ],
         zpid: [ ],
-        cocout: [ Q1_30_bfi, Q1_60_bfi ],
+        cocout: [ Q1_30_bfi, Q1_45_bfi ],
         pia: [ bfi2_30, bfi2_45 ],
-        cocoesm: [ bfi2_30, bfi2_45 ],
+        # cocoesm: [ bfi2_30, bfi2_45 ],
         cocoms: [ bfi_o06, bfi_o09 ]
       }
       scale_endpoints:
@@ -405,7 +409,7 @@ person_level:
       items_to_recode: {
         emotions: [ hex60_5 ],
         cocout: [hex60_5 ],
-        cocoesm: [hex60_5 ],
+        # cocoesm: [hex60_5 ],
         cocoms: [hex_60_05 ]
       }
       scale_endpoints: # in all samples and all BFI variables
@@ -424,7 +428,7 @@ person_level:
       items_to_recode: {
         emotions: [ hex60_2, hex60_10 ],
         cocout: [ hex60_2, hex60_10 ],
-        cocoesm: [ hex60_2, hex60_10 ],
+        # cocoesm: [ hex60_2, hex60_10 ],
         cocoms: [ hex_60_02, hex_60_10 ],
       }
       scale_endpoints:
@@ -443,7 +447,7 @@ person_level:
       items_to_recode: {
         emotions: [ hex60_7 ],
         cocout: [ hex60_7 ],
-        cocoesm: [ hex60_7 ],
+        # cocoesm: [ hex60_7 ],
         cocoms: [ hex_60_07 ],
       }
       scale_endpoints:
@@ -462,7 +466,7 @@ person_level:
       items_to_recode: {
         emotions: [hex60_4, hex60_8],
         cocout: [hex60_4, hex60_8],
-        cocoesm: [hex60_4, hex60_8],
+        # cocoesm: [hex60_4, hex60_8],
         cocoms: [hex_60_04, hex_60_08],
       }
       scale_endpoints:
@@ -531,7 +535,7 @@ person_level:
       items_to_recode: {
         emotions: [uls_3, uls_5, uls_7],
         cocout: [uls_3, uls_5, uls_7],
-        cocoesm: [loneliness_3, loneliness_5, loneliness_7],
+        # cocoesm: [loneliness_3, loneliness_5, loneliness_7],
         cocoms: [loneliness_3, loneliness_5, loneliness_7],
       }
       align_scales_mapping:
@@ -554,7 +558,7 @@ person_level:
       items_to_recode: {
         emotions: [uls_2, uls_6, uls_9],
         cocout: [uls_2, uls_6, uls_9],
-        cocoesm: [loneliness_2, loneliness_6, loneliness_9],
+        # cocoesm: [loneliness_2, loneliness_6, loneliness_9],
         cocoms: [loneliness_2, loneliness_6, loneliness_9],
       }
       align_scales_mapping:
@@ -597,14 +601,11 @@ person_level:
         zpid: [Demo_GL2], # 1 nicht wichtig, 4 wichtig, # -> 5 keine Angabe -> handled in "replace_values" in ZpidPreprocessor
         cocout: [Q20_dem],  # 1 not at all religious, 5 extremly religious
         cocoesm: [religiosity],  # 1 not at all religiouss, 10 extremly religious
-        cocoms: [religiosity],  # -5 not at all religious, 5 extremly religious
+        cocoms: [religiosity],  # 1 - 10 in data  -> In Codebook, it is -5 not at all religious, 5 extremly religious
       }
       align_scales_mapping:
         coco_ut:
           min: { 1: 1 }
-          max: { 5: 10 }
-        cocoms:
-          min: { -5: 1 }
           max: { 5: 10 }
         zpid:
           min: { 1: 1}
@@ -646,6 +647,7 @@ person_level:
           }
 
     - name: social_status
+      var_type: continuous
       ques: { zpid: 1item, cocout: 1item, cocoesm: 1item, cocoms: 1item}
       item_names: {
         zpid: [Demo_SSS1],  # 1 lowest - 10 highest
@@ -662,7 +664,7 @@ person_level:
       ques: { emotions: cmq, cocout: cmq, cocoesm: cmq, cocoms: cmq }
       item_names: {
         emotions: [cmq_1, cmq_2, cmq_3, cmq_4, cmq_5], # 1 - 11
-        cocout: [cms_1, cms_2, cms_3, cms_4, cms_5], # 1 - 11
+        cocout: [cmq_1, cmq_2, cmq_3, cmq_4, cmq_5], # 1 - 11
         cocoesm: [cmq_1, cmq_2, cmq_3, cmq_4, cmq_5], # 1 - 10
         cocoms: [cmq_1, cmq_2, cmq_3, cmq_4, cmq_5], # 1 - 10
       }
@@ -683,14 +685,11 @@ person_level:
       item_names: {
         cocout: [tig_1], # 1 never, 5 always
         cocoesm: [trust_government], # 1 not at all, 10 fully  # Reference
-        cocoms: [trust_government],  # -5 not trusted, 5 trusted
+        cocoms: [trust_government],  # # 1 - 10 in data  -> In Codebook, it is -5 not trusted - 5 trusted
       }
       align_scales_mapping:
         cocout:
           min: { 1: 1 }
-          max: { 5: 10 }
-        cocoms:
-          min: { -5: 1 }
           max: { 5: 10 }
       scale_endpoints:
         min: 1
@@ -742,7 +741,7 @@ person_level:
       }
       items_to_recode: {
         cocout: [sdo_3 ],
-        cocoesm: [ sdo_3, sdo_4 ],
+        cocoesm: [sdo_3, sdo_4 ],
         cocoms: [ sdo_3, sdo_4 ],
       }
       scale_endpoints:
@@ -759,7 +758,7 @@ person_level:
       }
       items_to_recode: {
         cocout: [ sdo_2 ],
-        cocoesm: [ sdo_7, sdo_8 ],
+        cocoesm: [sdo_7, sdo_8 ],
         cocoms: [ sdo_7, sdo_8 ],
       }
       scale_endpoints:
@@ -1011,7 +1010,7 @@ person_level:
         cocoesm: age
         cocoms: age
 
-    - name: gender_male # 1 male / 0 not male
+    - name: gender # 1 male / 0 female
       var_type: binary
       item_names:
         emotions: gender # 1 female, 2 male, 3 other
@@ -1021,29 +1020,12 @@ person_level:
         cocoesm: sex # 1 female, 2 male, 3 other
         cocoms: sex # 1 female, 2 male, 3 other
       category_mappings:
-        emotions: {2: 1}  # {1: 0, 2: 1, 3: 0}
-        zpid: {1: 1}  # {1: 1, 2: 0, 3: 0}
-        cocout: {1: 1}  # {1: 1, 2: 0, 3: 0}
-        pia: {2: 1}  # {1: 0, 2: 1, 3: 0}
-        cocoesm: {2: 1}  # {1: 0, 2: 1, 3: 0}
-        cocoms: {2: 1}  # {1: 0, 2: 1, 3: 0}
-
-    - name: gender_female  # 1 female / 0 not female
-      var_type: binary
-      item_names:
-        emotions: gender # 1 female, 2 male, 3 other
-        zpid: Demo_GE1 # 1 male, 2 female, 3 other
-        cocout: Q1_dem # 1 male, 2 female, 3 other
-        pia: gender  # gender_o, gender_t1? # 1 female, 2 male, 3 other
-        cocoesm: sex # 1 female, 2 male, 3 other
-        cocoms: sex # 1 female, 2 male, 3 other
-      category_mappings:
-        emotions: { 1: 1}
-        zpid: {2: 1}
-        cocout: {2: 1}
-        pia: { 1: 1}
-        cocoesm: { 1: 1}
-        cocoms: { 1: 1}
+        emotions: {2: 1, 3: "not_a_number"}  # {1: 0, 2: 1, 3: 0}
+        zpid: {1: 1, 3: "not_a_number"}  # {1: 1, 2: 0, 3: 0}
+        cocout: {1: 1, 3: "not_a_number"}  # {1: 1, 2: 0, 3: 0}
+        pia: {2: 1, 3: "not_a_number"}  # {1: 0, 2: 1, 3: 0}
+        cocoesm: {2: 1, 3: "not_a_number"}  # {1: 0, 2: 1, 3: 0}
+        cocoms: {2: 1, 3: "not_a_number"}  # {1: 0, 2: 1, 3: 0}
 
     ## Professional Status - Categories
     # emotions:  1 (in school); 2 (at university); 3 (in vocational training); 4 (completing voluntary national service/voluntary military service); 5 (full-time employment); 6 (part-time employment); 7 (self-employed); 8 (full-time parental leave/care leave/full-time homemaker); 9 (unemployed/looking for work); 10 (retired)
@@ -1058,14 +1040,14 @@ person_level:
       item_names:
         emotions: occupational_status
         zpid: Demo_AL1
-        coco_ut: professional_status
+        cocout: professional_status
         pia: occupational_status # Abweichung vom Codebook
         cocoesm: professional_status
         cocoms: professional_status_student
       category_mappings:
         emotions: {1: 1, 2: 1} # 1, 2
         zpid: {9: 1, 10: 1} # 9, 10
-        coco_ut: { 1: 1 }
+        cocout: { 1: 1 }
         pia: { 1: 1, 2: 1 } # 1, 2
         cocoesm: { 1: 1, 2: 1 } # 1, 2
         cocoms: { 1: 1, 2: 1 } # 1, 2
@@ -1075,14 +1057,14 @@ person_level:
       item_names:
         emotions: occupational_status
         zpid: Demo_AL1  # PreReg -> No differentation between part- and full time in ZPID -> count "Angesteller" / "beamter" as full-time
-        coco_ut: professional_status # separately created
+        #cocout: professional_status # separately created
         pia: occupational_status
         cocoesm: professional_status
         cocoms: professional_status
       category_mappings:
         emotions: { 5: 1 } # 5
         zpid: { 1: 1, 3: 1 } # 3, 1
-        coco_ut: {}
+        #cocout: {}
         pia: { 5: 1} # 5
         cocoesm: { 4: 1 } # 4
         cocoms: { 4: 1 } # 4
@@ -1091,13 +1073,13 @@ person_level:
       var_type: binary
       item_names:
         emotions: occupational_status
-        coco_ut: professional_status # needs to be created
+        #cocout: professional_status # needs to be created
         pia: occupational_status
         cocoesm: professional_status
         cocoms: professional_status
       category_mappings:
         emotions: {6: 1} # 6
-        coco_ut: {}
+        #cocout: {}
         pia: { 6: 1 } # 6
         cocoesm: { 5: 1 } # 5
         cocoms: { 5: 1} # 5
@@ -1107,14 +1089,14 @@ person_level:
       item_names:
         emotions: occupational_status
         zpid: Demo_AL1
-        coco_ut: professional_status # needs to be created
+        #cocout: professional_status # needs to be created
         pia: occupational_status
         cocoesm: professional_status
         cocoms: professional_status
       category_mappings:
         emotions: { 7: 1} # 7
         zpid: { 2: 1} # 2
-        coco_ut: {}
+        #cocout: {}
         pia: { 7: 1} # 7
         cocoesm: {  6: 1} # 6
         cocoms: { 6: 1 } # 6
@@ -1124,14 +1106,14 @@ person_level:
       item_names:
         emotions: occupational_status
         zpid: Demo_AL1
-        coco_ut: professional_status # needs to be created
+        #cocout: professional_status # needs to be created
         pia: occupational_status
         cocoesm: professional_status
         cocoms: professional_status
       category_mappings:
         emotions: {9: 1} # 9
         zpid: {12: 1, 13: 1 } # 12, 13
-        coco_ut: {}
+        #cocout: {}
         pia: {9: 1} # 9
         cocoesm: {8: 1} # 8
         cocoms: {8: 1} # 8
@@ -1176,7 +1158,7 @@ person_level:
       category_mappings:
         emotions: {1: 1} # 1 == no other person in household
         zpid: {1: 1}
-        cocout: {0: 1}
+        cocout: {0: 1, 1: 1} # 1 == no other person in household, 0 would also be possible (free answer format)
         cocoesm: {1: 1} # 1 == no other person in household
         cocoms: {1: 1}
 
@@ -1217,7 +1199,7 @@ person_level:
         zpid: { 1: 1 }
         cocout: { 1: 1, 2: 1, 4: 1, 6: 1 }
         cocoesm: { 1: 1, 2: 1, 4: 1, 6: 1 }
-        cocoms: { 1: 1 }  # TODO TEST
+        cocoms: { 1: 1 }
 
     - name: relationship
       var_type: binary
@@ -1249,7 +1231,7 @@ esm_based:
       var_type: continuous
       item_names:
         cocoesm: participant
-        cocoms: unique_id
+        cocoms: original_id
         cocout: id
         emotions: id # id_for_merging in new dataset, there are currently lacking variables
         pia: id
@@ -1274,14 +1256,14 @@ esm_based:
         cocout: momentary_context_interaction_ema  # 1 yes, 2 no
         pia: social_interaction  # 1 yes, 2 no
         cocoesm: social_interaction  # 1 yes, 2 no
-        cocoms: selection_medium_00 # 0 = yes, 1 = no
+        cocoms: selection_medium_00 # 0 = yes, 1 = no   # PreReg: Explain extra processing with time column
       category_mappings: # 1 = interaction, 0 = no interaction
         emotions: { 1: 1}
         zpid: { 0: 1 }
         cocout: {1: 1 }
         pia: {1: 1 }
-        cocoesm:  {1: 1 }
-        cocoms:  {0: 1 }
+        cocoesm: {1: 1 }
+        cocoms: {0: 1 }
 
     - name: percentage_interactions  # just make method that computes 1 to 0 ratio
       var_type: percentage
@@ -1291,7 +1273,7 @@ esm_based:
         cocout: momentary_context_interaction_ema  # 1 yes, 2 no
         pia: social_interaction  # 1 yes, 2 no
         cocoesm: social_interaction  # 1 yes, 2 no
-        cocoms: selection_medium_00 # 0 = yes, 1 = no
+        cocoms: selection_medium_00 # 0 = yes, 1 = no   # PreReg: Explain extra processing with time column
       category_mappings: # 1 = interaction, 0 = no interaction
         emotions: { 1: 1 }
         zpid: { 0: 1 }
@@ -1324,7 +1306,7 @@ esm_based:
         cocout: {1: 0, 2: 0, 3: 1, 4: 1, 5: 0, 6: 1, 7: 0, 8: 0, 0: "not_a_number"}
         cocoesm: {1: 0, 2: 1, 3: 1, 4: 1, 5: 1, 6: 0, 7: 0, 8: 0, 9: 0}
       special_mappings:
-        cocoms: # In CoCo MS2, only dimensionally assessed, in CoCo MS1 and MS3 -> categorical vs binary columns
+        cocoms: # PreReg: In CoCo MS2, only dimensionally assessed, in CoCo MS1 and MS3 -> categorical vs binary columns
           wave1:
             close_ties: ['selection_partners_03', 'selection_partners_04', 'selection_partners_05', 'selection_partners_06']
             weak_ties: ['selection_partners_01', 'selection_partners_02', 'selection_partners_07', 'selection_partners_08', 'selection_partners_09']
@@ -1343,7 +1325,7 @@ esm_based:
         cocout: {1: 1, 2: 0, 3: 1, 4: 0, 5: 0, 6: 0, 7: 0 , 8: 0, 0: "not_a_number"}
         cocoesm: {1: 1, 2: 1, 3: 0, 4: 0, 5: 0, 6: 0, 7: 0, 8: 0, 9: 0}
       special_mappings:
-        cocoms: # only assessed in Wave1, on Wave 2 and 3 are only political topics assessed, thus no percentages can be computed
+        cocoms: # PreReg: only assessed in Wave1, on Wave 2 and 3 are only political topics assessed, thus no percentages can be computed
           wave1:
             work_columns: [selection_topics_01, selection_topics_02]
             other_columns: [selection_topics_03, selection_topics_04, selection_topics_05, selection_topics_06, selection_topics_07, selection_topics_08, selection_topics_09]
@@ -1391,12 +1373,11 @@ esm_based:
         pia: {1: 1}
         cocoesm: {1: 1}
 
-
-    - name: number_interaction_partners  # mean, sd, min, max
+    - name: number_interaction_partners  # mean, sd, min, max, no predefined endpoints
       var_type: continuous
       item_names:
         emotions: no_interactionpartner  # 1-5, passt
-        cocout: momentary_context_inperson_interact_ema  # only "outside household" and "in Person" -> Keine Zahlen -> NaN, in separater methode    # only assessed in CoCo UT2
+        cocout: momentary_context_inperson_interact_ema  # PreReg only "outside household" and "in Person" -> Keine Zahlen -> NaN, in separater methode    # only assessed in CoCo UT2
         cocoesm: interaction_quantity  # integer ohne constraints, passt
         cocoms: social_interaction  # integer ohne constraints, passt  # refers to all interactions since the last prompt
       special_mappings:
@@ -1409,6 +1390,9 @@ esm_based:
         zpid: Sleep_CSD8 # 5 sehr schlecht - 0 sehr gut in Codebook, 1-6 in data (schon richtig rum kodiert)
         cocoesm: sleep_quality  # 1-6
         cocoms: sleep_quality  # 1-6
+      scale_endpoints:
+        min: 1
+        max: 6
       #align_scales_mapping:
         #zpid:
         #  min: { 6: 1 }
@@ -1433,7 +1417,7 @@ esm_based:
       item_names:
         # zpid: -> Estimated with trait data
         cocoesm: home_office1  # 1 yes, 2 no  # in Codebook, its home_office_1
-        cocoms: home_office1  # 1 yes, 2 no  # in Codebook, its home_office_1  # TODO: nur in CoCoMS1 und CoCoMS2
+        cocoms: home_office1  # 1 yes, 2 no  # in Codebook, its home_office_1  # PreReg: nur in CoCoMS1 und CoCoMS2
       category_mappings:  # 0 no, 1 yes
         cocoesm: {1: 1, 2: 0}
         # cocoms: {1: 1, 0: 0}
@@ -1491,6 +1475,9 @@ esm_based:
           cocout:
             min: {1: 1}
             max: {4: 6}
+      scale_endpoints:
+        min: 1
+        max: 6
 
     - name: na_state
       var_type: continuous
@@ -1515,7 +1502,7 @@ esm_based:
 # macro context
 
 # For easier filtering
-predictor_assignments:
+var_assignments:
   pl:
     - sociability
     - assertiveness
@@ -1569,6 +1556,7 @@ predictor_assignments:
     - acceptance
     - religion
     - self_blame
+    - gender
     - age
     - student
     - full_employed
@@ -1667,5 +1655,7 @@ predictor_assignments:
     - trait_pa
     - trait_na
     - trait_wb
+  other:
+    - unique_id
 
 

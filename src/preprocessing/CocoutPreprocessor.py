@@ -61,19 +61,13 @@ class CocoutPreprocessor(BasePreprocessor):
             dict:
         """
         if dataset == "ut2":
-            df = df_dct[f"data_personality_{dataset}"]
-            cmq_cols = [col for col in df.columns if "cms_" in col]
-            df = df.rename(columns={col: col.replace("cms_", "cmq_") for col in cmq_cols})
-            df_dct[f"data_personality_{dataset}"] = df
-            # test2 = [i for i in df.columns if "political_orientation in i"]
-        #elif dataset == "ut1":
-        #    df = df_dct[f"data_personality_{dataset}"]
-        #    test1 = [i for i in df.columns if "political_orientation" in i]
-        #    df["political_orientation"] = df["political_orientation_t2"]
-        #else:
-        #    raise ValueError(f"dataset {dataset} not supported")
-        # df_dct[f"data_personality_{dataset}"] = df
-
+            df_t1 = df_dct[f"data_traits_t1_{dataset}"]
+            df_t2 = df_dct[f"data_traits_t2_{dataset}"]
+            cmq_cols = [col for col in df_t1.columns if "cms_" in col]
+            df_t1 = df_t1.rename(columns={col: col.replace("cms_", "cmq_") for col in cmq_cols})
+            df_t2 = df_t2.rename(columns={col: col.replace("cms_", "cmq_") for col in cmq_cols})
+            df_dct[f"data_traits_t1_{dataset}"] = df_t1
+            df_dct[f"data_traits_t2_{dataset}"] = df_t2
 
     def clean_trait_col_duplicates(self, df_traits: pd.DataFrame) -> pd.DataFrame:
         """
@@ -162,31 +156,5 @@ class CocoutPreprocessor(BasePreprocessor):
         df_states[col_name] = df_states[col_name].replace(
             number_int_partners_cfg["special_mappings"]["cocout"]["str_to_num"])
         df_states[col_name] = pd.to_numeric(df_states[col_name], errors='coerce')
-        return df_states
-
-    # TODO Not used anymore
-    def clean_days_infected(self, df_states: pd.DataFrame) -> pd.DataFrame:
-        """
-        In CoCo UT, have only an appriximation of the number of days people were infected with COVID, because
-        we only have daily reports about symptoms. Therefore, we set all symptoms to 1 and the category for
-        "having no symptoms" to zero, to create the percentages.
-
-        Args:
-            df_states (pd.DataFrame): The DataFrame containing symptom information.
-
-        Returns:
-            pd.DataFrame: The modified DataFrame where symptom presence is indicated as 1, and no symptoms ("14") as 0.
-        """
-
-        # Define the conversion: "14" means no symptoms (set to 0), all others set to 1
-        df_states['corona_symptoms_daily'] = df_states['corona_symptoms_daily'].replace(
-            {"14": 0}  # "14" -> 0 (no symptoms)
-        ).fillna(df_states['corona_symptoms_daily'])  # Retain NaN values
-
-        # Convert any remaining non-NaN values (not "14") to 1 (indicating symptoms)
-        df_states['corona_symptoms_daily'] = df_states['corona_symptoms_daily'].apply(
-            lambda x: 1 if pd.notna(x) and x != 0 else x
-        )
-
         return df_states
 

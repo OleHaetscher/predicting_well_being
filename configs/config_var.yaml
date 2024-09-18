@@ -1,37 +1,38 @@
 general:
-  datasets_to_be_included: [cocoesm]  # cocoesm, cocoms, cocout, emotions, pia, zpid
-  log_dir: "../logs/logging"
-  log_name: test_logging_15092024
+  datasets_to_be_included: [pia]  # cocoesm, cocoms, cocout, emotions, pia, zpid
+  log_dir: "../logs/pia"
+  log_name: final_tests
 
 preprocessing:
   path_to_raw_data: "../data/raw"
   path_to_preprocessed_data: "../data/preprocessed"
   min_num_esm_measures: 5
-  nrows: 9999
+  nrows: 999999
   need_inverse_coding: ["cocout", "emotions", "pia", "zpid", "cocoms"]  # cocoesm ist schon rekodiert, der Rest nicht
   # joint id col -> ID is the index in every dataset
   sanity_checking:
-    nan_thresh: 0.3  # 30% NaNs -> warn
-    cron_alpha_thresh: 0.5
+    nan_thresh: 0.3 # 30% NaNs -> warn
+    cron_alpha_thresh: 0.6
     expected_pos_corrs:
     - self_esteem
     - social_status
     - trust_government
     - education_level
-    - pa_state
-    - pa_trait
+    - state_pa
+    - trait_pa
     - sleep_quality_mean
-    - number_of_interactions_mean
+    - number_interactions_mean
     - gdp_capita
+    - state_wb
 
 
     number_of_features:  # as in PreReg Table, without sensing ye
-      cocoesm: 139 # davon MAC 53
-      cocoms: 84
-      cocout: 64
-      emotions: 50
-      pia: 34
-      zpid: 62
+      cocoesm: 140 # inklusive 6x wb, davon MAC 54
+      cocoms: 93 # inklusive 6x wb, number_interactions / percentage_interactions + unique_id
+      cocout: 70 # inklusive 6x wb
+      emotions: 54 # inklusive 3x wb + "living_alone"
+      pia: 40  # inklusive 6x wb
+      zpid: 67 # inklusive 5x wb
 
 
 

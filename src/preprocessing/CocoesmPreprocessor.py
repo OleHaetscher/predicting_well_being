@@ -1,3 +1,4 @@
+from copy import deepcopy
 from functools import reduce
 
 import numpy as np
@@ -18,6 +19,7 @@ class CocoesmPreprocessor(BasePreprocessor):
         """
         super().__init__(fix_cfg=fix_cfg, var_cfg=var_cfg)
         self.dataset = "cocoesm"
+        self.relationship = None # will be assigned and holded
 
     def merge_traits(self, df_dct):
         return df_dct["data_traits"]
@@ -78,6 +80,7 @@ class CocoesmPreprocessor(BasePreprocessor):
         """
         # Define the columns to fill if the condition is met
         df_traits.loc[df_traits['quantity_household'] == 1, "relationship_household"] = '0'
+        test = df_traits[["quantity_household", "relationship_household"]]
         return df_traits
 
     def dataset_specific_state_processing(self, df_states: pd.DataFrame) -> pd.DataFrame:
@@ -93,7 +96,7 @@ class CocoesmPreprocessor(BasePreprocessor):
         df_states = self.create_relationship(df_states=df_states)
         return df_states
 
-    def create_relationship(self, df_states: pd.DataFrame) -> pd.DataFrame:
+    def create_relationship(self, df_states: pd.DataFrame) -> None:
         """
         Infers the relationship status from the ESM surveys based on interactions with a partner. If any row for a
         person has a value of 4 in the "selection_partners" column, all rows for that person are inferred to be in a
@@ -101,9 +104,6 @@ class CocoesmPreprocessor(BasePreprocessor):
 
         Args:
             df_states (pd.DataFrame): The DataFrame containing the ESM data with interaction information.
-
-        Returns:
-            pd.DataFrame: The modified DataFrame with an added column 'relationship' indicating inferred relationship status.
         """
         # Parse the configuration for the relationship status (can be useful for future expansion)
         relationship_cfg = self.config_parser(self.fix_cfg["esm_based"]["self_reported_micro_context"],
@@ -130,6 +130,7 @@ class CocoesmPreprocessor(BasePreprocessor):
         else:
             raise KeyError(f"Column {ia_partner_col} not in {self.dataset}")
 
+        self.relationship = deepcopy(df_states[["relationship", self.raw_esm_id_col]].drop_duplicates(keep="first"))
         return df_states
 
     def merge_trait_df_country_vars(self, country_var_dct: dict[str, pd.DataFrame], df_traits: pd.DataFrame) -> pd.DataFrame:
@@ -164,3 +165,16 @@ class CocoesmPreprocessor(BasePreprocessor):
                              on=["country", "year"],
                              how="left")  # TODO which join?
         return df_traits
+
+    def dataset_specific_post_processing(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        No custom adjustments necessary in cocoesm.
+
+        Args:
+            df:
+
+        Returns:
+            pd.DataFrame
+        """
+        df = df.merge(self.relationship, on=self.raw_esm_id_col, how="left")
+        return df
