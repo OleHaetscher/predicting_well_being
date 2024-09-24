@@ -37,8 +37,9 @@ class EmotionsPreprocessor(BasePreprocessor):
                           rows with the same 'id_for_merging'.
         """
         trait_esm_df = df_dct["data_traits_esm"]
-        trait_df = trait_esm_df.drop_duplicates(subset=self.raw_trait_id_col, keep="first").reset_index(drop=True)
-        return trait_df
+        df_traits = trait_esm_df.drop_duplicates(subset=self.raw_trait_id_col, keep="first").reset_index(drop=True)
+        # df_traits = self.split_trait_ids(df_traits=df_traits)
+        return df_traits
 
     def clean_trait_col_duplicates(self, df_traits: pd.DataFrame) -> pd.DataFrame:  # Report in PreReg
         """
@@ -103,6 +104,7 @@ class EmotionsPreprocessor(BasePreprocessor):
         varying_columns = [col for col in state_df.columns
                            if grouped[col].nunique().gt(1).any()]
         state_df_filtered = state_df[varying_columns + [self.raw_esm_id_col]]
+        # state_df_filtered = self.split_state_ids(state_df_filtered)
         return state_df_filtered
 
     def dataset_specific_state_processing(self, df_states: pd.DataFrame) -> pd.DataFrame:
@@ -117,6 +119,7 @@ class EmotionsPreprocessor(BasePreprocessor):
             pd.DataFrame:
         """
         df_states = self.create_close_interactions(df_states=df_states)
+        df_states = self.merge_int_occup_states(df_states=df_states)
         return df_states
 
     def create_close_interactions(self, df_states: pd.DataFrame) -> pd.DataFrame:
@@ -141,9 +144,9 @@ class EmotionsPreprocessor(BasePreprocessor):
         for col in int_partner_cols:
             df_states[col] = df_states[col].replace(cat_mapping)
 
-        # Define the close and weak tie logic
-        all_close_mask = df_states[int_partner_cols].eq(1).all(axis=1)  # All columns are close ties (1)
-        all_weak_mask = df_states[int_partner_cols].eq(0).all(axis=1)  # All columns are weak ties (0)
+        # Define the close and weak tie logic (either 1 or NaN, or 0 or NaN)
+        all_close_mask = df_states[int_partner_cols].isin([1, np.nan]).all(axis=1)
+        all_weak_mask = df_states[int_partner_cols].isin([0, np.nan]).all(axis=1)
 
         # Create the "close_interactions_raw" column
         df_states['close_interactions_raw'] = np.where(all_close_mask, 1,
@@ -160,6 +163,36 @@ class EmotionsPreprocessor(BasePreprocessor):
 
         return df_states
 
+    def merge_int_occup_states(self, df_states: pd.DataFrame) -> pd.DataFrame:
+        """
+        In emotions, we have different columns for state_pa and state_na, depending on whether an
+        interaction took place or not. This could bias the pl summaries of state affect.
+        Therefore, we set one of the cols to np.nan and fill the other column with the missing values.
+        Then we do not have to modify anything in the config.
+
+        Args:
+            df_states:
+
+        Returns:
+            pd.DataFrame
+        """
+        crit_state_cfg = self.fix_cfg["esm_based"]["criterion"]
+        pa_items = crit_state_cfg[0]["item_names"][self.dataset]
+        na_items = crit_state_cfg[1]["item_names"][self.dataset]  # Assuming the second part for NA items
+
+        # Process both PA and NA items
+        for item in pa_items + na_items:
+            # Separate into 'occup' and 'int' columns based on the naming convention
+            occup_col = f'occup_{item.split("_")[1]}'  # E.g., "occup_relaxed"
+            int_col = f'int_{item.split("_")[1]}'  # E.g., "int_relaxed"
+
+            if occup_col in df_states.columns and int_col in df_states.columns:
+                # Merge the two columns: if 'occup' is NaN, fill it with 'int', and vice versa
+                df_states[occup_col] = df_states[occup_col].combine_first(df_states[int_col])
+                df_states[int_col] = df_states[occup_col] # same values
+
+        return df_states
+
     def dataset_specific_post_processing(self, df: pd.DataFrame) -> pd.DataFrame:
         """
         No custom adjustments necessary in cocoesm.
@@ -173,5 +206,60 @@ class EmotionsPreprocessor(BasePreprocessor):
         df = df.merge(self.close_interactions, on=self.raw_esm_id_col, how="left")
         return df
 
+    def split_trait_ids(self, df_traits: pd.DataFrame) -> pd.DataFrame:  # Not used ATM
+        """
+        We use this function to split the ids for people, that participated in both waves, otherwise
+        the calculations of some features become unreasonable. Therefore, each ID that participated
+        in both Waves is split into to separate rows (e.g., if the original id is 30, the resulting
+        IDs will be 30_1, 30_2). One row gets the data from the first wave (i.e., all columns with no suffix
+        and the suffix _t2) and the other row gets data from the second wave (i.e., all columns with
+        the suffixes _t3 and _t4).
 
+        Args:
+            df_traits (pd.DataFrame): DataFrame with participant data, including a 'wave' column.
 
+        Returns:
+            pd.DataFrame: DataFrame with IDs split by wave.
+        """
+        df_both = df_traits[df_traits['wave'] == 'Both'].copy()
+        df_wave1 = df_both.copy()
+        df_wave2 = df_both.copy()
+
+        df_wave1[self.raw_trait_id_col] = df_wave1[self.raw_trait_id_col].astype(str) + '_1'
+        df_wave2[self.raw_trait_id_col] = df_wave2[self.raw_trait_id_col].astype(str) + '_2'
+
+        wave1_cols = [col for col in df_traits.columns if not col.endswith(('_t3', '_t4'))]
+        wave2_cols = [self.raw_trait_id_col] + [col for col in df_traits.columns if col.endswith(('_t3', '_t4'))]
+
+        df_wave1 = df_wave1[wave1_cols]
+        df_wave2 = df_wave2[wave2_cols]
+        joined_df = pd.concat([df_wave1, df_wave2, df_traits[df_traits['wave'] != 'Both']], ignore_index=True)
+
+        return joined_df
+
+    def split_state_ids(self, df_states: pd.DataFrame) -> pd.DataFrame:  # Not used ATM
+        """
+        Splits state IDs by appending "_1" to the self.raw_esm_id_col if the 'dataset' column value is "S2W1",
+        and "_2" if the value is "S2W2", but only for participants who have both "S2W1" and "S2W2"
+        in the dataset.
+
+        Args:
+            df_states (pd.DataFrame): DataFrame containing participant states, including the 'dataset' column.
+
+        Returns:
+            pd.DataFrame: DataFrame with updated self.raw_esm_id_col for eligible participants.
+        """
+        # Identify participants with both "S2W1" and "S2W2" in the dataset
+        ids_with_both = df_states.groupby(self.raw_esm_id_col)['dataset'].apply(lambda x: {'S2W1', 'S2W2'}.issubset(set(x)))
+
+        # Filter for those participants
+        eligible_ids = ids_with_both[ids_with_both].index
+
+        # Apply the split only to eligible participants
+        df_states[self.raw_esm_id_col] = df_states.apply(
+            lambda row: f"{row[self.raw_esm_id_col]}_1" if row[self.raw_esm_id_col] in eligible_ids and row['dataset'] == 'S2W1'
+            else f"{row[self.raw_esm_id_col]}_2" if row[self.raw_esm_id_col] in eligible_ids and row['dataset'] == 'S2W2'
+            else row[self.raw_esm_id_col], axis=1
+        )
+
+        return df_states

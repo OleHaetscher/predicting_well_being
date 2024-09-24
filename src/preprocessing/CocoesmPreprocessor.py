@@ -19,7 +19,7 @@ class CocoesmPreprocessor(BasePreprocessor):
         """
         super().__init__(fix_cfg=fix_cfg, var_cfg=var_cfg)
         self.dataset = "cocoesm"
-        self.relationship = None # will be assigned and holded
+        self.relationship = None  # will be assigned and holded
 
     def merge_traits(self, df_dct):
         return df_dct["data_traits"]
@@ -164,6 +164,8 @@ class CocoesmPreprocessor(BasePreprocessor):
                              right=df_country_level,
                              on=["country", "year"],
                              how="left")  # TODO which join?
+        # Correct democracy index column
+        df_traits["democracy_index"] = pd.to_numeric(df_traits["democracy_index"].str.replace(',', '.', regex=False))
         return df_traits
 
     def dataset_specific_post_processing(self, df: pd.DataFrame) -> pd.DataFrame:

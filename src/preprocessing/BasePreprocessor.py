@@ -93,15 +93,17 @@ class BasePreprocessor(ABC):
         df_joint = None
 
         # Step 2: Process and transform trait data
+        self.logger.log(f".")
         self.logger.log(f"  Preprocess trait-survey-based data")
         preprocess_steps_traits = [
             (self.merge_traits, {'df_dct': df_dct}),
             (self.clean_trait_col_duplicates, {'df_traits': None}),
             (self.exclude_flagged_rows, {'df_traits': None}),
             # (self.convert_str_cols_to_list_cols, {'df': None}),  # This may be slow
+            (self.adjust_education_level, {'df_traits': None}),
             (self.dataset_specific_trait_processing, {'df_traits': None}),
             (self.select_columns, {'df': None, 'df_type': "person_level"}),
-            (self.sort_dfs, {'df': None, 'df_type': "person_level"}),
+            #(self.sort_dfs, {'df': None, 'df_type': "person_level"}),
             (self.align_scales, {
                 'df': None,
                 'df_type': "person_level",
@@ -115,12 +117,13 @@ class BasePreprocessor(ABC):
             df_traits = self._log_and_execute(method, **kwargs)
 
         # Step 3: Process and transform esm data
+        self.logger.log(f".")
         self.logger.log(f"  Preprocess esm-based data")
         preprocess_steps_esm = [
             (self.merge_states, {'df_dct': df_dct}),
             (self.dataset_specific_state_processing, {'df_states': None}),
             (self.select_columns, {'df': None, 'df_type': "esm_based"}),
-            (self.sort_dfs, {'df': None, 'df_type': "esm_based"}),
+            #(self.sort_dfs, {'df': None, 'df_type': "esm_based"}),
             (self.align_scales, {
                 'df': None,
                 'df_type': "esm_based",
@@ -139,17 +142,20 @@ class BasePreprocessor(ABC):
         # Step 4 (optional): Specific sensed data processing?
         # ...
         if self.dataset in ["cocoms", "zpid"]:
+            self.logger.log(f".")
             self.logger.log(f"  Preprocess sensed data")
             # Some function that merges the sensed data to the state df
             # TODO DONT FORGET TO ADD PREFIX (e.g., smc or sens)
 
         # Step 5 (optional): Specific country-data processing?
         if self.dataset == "cocoesm":
+            self.logger.log(f".")
             self.logger.log(f"  Preprocess country-level data")
             df_dct = self.load_data(path_to_dataset=self.path_to_country_level_data)
             df_traits = self.merge_trait_df_country_vars(country_var_dct=df_dct, df_traits=df_traits)
 
         # Step 4: merge data
+        self.logger.log(f".")
         self.logger.log(f"  Preprocess joint data")
         preprocess_steps_joint = [
             (self.merge_dfs_on_id, {"df_states": df_states, "df_traits": df_traits}),
@@ -167,8 +173,10 @@ class BasePreprocessor(ABC):
             # Ensure df_traits is passed as needed
             kwargs = {k: v if v is not None else df_joint for k, v in kwargs.items()}
             df_joint = self._log_and_execute(method, **kwargs)
-
+            print()
+        self.logger.log(".")
         self.logger.log(f"Finished preprocessing pipeline for >>>{self.dataset}<<<")
+        self.logger.log(".")
         self.logger.log(f"--------------------------------------------------------")
         return df_traits
 
@@ -253,8 +261,11 @@ class BasePreprocessor(ABC):
         if self.dataset in flags["item_names"]:
             flag_col = flags["item_names"][self.dataset]
             df_traits[flag_col] = df_traits[flag_col].map(flags["category_mappings"][self.dataset]).fillna(1)
+            self.logger.log(
+                f"      Persons in trait_df before excluding flagged samples: {df_traits[self.raw_trait_id_col].nunique()}")
             df_traits = df_traits[df_traits[flag_col] == 1]
-            # df_traits = df_traits.drop([flag_col], axis=1)
+            self.logger.log(
+                f"      Persons in trait_df after excluding flagged samples: {df_traits[self.raw_trait_id_col].nunique()}")
         return df_traits
 
     def select_columns(self, df: pd.DataFrame, df_type: str = "person_level") -> pd.DataFrame:
@@ -276,8 +287,6 @@ class BasePreprocessor(ABC):
                     cols_to_be_selected.extend(self.extract_columns(entry['item_names']))
         df_col_filtered = df[cols_to_be_selected]
         df_col_filtered = df_col_filtered.loc[:, ~df_col_filtered.columns.duplicated()].copy()
-        test = [i for i in df_col_filtered.columns if "relationship" in i]
-        test2 = [i for i in df.columns if "relationship" in i]
         return df_col_filtered
 
     def sort_dfs(self, df: pd.DataFrame, df_type: str = "person_level") -> pd.DataFrame:
@@ -300,6 +309,32 @@ class BasePreprocessor(ABC):
         else:
             raise ValueError(f"Wrong df_type {df_type}, needs to be 'person_level' or 'esm_based'")
 
+    def adjust_education_level(self, df_traits: pd.DataFrame) -> pd.DataFrame:
+        """
+        This method maps the different scales that assessed the education level to a common scale,
+        so that for all samples the individual steps of the scale have the same meaning.
+        This corresponds to
+            1: no education level
+            2: primary education level / Hauptschule
+            3: lower secondary eduaction / Mittlere Reife
+            4: A-Level / Abitur oder Fachhochschulreife
+            5: Degree from University or FH
+            6: Phd / Promotion
+
+        Args:
+            df_traits:
+
+        Returns:
+            pd.DataFrame
+        """
+        education_cfg = self.config_parser(self.fix_cfg["person_level"]["sociodemographics"],
+                                           "continuous",
+                                           "education_level")[0]
+        col = education_cfg["item_names"][self.dataset]
+        if self.dataset in education_cfg["category_mappings"]:
+            mapping = education_cfg["category_mappings"][self.dataset]
+            df_traits[col] = df_traits[col].map(mapping)
+        return df_traits
 
     def convert_str_cols_to_list_cols(self, df: pd.DataFrame) -> pd.DataFrame:
         """
@@ -381,16 +416,17 @@ class BasePreprocessor(ABC):
                 if "item_names" in entry:
                     item_names = entry['item_names'].get(self.dataset)
                     align_mapping = entry.get('align_scales_mapping', {}).get(self.dataset)
-
                     if item_names and align_mapping:
+                        if isinstance(item_names, str):
+                            item_names = [item_names]
                         old_min = min(align_mapping['min'].keys())
                         old_max = max(align_mapping['max'].keys())
                         new_min = align_mapping['min'][old_min]
                         new_max = align_mapping['max'][old_max]
 
                         for col in item_names:
-                            if col in df.columns:
-                                df[col] = df[col].apply(lambda x: self._align_value(x, old_min, old_max, new_min, new_max))
+                            df[col] = df[col].apply(lambda x: self._align_value(x, old_min, old_max, new_min, new_max))
+                            self.logger.log(f"        align scales executed for column {col}")
         return df
 
     def _align_value(self, value: float, old_min: float, old_max: float, new_min: float, new_max: float) -> float:
@@ -444,14 +480,16 @@ class BasePreprocessor(ABC):
                                                                                 column=column_name,
                                                                                 mapping=category_mappings,
                                                                                 fill_na_with_zeros=False)
+                        self.logger.log(f"        Created {new_column_name} from {column_name}")
                     case list(columns):
                         df_traits[new_column_name] = self._map_columns_to_binary(df=df_traits,
                                                                                  columns=columns,
                                                                                  mapping=category_mappings,
                                                                                  fill_na_with_zeros=False)
-                        # print(df_traits[new_column_name].value_counts())
+                        self.logger.log(f"        Created {new_column_name} from {columns}")
                     case _:
                         # raise ValueError("item_names must be either a string or a list of strings")
+                        self.logger.log(f" WARNING: {item_names} are neither of type str nor of type list, skip")
                         continue
         return df_traits
 
@@ -578,13 +616,21 @@ class BasePreprocessor(ABC):
         Returns:
 
         """
+        self.logger.log("      create_person_level_desc_stats")
         df_states = self.create_person_level_desc_stats(df_states=df_states)
+        self.logger.log("      create_person_level_percentages")
         df_states = self.create_person_level_percentages(df_states=df_states)
+        self.logger.log("      create_number_interactions")
         df_states = self.create_number_interactions(df_states=df_states)  # could be adjusted to more general method
+        self.logger.log("      create_weekday_responses")
         df_states = self.create_weekday_responses(df_states=df_states)
+        self.logger.log("      create_early_day_responses")
         df_states = self.create_early_day_responses(df_states=df_states)
+        self.logger.log("      create_number_responses")
         df_states = self.create_number_responses(df_states=df_states)
+        self.logger.log("      create_percentage_responses")
         df_states = self.create_percentage_responses(df_states=df_states)
+        self.logger.log("      average_criterion_items")
         df_states = self.average_criterion_items(df_states=df_states)
         return df_states
 
@@ -634,6 +680,8 @@ class BasePreprocessor(ABC):
                                      f"{var_name}_sd",
                                      f"{var_name}_min",
                                      f"{var_name}_max"]
+
+                    self.logger.log(f"          Created M, SD, Min, and Max for var {var_name}")
 
                     # Merge the statistics back into the original df_states
                     df_states = pd.merge(df_states, stats, on=self.raw_esm_id_col, how='left')
@@ -715,6 +763,10 @@ class BasePreprocessor(ABC):
                         stats.columns = [self.raw_esm_id_col, f"{var_name}"]
                         person_level_stats.append(stats)
 
+                        self.logger.log(f"          Created Percentage for var {var_name}")
+
+                        assert len(stats[stats[var_name] > 1]) == 0, "percentage found that is greater than 1"
+
                     else:
                         raise KeyError(f"Column: {column} not found in {self.dataset} state_df")
                 else:
@@ -795,6 +847,8 @@ class BasePreprocessor(ABC):
         # Drop the temporary 'is_weekday' column
         # df_states.drop(columns=['is_weekday'], inplace=True)
 
+        assert len(df_states[df_states['weekday_responses'] > 1]) == 0, "percentage found that is greater than 1"
+
         return df_states
 
     def create_early_day_responses(self, df_states: pd.DataFrame) -> pd.DataFrame:
@@ -829,6 +883,8 @@ class BasePreprocessor(ABC):
 
         # Drop the temporary columns
         # df_states.drop(columns=['is_early', 'hour_adjusted'], inplace=True)
+
+        assert len(df_states[df_states['early_day_responses'] > 1]) == 0, "percentage found that is greater than 1"
 
         return df_states
 
@@ -877,6 +933,14 @@ class BasePreprocessor(ABC):
         # Calculate the percentage of responses per person by dividing actual responses by max possible responses
         df_states['percentage_responses'] = (df_states['number_responses'] / max_responses)
 
+        max_crit_resp = df_states[df_states['percentage_responses'] > 1]
+        if len(max_crit_resp) > 0:
+            self.logger.log(f"        WARNING: Found values over 1, Max value: {max_crit_resp['percentage_responses'].max()}, set to 1")
+
+        df_states["percentage_responses"] = df_states["percentage_responses"].apply(
+            lambda x: 1 if x > 1 else x
+        )
+        assert len(df_states[df_states['percentage_responses'] > 1]) == 0, "percentages must not exceed 1"
         return df_states
 
     def average_criterion_items(self, df_states: pd.DataFrame) -> pd.DataFrame:
@@ -955,8 +1019,24 @@ class BasePreprocessor(ABC):
         filtered_df = df_states[
             df_states[self.raw_esm_id_col].isin(valid_count_per_person[valid_count_per_person >= min_num_esm].index)
         ]
-        persons_in_df = filtered_df[self.raw_esm_id_col].nunique()
-        self.logger.log(f"      >>> N included in {self.dataset} after require at least {min_num_esm}: {persons_in_df}<<<")
+        persons_in_unfiltered_df = df_states[self.raw_esm_id_col].nunique()
+        persons_in_filtered_df = filtered_df[self.raw_esm_id_col].nunique()
+        self.logger.log(f"        N persons included in before filtering: {persons_in_unfiltered_df}")
+        self.logger.log(f"        N measurements included in before filtering: {len(df_states)}")
+        self.logger.log(f"        N persons after require at least {min_num_esm} measurements per person: {persons_in_filtered_df}")
+        self.logger.log(f"        N measurements after require at least {min_num_esm} measurements per person: {len(filtered_df)}")
+
+        if self.dataset in ["cocout", "cocoms"]:
+            print(filtered_df["studyWave"].value_counts(dropna=False))
+            for wave in filtered_df["studyWave"].unique():
+
+                df_filtered_tmp = filtered_df[filtered_df["studyWave"] == wave]
+                df_unfiltered_tmp = df_states[df_states["studyWave"] == wave]
+                self.logger.log(f"        Split up filtered num measurements included for {self.dataset}")
+                self.logger.log(f"          N persons for wave {wave} before filtering: {df_unfiltered_tmp[self.raw_esm_id_col].nunique()}")
+                self.logger.log(f"          N measurements for wave {wave} before filtering: {len(df_unfiltered_tmp)}")
+                self.logger.log(f"          N persons for wave {wave} after filtering: {df_filtered_tmp[self.raw_esm_id_col].nunique()}")
+                self.logger.log(f"          N measurements for wave {wave} after filtering: {len(df_filtered_tmp)}")
         return filtered_df
 
     def set_full_col_df_as_attr(self, df: pd.DataFrame) -> pd.DataFrame:
@@ -1066,6 +1146,7 @@ class BasePreprocessor(ABC):
         test1 = set(df_traits[self.raw_trait_id_col]) - set(df_states[self.raw_esm_id_col])
         test2 = set(df_states[self.raw_esm_id_col]) - set(df_traits[self.raw_trait_id_col])
         df_joint = pd.merge(df_states, df_traits, left_on=self.raw_esm_id_col, right_on=self.raw_trait_id_col, how="left")
+        test3 = [i for i in df_joint.columns if "studyWave" in i]
         return df_joint
 
     def inverse_coding(self, df: pd.DataFrame) -> pd.DataFrame:
@@ -1154,7 +1235,10 @@ class BasePreprocessor(ABC):
         criteria_types = {'trait': "person_level", 'state': "esm_based"}
         # Loop over trait and state criteria
         for criterion_type, config_lvl in criteria_types.items():
+
             wb_items = self.config_parser(self.fix_cfg[config_lvl]["criterion"], var_type=None)
+            pa_items = None
+            na_items = None
 
             if self.dataset == "emotions" and criterion_type == "trait":
                 continue
@@ -1163,16 +1247,11 @@ class BasePreprocessor(ABC):
             if self.dataset in wb_items[0]["item_names"]:
                 pa_items = wb_items[0]["item_names"][self.dataset]
                 df[f'{criterion_type}_pa'] = df[pa_items].mean(axis=1)
-            else:
-                df[f'{criterion_type}_pa'] = np.nan
 
             # na
             if self.dataset in wb_items[1]["item_names"]:
                 na_items = wb_items[1]["item_names"][self.dataset]
                 df[f'{criterion_type}_na'] = df[na_items].mean(axis=1)
-            else:
-                na_items = None
-                df[f'{criterion_type}_na'] = np.nan
 
             # wb
             scale_min = wb_items[1]["scale_endpoints"]["min"]
@@ -1184,7 +1263,6 @@ class BasePreprocessor(ABC):
                     f'{criterion_type}_wb': df[[f'{criterion_type}_pa', f'{criterion_type}_na_tmp']].mean(axis=1)
                 })
                 df = pd.concat([df, new_columns], axis=1)
-                # df[f'crit_{criterion_type}_wb'] = df[[f'crit_{criterion_type}_pa', f'{criterion_type}_na_tmp']].mean(axis=1)
                 df = df.drop([f'{criterion_type}_na_tmp'], axis=1)
             else:
                 df[f'{criterion_type}_wb'] = df[f'{criterion_type}_pa']
@@ -1232,7 +1310,6 @@ class BasePreprocessor(ABC):
         Returns:
             pd.DataFrame: A filtered DataFrame with only the selected columns and prefixes added.
         """
-
         final_df = pd.DataFrame()
 
         for prefix, columns in self.fix_cfg["var_assignments"].items():
@@ -1243,6 +1320,10 @@ class BasePreprocessor(ABC):
                 final_df = pd.concat([final_df, prefixed_df], axis=1)
             except KeyError:
                 print(f"  Some columns of {selected_columns} are not present in {self.dataset} df")
+
+        ### Check CoCoMS3 Val counts
+        print()
+
         return final_df
 
 

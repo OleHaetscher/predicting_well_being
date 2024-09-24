@@ -1,14 +1,14 @@
 general:
-  datasets_to_be_included: [pia]  # cocoesm, cocoms, cocout, emotions, pia, zpid
-  log_dir: "../logs/pia"
-  log_name: final_tests
+  datasets_to_be_included: [cocoesm, cocoms, cocout, emotions, pia, zpid]  # , cocout, emotions, pia, zpid]  # cocoesm, cocoms, cocout, emotions, pia, zpid
+  log_dir: "../logs/24092024_sample_sizes"
+  log_name: xxx
 
 preprocessing:
   path_to_raw_data: "../data/raw"
   path_to_preprocessed_data: "../data/preprocessed"
-  min_num_esm_measures: 5
+  min_num_esm_measures: 5  #
   nrows: 999999
-  need_inverse_coding: ["cocout", "emotions", "pia", "zpid", "cocoms"]  # cocoesm ist schon rekodiert, der Rest nicht
+  need_inverse_coding: ["cocout", "emotions", "pia", "zpid", "cocoms"]  # all except cocoesm, do not change
   # joint id col -> ID is the index in every dataset
   sanity_checking:
     nan_thresh: 0.3 # 30% NaNs -> warn
@@ -24,15 +24,18 @@ preprocessing:
     - number_interactions_mean
     - gdp_capita
     - state_wb
+    - creative_imagination
+    - productiveness
+    - responsibility
 
 
     number_of_features:  # as in PreReg Table, without sensing ye
-      cocoesm: 140 # inklusive 6x wb, davon MAC 54
-      cocoms: 93 # inklusive 6x wb, number_interactions / percentage_interactions + unique_id
-      cocout: 70 # inklusive 6x wb
-      emotions: 54 # inklusive 3x wb + "living_alone"
-      pia: 40  # inklusive 6x wb
-      zpid: 67 # inklusive 5x wb
+      cocoesm: 149 # inklusive 6x wb, davon MAC 54
+      cocoms: 96 # inklusive 6x wb, number_interactions / percentage_interactions + unique_id / studyWave
+      cocout: 73 # inklusive 6x wb, studyWave
+      emotions: 56 # inklusive 3x wb + "living_alone"
+      pia: 42  # inklusive 6x wb
+      zpid: 68 # inklusive 5x wb
 
 
 

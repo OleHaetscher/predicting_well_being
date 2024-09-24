@@ -4,7 +4,7 @@ person_level:
       var_type: continuous
       item_names:
         cocoesm: participant
-        cocoms: original_id # unique id PreReg: Report why original ID -> TODO: keep somehow track
+        cocoms: original_id
         cocout: id
         emotions: id
         pia: id
@@ -19,13 +19,8 @@ person_level:
         cocoesm: { 1: 0, 0: 1 }
         cocoms: { 1: 1, 2: 0 }
 
-    # only for testing
-    - name: wave
-      item_names:
-        cocoms: studyWave
-
     # we need to track this for the machine learning part
-    - name: unique_col_id
+    - name: unique_id
       item_names:
         cocoms: unique_id
 
@@ -609,7 +604,7 @@ person_level:
           max: { 5: 10 }
         zpid:
           min: { 1: 1}
-          max: {4: 10}
+          max: { 4: 10}
       scale_endpoints:
         min: 1
         max: 10
@@ -634,7 +629,7 @@ person_level:
       scale_endpoints:
         min: 1
         max: 11
-      party_num_mapping: # TODO CHECK
+      party_num_mapping: # tested
         cocoms:
           {
           1: 5.5,  # CDU
@@ -804,7 +799,7 @@ person_level:
         min: 1
         max: 5
 
-    - name: self_distraction  # TODO: nur in CoCoMS1
+    - name: self_distraction
       var_type: continuous
       ques: { zpid: , cocoesm: , cocoms:  }
       item_names: {
@@ -990,9 +985,9 @@ person_level:
       var_type: continuous
       ques: { }
       item_names:
-        zpid: [ PANAS_NEG10, PANAS_NEG2, PANAS_NEG1 ]  # PreReg: sad fehlt, 0-4 im Codebook, aber in den Daten auch 1-5
+        zpid: [ PANAS_NEG10, PANAS_NEG2, PANAS_NEG1 ]  # sad fehlt, 0-4 im Codebook, aber in den Daten auch 1-5
         cocout:  [ awb_1, awb_2, awb_4 ]
-        pia: [ trait_angry, trait_sad, panas20 ]  # PreReg: afraid statt anxious
+        pia: [ trait_angry, trait_sad, panas20 ]  # afraid statt anxious
         cocoesm: [ panasx_1, panasx_2, panasx_3 ]
         cocoms: [ panasx_1, panasx_2, panasx_3 ]
       scale_endpoints:
@@ -1010,7 +1005,7 @@ person_level:
         cocoesm: age
         cocoms: age
 
-    - name: gender # 1 male / 0 female
+    - name: gender_male # 1 male
       var_type: binary
       item_names:
         emotions: gender # 1 female, 2 male, 3 other
@@ -1020,16 +1015,50 @@ person_level:
         cocoesm: sex # 1 female, 2 male, 3 other
         cocoms: sex # 1 female, 2 male, 3 other
       category_mappings:
-        emotions: {2: 1, 3: "not_a_number"}  # {1: 0, 2: 1, 3: 0}
-        zpid: {1: 1, 3: "not_a_number"}  # {1: 1, 2: 0, 3: 0}
-        cocout: {1: 1, 3: "not_a_number"}  # {1: 1, 2: 0, 3: 0}
-        pia: {2: 1, 3: "not_a_number"}  # {1: 0, 2: 1, 3: 0}
-        cocoesm: {2: 1, 3: "not_a_number"}  # {1: 0, 2: 1, 3: 0}
-        cocoms: {2: 1, 3: "not_a_number"}  # {1: 0, 2: 1, 3: 0}
+        emotions: {1: 0, 2: 1, 3: 0}  # {1: 0, 2: 1, 3: 0}
+        zpid: {1: 1, 2: 0, 3: 0}  # {1: 1, 2: 0, 3: 0}
+        cocout: {1: 1, 2: 0, 3: 0}  # {1: 1, 2: 0, 3: 0}
+        pia: {1: 0, 2: 1, 3: 0}  # {1: 0, 2: 1, 3: 0}
+        cocoesm: {1: 0, 2: 1, 3: 0}  # {1: 0, 2: 1, 3: 0}
+        cocoms: {1: 0, 2: 1, 3: 0}  # {1: 0, 2: 1, 3: 0}
+
+    - name: gender_female # 1 female
+      var_type: binary
+      item_names:
+        emotions: gender # 1 female, 2 male, 3 other
+        zpid: Demo_GE1 # 1 male, 2 female, 3 other
+        cocout: Q1_dem # 1 male, 2 female, 3 other
+        pia: gender  # gender_o, gender_t1? # 1 female, 2 male, 3 other
+        cocoesm: sex # 1 female, 2 male, 3 other
+        cocoms: sex # 1 female, 2 male, 3 other
+      category_mappings:
+        emotions: {1: 1, 2: 0, 3: 0}
+        zpid: {1: 0, 2: 1, 3: 0}
+        cocout: {1: 0, 2: 1, 3: 0}
+        pia: {1: 1, 2: 0, 3: 0}
+        cocoesm: {1: 1, 2: 0, 3: 0}
+        cocoms: {1: 1, 2: 0, 3: 0}
+
+    - name: gender_other # 1 other
+      var_type: binary
+      item_names:
+        emotions: gender # 1 female, 2 male, 3 other
+        zpid: Demo_GE1 # 1 male, 2 female, 3 other
+        cocout: Q1_dem # 1 male, 2 female, 3 other
+        pia: gender  # gender_o, gender_t1? # 1 female, 2 male, 3 other
+        cocoesm: sex # 1 female, 2 male, 3 other
+        cocoms: sex # 1 female, 2 male, 3 other
+      category_mappings:
+        emotions: { 1: 0, 2: 0, 3: 1 }
+        zpid: { 1: 0, 2: 0, 3: 1 }
+        cocout: { 1: 0, 2: 0, 3: 1 }
+        pia: { 1: 0, 2: 0, 3: 1 }
+        cocoesm: { 1: 0, 2: 0, 3: 1 }
+        cocoms: { 1: 0, 2: 0, 3: 1 }
 
     ## Professional Status - Categories
     # emotions:  1 (in school); 2 (at university); 3 (in vocational training); 4 (completing voluntary national service/voluntary military service); 5 (full-time employment); 6 (part-time employment); 7 (self-employed); 8 (full-time parental leave/care leave/full-time homemaker); 9 (unemployed/looking for work); 10 (retired)
-    # zpid: 1 Angestellte/r, 2 Selbstständige/r, 3 Beamte/in, 4 Ausbildung / Lehre / Umschulung, 5 Freiwilliger Wehrdienst, 6 Bundesfreiwilligendienst / Freiwilliges Soziales Jahr, 7 Mutterschafts- / Erziehungsurlaub / Elternzeit, 8 Hausfrau / Hausmann, 9 Schüler/in, 10 Student/in, 11 Renter/in / Pensionär/in, 12 Dauerhaft erwerbsunfähig, 13 Arbeitssuchend
+    # zpid: 1 Angestellte/r, 2 Selbstständige/r, 3 Beamte/in, 4 Ausbildung / Lehre / Umschulung, 5 Freiwilliger Wehrdienst, 6 Bundesfreiwilligendienst / Freiwilliges Soziales Jahr, 7 Mutterschafts- / Erziehungsurlaub / Elternzeit, 8 Hausfrau / Hausmann, 9 Schüler/in, 10 Student/in, 11 Renter/in / Pensionär/in, 12 Dauerhaft erwerbsunfähig, 13 Arbeitssuchend + 14 part-time (self-created)
     # cocout: # is created
     # pia: 1 (in school education), 2 (in study), 3 (in vocational training), 4 (in voluntary service/in voluntary military service), 5 (in full-time employment), 6 (in part-time employ-ment), 7 (entrepreneur/self-em-ployment), 8 (in full-time parental or care leave/full-time house-wife/househusband), 9 (not in employment/look-ing for work), 10 (retired)
     # cocoesm: 1 (in school education), 2 (in study), 3 (in vocational training), 4 (in full-time employment), 5 (in part-time employment), 6 (entrepreneur / selfemployment), 7 (in full-time parental or care leave / full-time housewife/househusband), 8 (not in employment / looking for work), 9 (retired)
@@ -1056,7 +1085,7 @@ person_level:
       var_type: binary
       item_names:
         emotions: occupational_status
-        zpid: Demo_AL1  # PreReg -> No differentation between part- and full time in ZPID -> count "Angesteller" / "beamter" as full-time
+        zpid: Demo_AL1
         #cocout: professional_status # separately created
         pia: occupational_status
         cocoesm: professional_status
@@ -1073,12 +1102,14 @@ person_level:
       var_type: binary
       item_names:
         emotions: occupational_status
+        zpid: Demo_AL1 # approx. about number of days that people work in a week
         #cocout: professional_status # needs to be created
         pia: occupational_status
         cocoesm: professional_status
         cocoms: professional_status
       category_mappings:
         emotions: {6: 1} # 6
+        zpid: { 14: 1}
         #cocout: {}
         pia: { 6: 1 } # 6
         cocoesm: { 5: 1 } # 5
@@ -1122,21 +1153,23 @@ person_level:
       var_type: continuous
       item_names:
         emotions: educational_status # 1 (no quali) - 10 (Doctorate, PhD)
-        zpid: Demo_AL1 # 1 (no quali) - 6 (Doctorate, Habil), # 0 == not_a_number
+        zpid: Demo_B1 # 1 (no quali) - 6 (Doctorate, Habil), # 0 == not_a_number
         cocout: educational_attainment  # is created separately
         pia: educational_status  # 1 (no quali) - 10 (Doctorate, PhD)  # Note: In codebook, its educational_attainment
         cocoesm: educational_attainment  # 1 (no quali) - 7 (Doctorate, PhD)
         cocoms: educational_attainment   # 3 (secondary school certificate) - 7 (Doctorate, PhD)
-      align_scales_mapping:
-        zpid:
-          min: {1: 1}
-          max: {6: 10}
-        cocoesm:
-          min: {1: 1}
-          max: {7: 10}
-        cocoms:
-          min: { 1: 1 }  # hacky, 3 is already in the middle of the scale
-          max: { 7: 10 }
+      category_mappings:
+        emotions: {1: 1, 2: 2, 3: 2, 4: 3, 5: 3, 6: 4, 7: 4, 8: 5, 9: 5, 10: 6}
+        # zpid: Reference
+        # coco_ut: approx with 4
+        pia: {1: 1, 2: 2, 3: 2, 4: 3, 5: 3, 6: 4, 7: 4, 8: 5, 9: 5, 10: 6}
+        cocoesm: {1: 1, 2: 2, 3: 3, 4: 4, 5: 5, 6: 5, 7: 6}
+        cocoms: { 3: 3, 4: 4, 5: 6, 6: 5, 7: 6}
+      scale_endpoints:
+        min: 1
+        max: 6
+
+
 
     - name: people_household
       var_type: continuous
@@ -1216,10 +1249,10 @@ person_level:
         cocout: {2: 1, 3: 1, 4: 1, 5: 1, 6: 1, 7: 1}  # count somewhat as yes
         pia: {2: 1, 3: 1}
 
-    - name: home_office  # % of days in Home Office, here approx by traits # TODO: Need to merge with esm based column in final merge
+    - name: home_office  # % of days in Home Office, here approx by traits
       var_type: percentage  # per prompt
       item_names:
-        zpid:  Arbeitsleben91_AugOct  # Warum auch immer sind da die Anzahl Tage einen nach oben verschoben
+        zpid: Arbeitsleben91_AugOct  # Warum auch immer sind da die Anzahl Tage einen nach oben verschoben
       category_mappings:
         zpid: {1: 0, 2: 1, 3: 2, 4: 3, 5: 4, 6: 5, 7: 6, 8: 7 }
 
@@ -1247,6 +1280,12 @@ esm_based:
         cocoesm: created_individual_esm
         cocoms: questionnaireStartedTimestamp
 
+    # For feature counts and testing
+    - name: studyWave
+      item_names:
+        cocoms: studyWave
+        cocout: studyWave
+
   self_reported_micro_context:
     - name: number_interactions
       var_type: continuous
@@ -1256,7 +1295,7 @@ esm_based:
         cocout: momentary_context_interaction_ema  # 1 yes, 2 no
         pia: social_interaction  # 1 yes, 2 no
         cocoesm: social_interaction  # 1 yes, 2 no
-        cocoms: selection_medium_00 # 0 = yes, 1 = no   # PreReg: Explain extra processing with time column
+        cocoms: selection_medium_00 # 0 = yes, 1 = no   # extra processing with time column
       category_mappings: # 1 = interaction, 0 = no interaction
         emotions: { 1: 1}
         zpid: { 0: 1 }
@@ -1273,7 +1312,7 @@ esm_based:
         cocout: momentary_context_interaction_ema  # 1 yes, 2 no
         pia: social_interaction  # 1 yes, 2 no
         cocoesm: social_interaction  # 1 yes, 2 no
-        cocoms: selection_medium_00 # 0 = yes, 1 = no   # PreReg: Explain extra processing with time column
+        cocoms: selection_medium_00 # 0 = yes, 1 = no   # Explain extra processing with time column
       category_mappings: # 1 = interaction, 0 = no interaction
         emotions: { 1: 1 }
         zpid: { 0: 1 }
@@ -1288,7 +1327,7 @@ esm_based:
         emotions: communication  # 1 in person, 2 via phone/chat
         cocout: soc_interact_mode_ema  # 1 talking in person, all other cmc
         cocoesm: selection_medium  # 1 talking in person, all other cmc
-        cocoms: selection_medium_01 # [selection_medium_01, selection_medium_02, selection_medium_03, selection_medium_04, selection_medium_05, selection_medium_06, selection_medium_00] # 01 talking in person, all other cmc, 00 no interaction  # TODO: Need to select
+        cocoms: selection_medium_01 # [selection_medium_01, selection_medium_02, selection_medium_03, selection_medium_04, selection_medium_05, selection_medium_06, selection_medium_00] # 01 talking in person, all other cmc, 00 no interaction
       category_mappings: # 1 = ftf, 0 = cmc
         emotions: {1: 1, 2: 0}
         cocout: { 1: 1, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0, 7: 0, 8: 0, 9: "not_a_number"}
@@ -1306,7 +1345,7 @@ esm_based:
         cocout: {1: 0, 2: 0, 3: 1, 4: 1, 5: 0, 6: 1, 7: 0, 8: 0, 0: "not_a_number"}
         cocoesm: {1: 0, 2: 1, 3: 1, 4: 1, 5: 1, 6: 0, 7: 0, 8: 0, 9: 0}
       special_mappings:
-        cocoms: # PreReg: In CoCo MS2, only dimensionally assessed, in CoCo MS1 and MS3 -> categorical vs binary columns
+        cocoms: # In CoCo MS2, only dimensionally assessed, in CoCo MS1 and MS3 -> categorical vs binary columns
           wave1:
             close_ties: ['selection_partners_03', 'selection_partners_04', 'selection_partners_05', 'selection_partners_06']
             weak_ties: ['selection_partners_01', 'selection_partners_02', 'selection_partners_07', 'selection_partners_08', 'selection_partners_09']
@@ -1325,7 +1364,7 @@ esm_based:
         cocout: {1: 1, 2: 0, 3: 1, 4: 0, 5: 0, 6: 0, 7: 0 , 8: 0, 0: "not_a_number"}
         cocoesm: {1: 1, 2: 1, 3: 0, 4: 0, 5: 0, 6: 0, 7: 0, 8: 0, 9: 0}
       special_mappings:
-        cocoms: # PreReg: only assessed in Wave1, on Wave 2 and 3 are only political topics assessed, thus no percentages can be computed
+        cocoms: # only assessed in Wave1, on Wave 2 and 3 are only political topics assessed, thus no percentages can be computed
           wave1:
             work_columns: [selection_topics_01, selection_topics_02]
             other_columns: [selection_topics_03, selection_topics_04, selection_topics_05, selection_topics_06, selection_topics_07, selection_topics_08, selection_topics_09]
@@ -1377,7 +1416,7 @@ esm_based:
       var_type: continuous
       item_names:
         emotions: no_interactionpartner  # 1-5, passt
-        cocout: momentary_context_inperson_interact_ema  # PreReg only "outside household" and "in Person" -> Keine Zahlen -> NaN, in separater methode    # only assessed in CoCo UT2
+        cocout: momentary_context_inperson_interact_ema  # only "outside household" and "in Person" -> Keine Zahlen -> NaN, in separater methode    # only assessed in CoCo UT2
         cocoesm: interaction_quantity  # integer ohne constraints, passt
         cocoms: social_interaction  # integer ohne constraints, passt  # refers to all interactions since the last prompt
       special_mappings:
@@ -1397,14 +1436,6 @@ esm_based:
         #zpid:
         #  min: { 6: 1 }
         #  max: { 1: 6 }
-
-    #- name: days_infected  # % of days with COVID infection
-    #  var_type: percentage
-    #  per_day: true
-    #  item_names:
-    #    cocout: corona_symptoms_daily  # approximate, we do not have a direct measure such as "days infected"
-    #    cocoesm: infected  # 1 yes, 2 no
-    #    cocoms: infected  # 1 yes, 2 no  # PreReg: Nur CoCo MS1
 
       category_mappings: # 1 = day infected, 0 = not infected
         # cocout: { 1: 1, 0: 0 }  # this already fits, has been prepared in separate method
@@ -1448,11 +1479,11 @@ esm_based:
       var_type: percentage
       special_mappings:  # maximum possible prompts, in this case
         emotions: 84    # emotions: 14 Tage -> up to 6 per day -> 84
-        zpid: 56  # zpid: 14 Tage -> up to 4 per day -> 56  TODO verify
+        zpid: 70  # zpid: 14 Tage -> up to 4 per day -> 56  # or 5 ?
         cocout: 224  # cocout: 28 tage -> up to 8 per day -> 224
-        pia: 84  # pia: 14 tage -> up to 6 per day -> 84
+        pia: 90  # pia: 14 tage -> up to 6 per day # -> Fehler in der App, einmal 16 Tage
         cocoesm: 140  # cocoesm: 28 tage -> up to 5 per day -> 140
-        cocoms: 112  # cocoms: 28 tage -> up to 4 per day -> 112
+        cocoms: 140  # cocoms: 28 tage -> up to 4 per day -> 112 + 28 (dailys)
 
   # sensed_micro_context
 
@@ -1461,8 +1492,8 @@ esm_based:
       var_type: continuous
       ques:
       item_names:
-        emotions: [occup_relaxed, int_relaxed, occup_enthusiastic, int_enthusiastic]  # TODO extra processing necessary?
-        zpid: [valence]  # Nach Datenanalyse -> scheint schon richtig rum kodiert zu sein
+        emotions: [occup_relaxed, int_relaxed, occup_enthusiastic, int_enthusiastic]
+        zpid: [valence]  # TODO: Use only as wb analysis, not state_pa (would be equivalent)
         cocout: [momentary_wellbeing_happy_ema]
         pia: [happy, relaxed, enthusiastic]
         cocoesm: [state_pa1, state_pa2, state_pa3]
@@ -1657,5 +1688,6 @@ var_assignments:
     - trait_wb
   other:
     - unique_id
+    - studyWave
 
 

@@ -134,7 +134,7 @@ class CocomsPreprocessor(BasePreprocessor):
         """
         party_number_map = [entry["party_num_mapping"] for entry in self.fix_cfg["person_level"]["personality"]
                             if "party_num_mapping" in entry.keys()][0]["cocoms"]
-        df_traits['political_orientation'] = df_traits['vote_general'].map(party_number_map).fillna(np.nan)
+        df_traits['vote_general'] = df_traits['vote_general'].map(party_number_map).fillna(np.nan)
         return df_traits
 
     def dataset_specific_state_processing(self, df_states: pd.DataFrame) -> pd.DataFrame:
@@ -163,7 +163,7 @@ class CocomsPreprocessor(BasePreprocessor):
 
         This method creates two columns:
             - "close_interactions_raw": where 1 == close ties, 0 == weak ties, and NaN for conflicts or unassessed interactions.
-            - "close_interactions": a percentage ratio of close ties (1) to total interactions (1 and 0) per person as denoted by "unique_id".
+            - "close_interactions": a percentage ratio of close ties (1) to total interactions (1 and 0) per person.
 
         Processing steps:
             - In CoCo MS1, the binary columns for interaction partners are mapped if the partners are unambiguously close or weak ties.
@@ -202,14 +202,14 @@ class CocomsPreprocessor(BasePreprocessor):
         'close_interactions_raw'] = np.nan
 
         # Create percentage
-        interaction_stats = df_states.groupby('unique_id')['close_interactions_raw'].apply(
+        interaction_stats = df_states.groupby(self.raw_esm_id_col)['close_interactions_raw'].apply(
             lambda x: x.sum() / x.count() if x.count() > 0 else np.nan
         )
 
         # Handle Wave 2
         df_states.loc[df_states['studyWave'] == 2, 'close_interactions'] = np.nan
 
-        df_states['close_interactions'] = df_states['unique_id'].map(interaction_stats)
+        df_states['close_interactions'] = df_states[self.raw_esm_id_col].map(interaction_stats)
 
         self.close_interactions = deepcopy(df_states[['close_interactions', self.raw_esm_id_col]].drop_duplicates(keep="first"))
         return df_states
@@ -263,18 +263,18 @@ class CocomsPreprocessor(BasePreprocessor):
                     (df_states[config["other_cols"]].max(axis=1) == 1) & (df_states[config["cols"]].max(axis=1) == 0)
             )
             df_states[conversation_type] = np.where(topic_mask, 1, np.where(other_mask, 0, np.nan))
-            cols = [i for i in df_states.columns if "selection_topics" in i] + [conversation_type, "unique_id"]
+            cols = [i for i in df_states.columns if "selection_topics" in i] + [conversation_type, self.raw_esm_id_col]
 
         # the topics were only assessed in wave1
         df_states.loc[df_states['studyWave'] != 1, ['work_conversations', 'personal_conversations',
                                                     "societal_conversations"]] = np.nan
 
-        # Calculate percentage of each conversation type per unique_id for CoCo MS1
+        # Calculate percentage of each conversation type per ID for CoCo MS1
         for col in ['work_conversations', 'personal_conversations', 'societal_conversations']:
-            interaction_stats = df_states.groupby('unique_id')[col].apply(
+            interaction_stats = df_states.groupby(self.raw_esm_id_col)[col].apply(
                 lambda x: x.sum() / x.count() if x.count() > 0 else np.nan
             )
-            df_states[col] = df_states['unique_id'].map(interaction_stats)
+            df_states[col] = df_states[self.raw_esm_id_col].map(interaction_stats)
 
         self.work_conversations = deepcopy(df_states[["work_conversations", self.raw_esm_id_col]].drop_duplicates(keep="first"))
         self.personal_conversations = deepcopy(df_states[["personal_conversations", self.raw_esm_id_col]].drop_duplicates(keep="first"))

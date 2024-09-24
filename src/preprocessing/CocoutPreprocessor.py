@@ -1,3 +1,5 @@
+import numpy as np
+
 from src.preprocessing.BasePreprocessor import BasePreprocessor
 import pandas as pd
 
@@ -101,7 +103,8 @@ class CocoutPreprocessor(BasePreprocessor):
             pd.DataFrame:
         """
         df_traits["professional_status"] = 1
-        df_traits["educational_attainment"] = 6  # higher secondary education in 1-10 scale
+        df_traits["educational_attainment"] = 4  # Abi eq in 1-6 scale
+        df_traits["studyWave"] = np.nan
         return df_traits
 
     def merge_states(self, df_dct):
@@ -136,6 +139,7 @@ class CocoutPreprocessor(BasePreprocessor):
         """
         df_states = self.clean_number_interaction_partners(df_states=df_states)
         # df_states = self.clean_days_infected(df_states=df_states)
+        df_states["studyWave"] = df_states[self.raw_trait_id_col].apply(lambda x: x[:4])
         return df_states
 
     def clean_number_interaction_partners(self, df_states: pd.DataFrame) -> pd.DataFrame:
@@ -158,3 +162,15 @@ class CocoutPreprocessor(BasePreprocessor):
         df_states[col_name] = pd.to_numeric(df_states[col_name], errors='coerce')
         return df_states
 
+    def dataset_specific_post_processing(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Logic depends on the subclass
+        Args:
+            df:
+
+        Returns:
+
+        """
+        df["full_employed"] = 0
+        df["unemployed"] = 0
+        return df
