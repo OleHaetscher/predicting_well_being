@@ -1,13 +1,13 @@
 general:
   datasets_to_be_included: [cocoesm, cocoms, cocout, emotions, pia, zpid]  # , cocout, emotions, pia, zpid]  # cocoesm, cocoms, cocout, emotions, pia, zpid
-  log_dir: "../logs/24092024_sample_sizes"
+  log_dir: "../logs/all"
   log_name: xxx
 
 preprocessing:
   path_to_raw_data: "../data/raw"
   path_to_preprocessed_data: "../data/preprocessed"
-  min_num_esm_measures: 5  #
-  nrows: 999999
+  min_num_esm_measures: 5  # 5
+  nrows: 9999
   need_inverse_coding: ["cocout", "emotions", "pia", "zpid", "cocoms"]  # all except cocoesm, do not change
   # joint id col -> ID is the index in every dataset
   sanity_checking:
@@ -35,7 +35,10 @@ preprocessing:
       cocout: 73 # inklusive 6x wb, studyWave
       emotions: 56 # inklusive 3x wb + "living_alone"
       pia: 42  # inklusive 6x wb
-      zpid: 68 # inklusive 5x wb
+      zpid: 67 # inklusive 4x wb
+
+analysis:
+
 
 
 

@@ -60,11 +60,11 @@ class SanityChecker:
             (self.check_zero_variance, {'df': None}),
             (self.check_scale_endpoints, {'df': None}),
             (self.calc_correlations, {'df': None}),
+            (self.sanity_check_sensing_data, {'df_sensing': None}),
         ]
         for method, kwargs in sanity_checks:
             kwargs = {k: v if v is not None else df for k, v in kwargs.items()}
             self._log_and_execute(method, **kwargs)
-            print()
 
     def _log_and_execute(self, method: Callable, *args: Any, **kwargs: Any):
         """
@@ -90,13 +90,13 @@ class SanityChecker:
         nan_per_col_summary = df.isna().mean()
         for col, nan_ratio_col in nan_per_col_summary.items():
             if nan_ratio_col > nan_thresh:
-                self.logger.log(f"    WARNING: Column '{col}' has {np.round(nan_ratio_col,3)}% NaNs.")
+                self.logger.log(f"    WARNING: Column '{col}' has {np.round(nan_ratio_col,3) * 100}% NaNs.")
 
         self.logger.log(".")
         nan_per_row_summary = df.isna().mean(axis=1)
         for row, nan_ratio_row in nan_per_row_summary.items():
             if nan_ratio_row > nan_thresh:
-                self.logger.log(f"    WARNING: Row '{row}' has {np.round(nan_ratio_row,3)}% NaNs.")
+                self.logger.log(f"    WARNING: Row '{row}' has {np.round(nan_ratio_row,3) * 100}% NaNs.")
 
     def check_dtypes(self, df: pd.DataFrame) -> None:
         """
@@ -112,8 +112,6 @@ class SanityChecker:
             if not pd.api.types.is_numeric_dtype(dtype):
                 self.logger.log(f"    WARNING: Column '{col}' has non-numeric dtype: {dtype}, try to convert")
                 df[col] = df[col].replace("not_a_number", np.nan)
-                test = df[col].value_counts(dropna=False)
-                print()
                 try:
                     df[col] = pd.to_numeric(df[col])
                     self.logger.log(f"      Conversion successful for column '{col}'")
@@ -150,7 +148,6 @@ class SanityChecker:
         """
         self.logger.log(f"    Num rows of df for {dataset}: {len(df)}")
         if dataset in ["cocout", "cocoms"]:
-            print(df["other_studyWave"].value_counts(dropna=False))
             for wave in df["other_studyWave"].unique():
                 df_tmp = df[df["other_studyWave"] == wave]
                 self.logger.log(f"      Num rows of df for {wave}: {len(df_tmp)}")
@@ -170,14 +167,13 @@ class SanityChecker:
         features_cats = ["pl", "srmc", "crit", "other"]
         if dataset == "cocoesm":
             features_cats.append("mac")
-        # if dataset in ["coco_ms", "zpid"]:
-            # cats.append("sens")
+        if dataset in ["coco_ms", "zpid"]:
+            features_cats.append("sens")
         for cat in features_cats:
             self.logger.log(".")
             col_lst_per_cat = [f"{cat}_{col}" for col in self.cfg_fix["var_assignments"][cat]]
             cols_in_df = [col for col in df.columns if col in col_lst_per_cat]
             self.logger.log(f"        Number of columns for feature category {cat}: {len(cols_in_df)}")
-            self.logger.log(f"        Now printing the column names: ")
             for i in cols_in_df:
                 self.logger.log(f"          {i}")
 
@@ -202,7 +198,6 @@ class SanityChecker:
                         column_names = [i for i in df.columns if i in col_names_org]
                         scale_min = var['scale_endpoints']['min']
                         scale_max = var['scale_endpoints']['max']
-                        print(var, scale_min, scale_max)
 
                         for col in column_names:
                             # Get the column values
@@ -225,6 +220,7 @@ class SanityChecker:
     def check_zero_variance(self, df: pd.DataFrame) -> None:
         """
         This method checks if any column in the DataFrame has zero variance and logs these columns.
+        Note: This should also include columns that contain np.nan and one other value
 
         Args:
             df (pd.DataFrame): The DataFrame to check for zero variance.
@@ -236,11 +232,15 @@ class SanityChecker:
 
         # Iterate through each column in the DataFrame
         for column in df.columns:
-            if df[column].nunique() == 1:  # Check if all values are identical (zero variance)
+            # Check if the column has only one unique value or one unique value with NaNs
+            unique_vals = df[column].dropna().unique()  # Exclude NaNs when checking unique values
+            if len(unique_vals) == 1:  # Only one unique value remains (e.g., 0 or another constant)
                 zero_variance_columns.append(column)
 
         if zero_variance_columns:
-            self.logger.log(f"    WARNING: Columns with zero variance: {zero_variance_columns}")
+            self.logger.log(f"    WARNING: Columns with zero variance")
+            for i in zero_variance_columns:
+                self.logger.log(f"          {i}")
 
     def calc_reliability(self, df: pd.DataFrame, dataset: str) -> None:
         """
@@ -258,7 +258,6 @@ class SanityChecker:
 
         for scale in scale_entries:
             scale_name = scale['name']
-            print(scale_name)
             if dataset in scale["item_names"]:
                 item_names = scale["item_names"][dataset]
 
@@ -311,3 +310,32 @@ class SanityChecker:
         if negative_correlations:
             for col1, col2, corr in negative_correlations:
                 self.logger.log(f"    WARNING: Negative correlation detected between '{col1}' and '{col2}': {corr:.3f}")
+
+    def sanity_check_sensing_data(self, df_sensing: pd.DataFrame) -> None:
+        """
+
+        Returns:
+
+        """
+        self.check_time_max(df_sensing)
+        # potentially check the state_df / weather alignment
+
+    def check_time_max(self, df_sensing: pd.DataFrame) -> None:
+        """
+        This function checks that no sensing feature that operates on the lvl of "minutes per day" exceeds 1440 (minutes per day)
+
+        Args:
+            df_sensing:
+
+        Returns:
+
+        """
+        app_cols = [col for col in df_sensing.columns if "_apps" in col]
+        time_cols = [col for col in df_sensing.columns if "_time" in col]
+        # TODO: add more?
+        relevant_cols = app_cols + time_cols
+        for i, v in df_sensing[relevant_cols].items():
+            if v.max() > 1440:
+                self.logger.log(f"    WARNING: Max more than 1 day in col: '{i}' -> {v.max()}")
+
+

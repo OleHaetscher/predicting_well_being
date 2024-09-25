@@ -4,6 +4,7 @@ from datetime import timedelta
 
 import numpy as np
 import pandas as pd
+import pyreadr
 
 from src.preprocessing.BasePreprocessor import BasePreprocessor
 
@@ -49,7 +50,6 @@ class CocomsPreprocessor(BasePreprocessor):
 
         # Rename hexaco cols (hex_60 in w1,w2; hex60 in w3)
         df_w3.columns = [re.sub(r'^hex60', 'hex_60', col) for col in df_w3.columns]
-        test = [i for i in df_w3.columns if "professional" in i]
 
         # Align professional_status col and align categorical values
         df_w1["professional_status_t1"] = df_w1["professional_status_student_t1"].apply(lambda x: 5 if x in [2, 3, 4] else 0)  # part-time
@@ -394,3 +394,5 @@ class CocomsPreprocessor(BasePreprocessor):
         df = df.merge(self.personal_conversations, on=self.raw_esm_id_col, how="left")
         df = df.merge(self.societal_conversations, on=self.raw_esm_id_col, how="left")
         return df
+
+

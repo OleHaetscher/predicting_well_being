@@ -2,6 +2,8 @@ from typing import Any, Optional
 
 
 class ConfigParser:
+
+    # TODO: Should be more elegant, refactor, if time
     @staticmethod
     def cfg_parser(cfg: dict, var_type: Optional[str], *args: str) -> list[dict]:
         """

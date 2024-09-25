@@ -1,4 +1,5 @@
 from copy import deepcopy
+from datetime import datetime
 
 import numpy as np
 import pandas as pd
@@ -137,6 +138,67 @@ class ZpidPreprocessor(BasePreprocessor):
         self.home_office = deepcopy(df_traits[["home_office", self.raw_trait_id_col]].drop_duplicates(keep="first"))
         return df_traits
 
+    def dataset_specific_state_processing(self, df_states: pd.DataFrame) -> pd.DataFrame:
+        """
+        In ZPID, we need to
+            - create a column that tracks if a particapant participated in both ESM-surveys
+
+        Args:
+            df_states:
+
+        Returns:
+            pd.DataFrame:
+        """
+        df_states = self.create_wave_col(df_states)
+        return df_states
+
+    def create_wave_col(self, df_states: pd.DataFrame) -> pd.DataFrame:
+        """
+        This method creates a column 'studyWave' that tracks in which study waves a person participated.
+        Wave 1 includes timestamps before the end of August, and Wave 2 includes timestamps from September onwards.
+        The result will be:
+        - 1: Only participated in Wave 1
+        - 2: Only participated in Wave 2
+        - 3: Participated in both waves
+
+        Args:
+            df_states: DataFrame containing ESM data with a timestamp column.
+
+        Returns:
+            pd.DataFrame: Updated DataFrame with a new 'wave' column.
+        """
+        # Define the wave cutoff dates
+        wave_1_end = datetime(year=2020, month=8, day=31)
+        wave_2_start = datetime(year=2020, month=9, day=1)
+        df_states[self.esm_timestamp] = pd.to_datetime(df_states[self.esm_timestamp])
+
+        # Group by person_id and calculate the first and last timestamps
+        grouped = df_states.groupby(self.raw_esm_id_col)[self.esm_timestamp].agg(['min', 'max']).reset_index()
+
+        # Function to assign waves based on the first and last timestamps
+        def assign_wave(row):
+            first_timestamp = row['min']
+            last_timestamp = row['max']
+
+            participated_in_wave_1 = first_timestamp <= wave_1_end
+            participated_in_wave_2 = last_timestamp >= wave_2_start
+
+            if participated_in_wave_1 and participated_in_wave_2:
+                return "Both"  # Both waves
+            elif participated_in_wave_1:
+                return 1  # Only wave 1
+            elif participated_in_wave_2:
+                return 2  # Only wave 2
+            return np.nan  # No valid participation (shouldn't occur)
+
+        # Assign the wave to each person
+        grouped['studyWave'] = grouped.apply(assign_wave, axis=1)
+
+        # Merge the wave data back into the original dataframe
+        df_states = df_states.merge(grouped[[self.raw_esm_id_col, 'studyWave']], on=self.raw_esm_id_col, how='left')
+
+        return df_states
+
     def dataset_specific_post_processing(self, df: pd.DataFrame) -> pd.DataFrame:
         """
 
@@ -149,6 +211,35 @@ class ZpidPreprocessor(BasePreprocessor):
         df = df.merge(self.home_office, on=self.raw_trait_id_col, how="left")
         return df
 
+    def dataset_specific_sensing_processing(self, df_sensing: pd.DataFrame) -> pd.DataFrame:
+        """
+        Overridden in the subclasses
+
+        Args:
+            df_sensing:
+
+        Returns:
+
+        """
+        df_sensing = self.fill_nans_in_app_features(df_sensing=df_sensing)
+        return df_sensing
+
+    def fill_nans_in_app_features(self, df_sensing: pd.DataFrame) -> pd.DataFrame:
+        """
+        In the features that contain durations of App usage, there are a lot of np.nan values in the sensing df
+        (which means that persons have not installed an app of that category at all, e.g., "spirituality_apps")
+        In this method, we set these values to zero (i.e., because they did not use the app, if they do not have the
+        app on the phone at all)
+
+        Args:
+            df_sensing:
+
+        Returns:
+            pd.DataFrame
+        """
+        app_cols = [col for col in df_sensing.columns if "app_" in col]
+        df_sensing[app_cols] = df_sensing[app_cols].fillna(0)
+        return df_sensing
 
 
 

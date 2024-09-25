@@ -1282,9 +1282,13 @@ esm_based:
 
     # For feature counts and testing
     - name: studyWave
+      var_type: string
       item_names:
         cocoms: studyWave
         cocout: studyWave
+        zpid: studyWave
+        emotions: wave
+
 
   self_reported_micro_context:
     - name: number_interactions
@@ -1478,14 +1482,12 @@ esm_based:
     - name: percentage_responses
       var_type: percentage
       special_mappings:  # maximum possible prompts, in this case
-        emotions: 84    # emotions: 14 Tage -> up to 6 per day -> 84
-        zpid: 70  # zpid: 14 Tage -> up to 4 per day -> 56  # or 5 ?
-        cocout: 224  # cocout: 28 tage -> up to 8 per day -> 224
-        pia: 90  # pia: 14 tage -> up to 6 per day # -> Fehler in der App, einmal 16 Tage
-        cocoesm: 140  # cocoesm: 28 tage -> up to 5 per day -> 140
-        cocoms: 140  # cocoms: 28 tage -> up to 4 per day -> 112 + 28 (dailys)
-
-  # sensed_micro_context
+        emotions: 84    # emotions: 14 Tage -> up to 6 per day -> 84 (potentially times 2)
+        zpid: 56  # zpid: 14 Tage -> up to 4 per day -> 56 (potentially times 2)
+        cocout: 224  # cocout: 28 tage -> up to 8 per day (including dailys) -> 224
+        pia: 84  # pia: 14 tage -> up to 6 per day # -> 84
+        cocoesm: 140  # cocoesm: 28 tage -> up to 5 per day (including dailys) -> 140
+        cocoms: 140  # cocoms: 28 tage -> up to 5 per day (including dailys) -> 140
 
   criterion:
     - name: pa_state
@@ -1530,7 +1532,279 @@ esm_based:
         min: 1
         max: 6
 
-# macro context
+sensing_based:
+  phone:
+    - name: id_col
+      item_names:
+        cocoms: username
+        zpid: user_id
+    - name: date
+      item_names:
+        cocoms: day
+        zpid: agg_id
+
+    - name: smartphone_usage # M, SD, Min, Max
+      var_type: continuous
+      item_names:
+        zpid: screen_sum_dur_session     #
+        cocoms: Screen_totalDur_unlocked
+    - name: smartphone_activation # M, SD, Min, Max  # TODO verify var_names
+      var_type: continuous
+      item_names:
+        zpid: screen_total_num_session
+        cocoms: Screen_totalNum_locked
+    - name: phone_talking
+      var_type: continuous
+      item_names:
+        zpid: phone_sum_dur_calls
+        # cocoms: x  # TODO fehlt
+    - name: first_usage
+      var_type: continuous
+      item_names:
+        zpid: screen_time_first_session
+        cocoms: Screen_firstEvent
+    - name: last_usage
+      var_type: continuous
+      item_names:
+        zpid: screen_time_last_session
+        cocoms: Screen_lastEvent
+    - name: flight_mode
+      var_type: continuous
+      item_names:
+        zpid: flightmode_sum_dur_on
+        # cocoms: x  # TODO fehlt
+    - name: number_notifications
+      var_type: continuous
+      item_names:
+        zpid: notification_sum
+        # cocoms: x  # TODO fehlt
+    - name: audio_entertainment_apps
+      var_type: continuous
+      item_names:
+        zpid: app_total_dur_usage_audio_entertainment
+        cocoms: App_totalDur_Audio_Entertainment
+    - name: career_apps
+      var_type: continuous
+      item_names:
+        zpid: app_total_dur_usage_career
+        cocoms: App_totalDur_Career
+    - name: communication_apps
+      var_type: continuous
+      item_names:
+        zpid: app_total_dur_usage_communication
+        cocoms: App_totalDur_Communication
+    - name: creativity_apps
+      var_type: continuous
+      item_names:
+        zpid: app_total_dur_usage_creativity
+        cocoms: App_totalDur_Creativity
+    - name: dating_apps
+      var_type: continuous
+      item_names:
+        zpid: app_total_dur_usage_dating
+        cocoms: App_totalDur_Dating
+    - name: finance_apps
+      var_type: continuous
+      item_names:
+        zpid: app_total_dur_usage_finance
+        cocoms: App_totalDur_Finance
+    - name: food_apps
+      var_type: continuous
+      item_names:
+        zpid: app_total_dur_usage_food
+        cocoms: App_totalDur_Food
+    - name: gaming_apps
+      var_type: continuous
+      item_names:
+        zpid: app_total_dur_usage_gaming
+        cocoms: App_totalDur_Gaming
+    - name: health_apps
+      var_type: continuous
+      item_names:
+        zpid: app_total_dur_usage_health
+        cocoms: App_totalDur_Health
+    - name: internet_apps
+      var_type: continuous
+      item_names:
+        zpid: app_total_dur_usage_internet
+        cocoms: App_totalDur_Internet
+    - name: knowledge_apps
+      var_type: continuous
+      item_names:
+        zpid: app_total_dur_usage_knowledge
+        cocoms: App_totalDur_Knowledge
+    - name: news_apps
+      var_type: continuous
+      item_names:
+        zpid: app_total_dur_usage_news
+        cocoms: App_totalDur_News
+    - name: orientation_apps
+      var_type: continuous
+      item_names:
+        zpid: app_total_dur_usage_orientation
+        cocoms: App_totalDur_Orientation
+    - name: photo_apps
+      var_type: continuous
+      item_names:
+        zpid: app_total_dur_usage_photo
+        cocoms: App_totalDur_Photo
+    - name: reading_apps
+      var_type: continuous
+      item_names:
+        zpid: app_total_dur_usage_reading
+        cocoms: App_totalDur_Reading
+    - name: security_apps
+      var_type: continuous
+      item_names:
+        zpid: app_total_dur_usage_security
+        cocoms: App_totalDur_Security
+    - name: settings_apps
+      var_type: continuous
+      item_names:
+        zpid: app_total_dur_usage_settings
+        cocoms: App_totalDur_Settings
+    - name: shopping_apps
+      var_type: continuous
+      item_names:
+        zpid: app_total_dur_usage_shopping
+        cocoms: App_totalDur_Shopping
+    - name: social_media_apps
+      var_type: continuous
+      item_names:
+        zpid: app_total_dur_usage_social_media
+        cocoms: App_totalDur_Social_Media
+    - name: spirituality_apps
+      var_type: continuous
+      item_names:
+        zpid: app_total_dur_usage_spirituality
+        cocoms: App_totalDur_Spirituality
+    #- name: system_apps
+    #  var_type: continuous
+    #  item_names:
+    #    zpid: x
+    #    cocoms: x
+    - name: time_apps
+      var_type: continuous
+      item_names:
+        zpid: app_total_dur_usage_time
+        cocoms: App_totalDur_Time
+    - name: tools_apps
+      var_type: continuous
+      item_names:
+        zpid: app_total_dur_usage_tools
+        cocoms: App_totalDur_Tools
+    - name: transportation_apps
+      var_type: continuous
+      item_names:
+        zpid: app_total_dur_usage_transportation
+        cocoms: App_totalDur_Transportation
+    - name: visual_entertainment
+      var_type: continuous
+      item_names:
+        zpid: app_total_dur_usage_visual_entertainment
+        cocoms: App_totalDur_Visual_Entertainment
+    - name: weather_apps
+      var_type: continuous
+      item_names:
+        zpid: app_total_dur_usage_weather
+        cocoms: App_totalDur_Weather
+
+  gps_weather:
+    - name: id_col
+      item_names:
+        cocoms: username
+        zpid: user_id
+    - name: date
+      item_names:
+        cocoms: day
+        zpid: day
+
+    - name: time_home  # M, SD, Min, Max
+      var_type: continuous
+      item_names:
+        cocoms: GPS_totalDur_home
+        zpid: GPS_totalDur_home
+    - name: time_work  # M, SD, Min, Max
+      var_type: continuous
+      item_names:
+        cocoms: GPS_totalDur_work
+        zpid: GPS_totalDur_work
+    - name: daily_temperature  # M, SD, Min, Max
+      var_type: continuous
+      item_names:
+        cocoms: temp_home
+        zpid: temp_home
+    - name: daily_cloudcover  # M, SD, Min, Max
+      var_type: continuous
+      item_names:
+        cocoms: cloudcover_home
+        zpid: cloudcover_home
+    - name: daily_precipation  # M, SD, Min, Max
+      var_type: continuous
+      item_names:
+        cocoms: precip_home
+        zpid: precip_home
+    - name: daily_humidity  # M, SD, Min, Max
+      var_type: continuous
+      item_names:
+        cocoms: humidity_home
+        zpid: humidity_home
+    - name: daily_uv_index  # M, SD, Min, Max
+      var_type: continuous
+      item_names:
+        cocoms: uvindex_home
+        zpid: uvindex_home
+    - name: daily_sunrise  # M, SD, Min, Max, TODO: include all?
+      var_type: continuous
+      item_names:
+        cocoms: sunrise_home  # convert to minutes
+        zpid: sunrise_home  # convert to minutes
+    - name: daily_sunset  # M, SD, Min, Max,  TODO: include all?
+      var_type: continuous
+      item_names:
+        cocoms: sunset_home # convert to minutes
+        zpid: sunset_home # convert to minutes
+    #- name: air_quality  # M, SD, Min, Max  #TODO Do we get this?
+    #  var_type: continuous
+      # item_names:
+        # cocoms: x # probably aqius
+        # zpid: x # probably aqius
+    - name: total_distance  # M, SD, Min, Max
+      var_type: continuous
+      item_names:
+        cocoms: GPS_total_distanceCovered
+        zpid: GPS_total_distanceCovered
+    - name: altitude_movement  # M, SD, Min, Max
+      var_type: continuous
+      item_names:
+        cocoms: GPS_total_altitude
+        zpid: GPS_total_altitude
+    - name: time_foot  # M, SD, Min, Max
+      var_type: continuous
+      item_names:
+        cocoms: dur_on_foot
+        zpid: activity_total_duration_on_foot
+    - name: time_still  # M, SD, Min, Max
+      var_type: continuous
+      item_names:
+        cocoms: dur_still
+        zpid: activity_total_duration_still
+    - name: time_vehicle  # M, SD, Min, Max
+      var_type: continuous
+      item_names:
+        cocoms: dur_in_vehicle
+        zpid: activity_total_duration_in_vehicle
+    - name: time_bicycle  # M, SD, Min, Max
+      var_type: continuous
+      item_names:
+        cocoms: dur_on_bicycle
+        zpid: activity_total_duration_on_bicycle
+
+
+
+
+
+# macro context -> nothing necessary
 
 # For easier filtering
 var_assignments:
@@ -1587,7 +1861,9 @@ var_assignments:
     - acceptance
     - religion
     - self_blame
-    - gender
+    - gender_male
+    - gender_female
+    - gender_other
     - age
     - student
     - full_employed
@@ -1679,6 +1955,183 @@ var_assignments:
     - covid_vaccination
     - daily_smokers
     - alcohol_consumption
+  sens:  # currently without "phone_talking", "flight_mode", "number_notifications" as they are not provided in cocoms yet
+    - smartphone_usage_mean
+    - smartphone_usage_sd
+    - smartphone_usage_min
+    - smartphone_usage_max
+    - smartphone_activation_mean
+    - smartphone_activation_sd
+    - smartphone_activation_min
+    - smartphone_activation_max
+    - first_usage_mean
+    - first_usage_sd
+    - first_usage_min
+    - first_usage_max
+    - last_usage_mean
+    - last_usage_sd
+    - last_usage_min
+    - last_usage_max
+    - audio_entertainment_apps_mean
+    - audio_entertainment_apps_sd
+    - audio_entertainment_apps_min
+    - audio_entertainment_apps_max
+    - career_apps_mean
+    - career_apps_sd
+    - career_apps_min
+    - career_apps_max
+    - communication_apps_mean
+    - communication_apps_sd
+    - communication_apps_min
+    - communication_apps_max
+    - creativity_apps_mean
+    - creativity_apps_sd
+    - creativity_apps_min
+    - creativity_apps_max
+    - dating_apps_mean
+    - dating_apps_sd
+    - dating_apps_min
+    - dating_apps_max
+    - finance_apps_mean
+    - finance_apps_sd
+    - finance_apps_min
+    - finance_apps_max
+    - food_apps_mean
+    - food_apps_sd
+    - food_apps_min
+    - food_apps_max
+    - gaming_apps_mean
+    - gaming_apps_sd
+    - gaming_apps_min
+    - gaming_apps_max
+    - health_apps_mean
+    - health_apps_sd
+    - health_apps_min
+    - health_apps_max
+    - internet_apps_mean
+    - internet_apps_sd
+    - internet_apps_min
+    - internet_apps_max
+    - knowledge_apps_mean
+    - knowledge_apps_sd
+    - knowledge_apps_min
+    - knowledge_apps_max
+    - news_apps_mean
+    - news_apps_sd
+    - news_apps_min
+    - news_apps_max
+    - orientation_apps_mean
+    - orientation_apps_sd
+    - orientation_apps_min
+    - orientation_apps_max
+    - photo_apps_mean
+    - photo_apps_sd
+    - photo_apps_min
+    - photo_apps_max
+    - reading_apps_mean
+    - reading_apps_sd
+    - reading_apps_min
+    - reading_apps_max
+    - security_apps_mean
+    - security_apps_sd
+    - security_apps_min
+    - security_apps_max
+    - settings_apps_mean
+    - settings_apps_sd
+    - settings_apps_min
+    - settings_apps_max
+    - shopping_apps_mean
+    - shopping_apps_sd
+    - shopping_apps_min
+    - shopping_apps_max
+    - social_media_apps_mean
+    - social_media_apps_sd
+    - social_media_apps_min
+    - social_media_apps_max
+    - spirituality_apps_mean
+    - spirituality_apps_sd
+    - spirituality_apps_min
+    - spirituality_apps_max
+    - time_apps_mean
+    - time_apps_sd
+    - time_apps_min
+    - time_apps_max
+    - tools_apps_mean
+    - tools_apps_sd
+    - tools_apps_min
+    - tools_apps_max
+    - transportation_apps_mean
+    - transportation_apps_sd
+    - transportation_apps_min
+    - transportation_apps_max
+    - visual_entertainment_mean
+    - visual_entertainment_sd
+    - visual_entertainment_min
+    - visual_entertainment_max
+    - weather_apps_mean
+    - weather_apps_sd
+    - weather_apps_min
+    - weather_apps_max
+    - time_home_mean
+    - time_home_sd
+    - time_home_min
+    - time_home_max
+    - time_work_mean
+    - time_work_sd
+    - time_work_min
+    - time_work_max
+    - daily_temperature_mean
+    - daily_temperature_sd
+    - daily_temperature_min
+    - daily_temperature_max
+    - daily_cloudcover_mean
+    - daily_cloudcover_sd
+    - daily_cloudcover_min
+    - daily_cloudcover_max
+    - daily_precipation_mean
+    - daily_precipation_sd
+    - daily_precipation_min
+    - daily_precipation_max
+    - daily_humidity_mean
+    - daily_humidity_sd
+    - daily_humidity_min
+    - daily_humidity_max
+    - daily_uv_index_mean
+    - daily_uv_index_sd
+    - daily_uv_index_min
+    - daily_uv_index_max
+    - daily_sunrise_mean
+    - daily_sunrise_sd
+    - daily_sunrise_min
+    - daily_sunrise_max
+    - daily_sunset_mean
+    - daily_sunset_sd
+    - daily_sunset_min
+    - daily_sunset_max
+    - total_distance_mean
+    - total_distance_sd
+    - total_distance_min
+    - total_distance_max
+    - altitude_movement_mean
+    - altitude_movement_sd
+    - altitude_movement_min
+    - altitude_movement_max
+    - time_foot_mean
+    - time_foot_sd
+    - time_foot_min
+    - time_foot_max
+    - time_still_mean
+    - time_still_sd
+    - time_still_min
+    - time_still_max
+    - time_vehicle_mean
+    - time_vehicle_sd
+    - time_vehicle_min
+    - time_vehicle_max
+    - time_bicycle_mean
+    - time_bicycle_sd
+    - time_bicycle_min
+    - time_bicycle_max
   crit:
     - state_pa
     - state_na

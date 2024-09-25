@@ -103,7 +103,7 @@ class EmotionsPreprocessor(BasePreprocessor):
         grouped = state_df.groupby(self.raw_esm_id_col)
         varying_columns = [col for col in state_df.columns
                            if grouped[col].nunique().gt(1).any()]
-        state_df_filtered = state_df[varying_columns + [self.raw_esm_id_col]]
+        state_df_filtered = state_df[varying_columns + [self.raw_esm_id_col] + ["wave"]]
         # state_df_filtered = self.split_state_ids(state_df_filtered)
         return state_df_filtered
 

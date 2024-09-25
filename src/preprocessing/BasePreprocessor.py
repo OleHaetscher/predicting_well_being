@@ -1,17 +1,15 @@
+import re
 from abc import ABC, abstractmethod
 from copy import deepcopy
-from functools import reduce
-from typing import Union, List
+from typing import Union
 
-import numpy as np
 import pandas as pd
 
 from src.utils.configparser import *
+from src.utils.dataloader import DataLoader
 from src.utils.logger import *
-from src.utils.timer import *
 from src.utils.sanitychecker import *
-
-import re
+from src.utils.timer import *
 
 
 class BasePreprocessor(ABC):
@@ -41,8 +39,10 @@ class BasePreprocessor(ABC):
                                             config_parser_class=ConfigParser(),
                                             apply_to_full_df=False
                                             )
+        self.data_loader = DataLoader(nrows=self.var_cfg["preprocessing"]["nrows"])
 
         self.df_before_final_selection = None  # filled later
+        self.df_states = None
         self.data = None  # assigned at the end, preprocessed data, if at all
 
     @property
@@ -59,6 +59,14 @@ class BasePreprocessor(ABC):
             return None
 
     @property
+    def path_to_sensing_data(self):
+        """Path to the folder containing the raw files for self.dataset."""
+        if self.dataset in ["cocoms", "zpid"]:  # os.path.join(self.path_to_raw_data, "country_level_vars")
+            return os.path.join(self.var_cfg["preprocessing"]["path_to_raw_data"], self.dataset, "sensing_vars")
+        else:
+            return None
+
+    @property
     def raw_trait_id_col(self):
         """Dataset specific ID col, must be instantiated after the super.init of the subclasses."""
         return self.fix_cfg["person_level"]["other_trait_columns"][0]["item_names"][self.dataset]
@@ -67,6 +75,14 @@ class BasePreprocessor(ABC):
     def raw_esm_id_col(self):
         """Dataset specific ID col, must be instantiated after the super.init of the subclasses."""
         return self.fix_cfg["esm_based"]["other_esm_columns"][0]["item_names"][self.dataset]
+
+    @property
+    def raw_sensing_id_col(self):
+        """Dataset specific sensing ID col, must be instantiated after the super.init of the subclasses."""
+        if self.dataset in ["cocoms", "zpid"]:
+            return self.fix_cfg["sensing_based"]["phone"][0]["item_names"][self.dataset]
+        else:
+            return None
 
     @property
     def esm_timestamp(self):
@@ -85,7 +101,7 @@ class BasePreprocessor(ABC):
         self.logger.log(f"Starting preprocessing pipeline for >>>{self.dataset}<<<")
 
         # Step 1: Load data
-        df_dct = self.load_data(path_to_dataset=self.path_to_raw_data)
+        df_dct = self.data_loader.read_csv(path_to_dataset=self.path_to_raw_data)
         df_traits = None  # Initialize df_traits as None
         df_states = None
         df_country_level = None
@@ -103,7 +119,6 @@ class BasePreprocessor(ABC):
             (self.adjust_education_level, {'df_traits': None}),
             (self.dataset_specific_trait_processing, {'df_traits': None}),
             (self.select_columns, {'df': None, 'df_type': "person_level"}),
-            #(self.sort_dfs, {'df': None, 'df_type': "person_level"}),
             (self.align_scales, {
                 'df': None,
                 'df_type': "person_level",
@@ -123,7 +138,6 @@ class BasePreprocessor(ABC):
             (self.merge_states, {'df_dct': df_dct}),
             (self.dataset_specific_state_processing, {'df_states': None}),
             (self.select_columns, {'df': None, 'df_type': "esm_based"}),
-            #(self.sort_dfs, {'df': None, 'df_type': "esm_based"}),
             (self.align_scales, {
                 'df': None,
                 'df_type': "esm_based",
@@ -132,26 +146,25 @@ class BasePreprocessor(ABC):
             (self.create_person_level_vars_from_esm, {'df_states': None}),
             (self.filter_min_num_esm_measures, {'df_states': None}),
             # >>> may store the ESM data at this point or directly compute the descriptive where we need the ESM data <<<
-            (self.collapse_esm_df, {'df_states': None}),
+            (self.collapse_df, {'df': None, 'df_type': "esm_based"}),
         ]
         for method, kwargs in preprocess_steps_esm:
             # Ensure df_traits is passed as needed
             kwargs = {k: v if v is not None else df_states for k, v in kwargs.items()}
             df_states = self._log_and_execute(method, **kwargs)
 
-        # Step 4 (optional): Specific sensed data processing?
-        # ...
+        # Step 4 (optional): Specific sensed data processing
         if self.dataset in ["cocoms", "zpid"]:
             self.logger.log(f".")
             self.logger.log(f"  Preprocess sensed data")
-            # Some function that merges the sensed data to the state df
-            # TODO DONT FORGET TO ADD PREFIX (e.g., smc or sens)
+            df_dct = self.data_loader.read_r(path_to_dataset=self.path_to_sensing_data)
+            df_states = self.process_and_merge_sensing_data(sensing_dct=df_dct, df_states=df_states)
 
-        # Step 5 (optional): Specific country-data processing?
+        # Step 5 (optional): Specific country-data processing
         if self.dataset == "cocoesm":
             self.logger.log(f".")
             self.logger.log(f"  Preprocess country-level data")
-            df_dct = self.load_data(path_to_dataset=self.path_to_country_level_data)
+            df_dct = self.data_loader.read_csv(path_to_dataset=self.path_to_country_level_data)
             df_traits = self.merge_trait_df_country_vars(country_var_dct=df_dct, df_traits=df_traits)
 
         # Step 4: merge data
@@ -173,49 +186,34 @@ class BasePreprocessor(ABC):
             # Ensure df_traits is passed as needed
             kwargs = {k: v if v is not None else df_joint for k, v in kwargs.items()}
             df_joint = self._log_and_execute(method, **kwargs)
-            print()
+
         self.logger.log(".")
         self.logger.log(f"Finished preprocessing pipeline for >>>{self.dataset}<<<")
         self.logger.log(".")
         self.logger.log(f"--------------------------------------------------------")
-        return df_traits
 
-    def _log_and_execute(self, method: Callable, *args: Any, **kwargs: Any):
+        # return df
+        return df_joint
+
+    def _log_and_execute(self, method: Callable, *args: Any, indent: int = 4, **kwargs: Any):
         """
+        Logs the execution of a method with a customizable indent.
 
         Args:
-            method:
-            *args:
-            **kwargs:
+            method: The method to be executed.
+            indent: The number of spaces to add before the log message (default is 4).
+            *args: Positional arguments for the method.
+            **kwargs: Keyword arguments for the method.
 
         Returns:
-
+            The result of the method execution.
         """
-        self.logger.log(f"    Executing {method.__name__}")
+        indent_spaces = ' ' * indent  # Create a string with the specified number of spaces
+        log_message = f"{indent_spaces}Executing {method.__name__}"
+        self.logger.log(log_message)
+        print(log_message)
+
         return method(*args, **kwargs)
-
-    def load_data(self, path_to_dataset):
-        """
-        This method loads all files contained in self.path_to_raw_data and returns a dict containing pd.DataFrames
-
-        Args:
-            path_to_dataset:
-
-        Returns:
-
-
-        """
-        nrows = self.var_cfg["preprocessing"]["nrows"]
-        files = os.listdir(path_to_dataset)
-        if files:
-            df_dct = {file[:-4]: pd.read_csv(os.path.join(path_to_dataset, file), encoding="latin", nrows=nrows)
-                      for file in files if os.path.isfile(os.path.join(path_to_dataset, file))}
-            for key, df in df_dct.items():
-                if "Unnamed: 0" in df.columns:
-                    df_dct[key] = df.drop(["Unnamed: 0"], axis=1)
-            return df_dct
-        else:
-            raise FileNotFoundError(f"Not datasets found in {self.path_to_raw_data}")
 
     @abstractmethod
     def merge_traits(self, df_dct):
@@ -274,14 +272,14 @@ class BasePreprocessor(ABC):
 
         Args:
             df: A pandas DataFrame containing the dataset.
-            df_type: "person_level", or "esm_based"
+            df_type: "person_level", "esm_based", or "sensing_based"
 
         Returns:
             pd.DataFrame: A DataFrame filtered to include only the relevant columns.
         """
         test2 = [i for i in df.columns if "relationship" in i]
         cols_to_be_selected = []
-        for cat, cat_entries in self.fix_cfg[df_type].items():  # TODO FIX
+        for cat, cat_entries in self.fix_cfg[df_type].items():
             for entry in cat_entries:
                 if "item_names" in entry:
                     cols_to_be_selected.extend(self.extract_columns(entry['item_names']))
@@ -616,66 +614,89 @@ class BasePreprocessor(ABC):
         Returns:
 
         """
-        self.logger.log("      create_person_level_desc_stats")
-        df_states = self.create_person_level_desc_stats(df_states=df_states)
-        self.logger.log("      create_person_level_percentages")
-        df_states = self.create_person_level_percentages(df_states=df_states)
-        self.logger.log("      create_number_interactions")
-        df_states = self.create_number_interactions(df_states=df_states)  # could be adjusted to more general method
-        self.logger.log("      create_weekday_responses")
-        df_states = self.create_weekday_responses(df_states=df_states)
-        self.logger.log("      create_early_day_responses")
-        df_states = self.create_early_day_responses(df_states=df_states)
-        self.logger.log("      create_number_responses")
-        df_states = self.create_number_responses(df_states=df_states)
-        self.logger.log("      create_percentage_responses")
-        df_states = self.create_percentage_responses(df_states=df_states)
-        self.logger.log("      average_criterion_items")
-        df_states = self.average_criterion_items(df_states=df_states)
+
+        steps = [
+            (self.create_person_level_desc_stats, {'df': None, 'feature_category': "self_reported_micro_context"}),
+            (self.create_person_level_percentages, {'df_states': None}),
+            (self.create_number_interactions, {'df_states': None}),
+            (self.create_weekday_responses, {'df_states': None}),
+            (self.create_early_day_responses, {'df_states': None}),
+            (self.create_number_responses, {'df_states': None}),
+            (self.create_percentage_responses, {'df_states': None}),
+            (self.average_criterion_items, {'df_states': None}),
+        ]
+
+        for method, kwargs in steps:
+            # Ensure df_traits is passed as needed
+            kwargs = {k: v if v is not None else df_states for k, v in kwargs.items()}
+            df_states = self._log_and_execute(method, indent=6, **kwargs)
+
         return df_states
 
-    def create_person_level_desc_stats(self, df_states: pd.DataFrame) -> pd.DataFrame:
+    def create_person_level_desc_stats(self, df: pd.DataFrame, feature_category: str,) -> pd.DataFrame:
         """
         This method creates M, SD, Min and Max for the continuous variables assessed in the ESM surveys
         to include it as predictors on a person-level.
+        It also creates the same statistics for the sensing variables.
+        We presuppose at least 2 non-Nan values for creating SD, Min, and Max.
 
         Args:
-            df_states:
+            df: df
+            feature_category: "self_reported_micro_context" or "sensing_based"
 
         Returns:
             pd.DataFrame
 
         """
-        # Extract the continuous variable entries from the config
-        cont_var_entries = self.config_parser(self.fix_cfg["esm_based"]["self_reported_micro_context"],
-                                              "continuous",
-                                              "number_interaction_partners",  # only two vars where we compute the descs
-                                              "sleep_quality")
+        if feature_category == "self_reported_micro_context":
+            cont_var_entries = self.config_parser(self.fix_cfg["esm_based"]["self_reported_micro_context"],
+                                                  "continuous",
+                                                  "number_interaction_partners",
+                                                  "sleep_quality")
+            id_col = self.raw_esm_id_col
+        elif feature_category == "sensing_based":
+            phone_entries = self.config_parser(self.fix_cfg["sensing_based"]["phone"], "continuous")
+            gps_weather_entries = self.config_parser(self.fix_cfg["sensing_based"]["gps_weather"], "continuous")
+            cont_var_entries = phone_entries + gps_weather_entries
+            id_col = self.raw_sensing_id_col
+        else:
+            raise ValueError("Feature category must be 'self_reported_micro_context' or 'sensing_based'")
 
-        # Group the dataset (df_states) by the person ID column
-        grouped_df = df_states.groupby(self.raw_esm_id_col)
+        # Group the dataset (df) by the person ID column
+        grouped_df = df.groupby(id_col)
 
         # Loop over each continuous variable entry and calculate statistics
         for entry in cont_var_entries:
             var_name = entry['name']
-
             # Ensure that the dataset key (self.dataset) exists in item_names
             if self.dataset in entry['item_names']:
                 # Get the corresponding column name for this dataset
                 column = entry['item_names'][self.dataset]
 
-                # Check if the column exists in df_states
-                if column in df_states.columns:
+                # Check if the column exists in df
+                if column in df.columns:
+                    # Filter out groups where less than 2 non-NaN values are present for each group
+                    valid_counts = grouped_df[column].count().reset_index(name='count')
+
+                    # Filter out groups with less than 2 non-NaN values
+                    valid_groups = valid_counts[valid_counts['count'] >= 2][id_col]
+
+                    # Filter the original dataframe to keep only valid groups
+                    filtered_df = df[df[id_col].isin(valid_groups)]
+
+                    # Group the filtered dataframe
+                    grouped_filtered_df = filtered_df.groupby(id_col)
+
                     # Calculate mean, standard deviation, min, and max for the current column
-                    stats = grouped_df[column].agg(
+                    stats = grouped_filtered_df[column].agg(
                         mean='mean',
-                        sd='std',
-                        min='min',
-                        max='max',
+                        sd=lambda x: x.std() if x.count() >= 2 else pd.NA,
+                        min=lambda x: x.min() if x.count() >= 2 else pd.NA,
+                        max=lambda x: x.max() if x.count() >= 2 else pd.NA,
                     ).reset_index()
 
                     # Rename the columns with the format "name_mean", "name_sd", etc.
-                    stats.columns = [self.raw_esm_id_col,
+                    stats.columns = [id_col,
                                      f"{var_name}_mean",
                                      f"{var_name}_sd",
                                      f"{var_name}_min",
@@ -683,12 +704,14 @@ class BasePreprocessor(ABC):
 
                     self.logger.log(f"          Created M, SD, Min, and Max for var {var_name}")
 
-                    # Merge the statistics back into the original df_states
-                    df_states = pd.merge(df_states, stats, on=self.raw_esm_id_col, how='left')
+                    # Merge the statistics back into the original df
+                    df = pd.merge(df, stats, on=id_col, how='left')
+                    # Drop base column
+                    df = df.drop(column, axis=1)
                 else:
                     raise KeyError(f"Column: {column} not found in {self.dataset} state_df")
 
-        return df_states
+        return df
 
     def create_person_level_percentages(self, df_states: pd.DataFrame) -> pd.DataFrame:
         """
@@ -926,12 +949,21 @@ class BasePreprocessor(ABC):
 
         max_responses = self.config_parser(self.fix_cfg["esm_based"]["self_reported_micro_context"],
                                            "percentage", "percentage_responses")[0]["special_mappings"][self.dataset]
-        # Check if the 'number_responses' column exists
-        if 'number_responses' not in df_states.columns:
-            raise KeyError("The column 'number_responses' is missing in the DataFrame.")
+        study_wave_col = self.config_parser(self.fix_cfg["esm_based"]["other_esm_columns"],
+                                           "string", "studyWave")[0]["item_names"]
 
-        # Calculate the percentage of responses per person by dividing actual responses by max possible responses
-        df_states['percentage_responses'] = (df_states['number_responses'] / max_responses)
+        # Adjust the maximum for persons that participated in two bursts (if needed)
+
+        if self.dataset in ["emotions", "zpid"]:  # need to adjust for two bursts
+            # Multiply max_responses by 2 for those who participated in both waves
+            df_states['percentage_responses'] = df_states.apply(
+                lambda row: row['number_responses'] / (max_responses * 2) if row[study_wave_col[self.dataset]] == "Both"
+                else row['number_responses'] / max_responses,
+                axis=1
+            )
+        else:  # no adjustment necessary
+            # Just divide by max_responses
+            df_states['percentage_responses'] = df_states['number_responses'] / max_responses
 
         max_crit_resp = df_states[df_states['percentage_responses'] > 1]
         if len(max_crit_resp) > 0:
@@ -940,7 +972,6 @@ class BasePreprocessor(ABC):
         df_states["percentage_responses"] = df_states["percentage_responses"].apply(
             lambda x: 1 if x > 1 else x
         )
-        assert len(df_states[df_states['percentage_responses'] > 1]) == 0, "percentages must not exceed 1"
         return df_states
 
     def average_criterion_items(self, df_states: pd.DataFrame) -> pd.DataFrame:
@@ -980,9 +1011,6 @@ class BasePreprocessor(ABC):
 
         Args:
             df_states: df containing the states of a given ESM-sample
-            soc_int_var: social situation variable, e.g. "social_interaction"
-            min_number_esm_measures: min number of measurements for the continuous variable, specified in config
-            id_col: column indicating the person id in the state df
 
         Returns:
             filtered_df: Filtered state df
@@ -1027,9 +1055,7 @@ class BasePreprocessor(ABC):
         self.logger.log(f"        N measurements after require at least {min_num_esm} measurements per person: {len(filtered_df)}")
 
         if self.dataset in ["cocout", "cocoms"]:
-            print(filtered_df["studyWave"].value_counts(dropna=False))
             for wave in filtered_df["studyWave"].unique():
-
                 df_filtered_tmp = filtered_df[filtered_df["studyWave"] == wave]
                 df_unfiltered_tmp = df_states[df_states["studyWave"] == wave]
                 self.logger.log(f"        Split up filtered num measurements included for {self.dataset}")
@@ -1065,26 +1091,34 @@ class BasePreprocessor(ABC):
         """
         return df
 
-    def collapse_esm_df(self, df_states: pd.DataFrame) -> pd.DataFrame:
+    def collapse_df(self, df: pd.DataFrame, df_type: str) -> pd.DataFrame:
         """
-        This method transforms the esm_based df (that varies by person and esm measurement) into a person-level df
+        This method transforms the df (that varies by person and esm measurement or date) into a person-level df
         (that only differs by person, one row per person). Therefore, it removes all variables that vary in-person.
 
         Args:
-            df_states:
+            df:
+            df_type: "esm_based" or "sensing_based"
 
         Returns:
             pd.DataFrame: A person-level df containing the aggregated information from the ESM-surveys.
 
         """
+        if df_type == "esm_based":
+            id_col = self.raw_esm_id_col
+        elif df_type == "sensing_based":
+            id_col = self.raw_sensing_id_col
+        else:
+            raise ValueError("df_type must be esm_based or sensing_based")
+
         constant_cols = []
-        for col in df_states.columns:
+        for col in df.columns:
             # Check if the column has only one unique value per person
-            if df_states.groupby(self.raw_esm_id_col)[col].nunique().max() == 1:
+            if df.groupby(id_col)[col].nunique().max() == 1:
                 constant_cols.append(col)
 
         # Select only the constant columns and drop duplicates (one row per person)
-        df_person_level = df_states[constant_cols].drop_duplicates(subset=self.raw_esm_id_col)
+        df_person_level = df[constant_cols].drop_duplicates(subset=id_col)
         return df_person_level
 
     def set_id_as_index(self, df: pd.DataFrame) -> pd.DataFrame:
@@ -1143,10 +1177,7 @@ class BasePreprocessor(ABC):
         Returns:
             pd.DataFrame: A merged DataFrame along the columns.
         """
-        test1 = set(df_traits[self.raw_trait_id_col]) - set(df_states[self.raw_esm_id_col])
-        test2 = set(df_states[self.raw_esm_id_col]) - set(df_traits[self.raw_trait_id_col])
         df_joint = pd.merge(df_states, df_traits, left_on=self.raw_esm_id_col, right_on=self.raw_trait_id_col, how="left")
-        test3 = [i for i in df_joint.columns if "studyWave" in i]
         return df_joint
 
     def inverse_coding(self, df: pd.DataFrame) -> pd.DataFrame:
@@ -1189,7 +1220,6 @@ class BasePreprocessor(ABC):
 
         Args:
             df (pd.DataFrame): The DataFrame containing the items.
-            cont_pers_entries (list): List of configuration entries that specify the item columns to average.
 
         Returns:
             pd.DataFrame: The DataFrame with new columns for the scale means.
@@ -1264,8 +1294,9 @@ class BasePreprocessor(ABC):
                 })
                 df = pd.concat([df, new_columns], axis=1)
                 df = df.drop([f'{criterion_type}_na_tmp'], axis=1)
-            else:
+            else:  # zpid
                 df[f'{criterion_type}_wb'] = df[f'{criterion_type}_pa']
+                df = df.drop(f'{criterion_type}_pa', axis=1)
         return df
 
     @staticmethod
@@ -1320,28 +1351,150 @@ class BasePreprocessor(ABC):
                 final_df = pd.concat([final_df, prefixed_df], axis=1)
             except KeyError:
                 print(f"  Some columns of {selected_columns} are not present in {self.dataset} df")
-
-        ### Check CoCoMS3 Val counts
-        print()
-
         return final_df
 
+    def process_and_merge_sensing_data(self, sensing_dct: dict[str, pd.DataFrame], df_states: pd.DataFrame) -> pd.DataFrame:
+        """
+        This method
 
+            - merges the two sensing datasets
+            - creates person-level variables from the sensing variables
+            - does some sanity checks
 
+        The weather data already corresponds to the individual ESM-period
 
+        Dataset specific sensing processing may include
+          - set np.nan to 0 for Apps that were never used
+          - set probably 0 to np.nan if our intuition was right
+          - apply cut-offs
 
+        Args:
+            sensing_dct:
+            df_states:
 
+        Returns:
+            pd.DataFrame
+        """
+        df_sensing = None
 
+        steps = [
+            (self.merge_sensing_dfs, {'sensing_dct': sensing_dct}),
+            (self.select_columns, {'df': None, 'df_type': "sensing_based"}),
+            (self.dataset_specific_sensing_processing, {'df_sensing': None, }),
+            (self.change_datetime_to_minutes, {'df': None, "col1": "daily_sunset", "col2": "daily_sunrise"}),
+            (self.apply_cut_offs, {'df': None}),
+            (self.create_person_level_desc_stats, {'df': None, 'feature_category': "sensing_based"}),
+            (self.collapse_df, {'df': None, "df_type": "sensing_based"}),
+        ]
 
+        for method, kwargs in steps:
+            kwargs = {k: v if v is not None else df_sensing for k, v in kwargs.items()}
+            df_sensing = self._log_and_execute(method, indent=6, **kwargs)
 
+        # merge traits
+        df_states = self.merge_state_df_sensing(df_states=df_states, df_sensing=df_sensing)
 
+        return df_states
 
+    def dataset_specific_sensing_processing(self, df_sensing: pd.DataFrame) -> pd.DataFrame:
+        """
+        Overridden in the subclasses
 
+        Args:
+            df_sensing:
 
+        Returns:
 
+        """
+        return df_sensing
 
+    def merge_sensing_dfs(self, sensing_dct: dict[str, pd.DataFrame]) -> pd.DataFrame:
+        """
+        This method concatenates the two dataframes containing sensing variables (Mobile phone features, GPS + Weather feature)
+        along the columns using the "ID" and the "day" column and returns the merged df
 
+        Args:
+            sensing_dct:
 
+        Returns:
+            pd.DataFrame
+        """
+        date_col_phone = self.fix_cfg["sensing_based"]["phone"][1]["item_names"][self.dataset]
+        date_col_gps_weather = self.fix_cfg["sensing_based"]["gps_weather"][1]["item_names"][self.dataset]
 
+        # Access the respective DataFrames from the dictionary
+        phone_df = sensing_dct['phone_sensing']
+        gps_weather_df = sensing_dct['gps_weather']
 
+        phone_df[date_col_phone] = pd.to_datetime(phone_df[date_col_phone], format="mixed", errors="coerce")
+        gps_weather_df[date_col_gps_weather] = pd.to_datetime(gps_weather_df[date_col_gps_weather], format="mixed", errors="coerce")
 
+        # Merge the two DataFrames on the ID and day columns
+        merged_df = pd.merge(
+            phone_df,
+            gps_weather_df,
+            left_on=[self.raw_sensing_id_col, date_col_phone],  # columns from phone DataFrame
+            right_on=[self.raw_sensing_id_col, date_col_gps_weather],  # columns from GPS/weather DataFrame
+            how='outer'  # TODO which join makes sense here?
+        )
+
+        return merged_df
+
+    def change_datetime_to_minutes(self, df: pd.DataFrame, **kwargs: str) -> pd.DataFrame:
+        """
+        This method changes the given columns that are in a datetime format (altough they still may be of dtype object)
+        to minutes, so that the variables can be used by the ML models
+
+        Args:
+            df:
+            *cols: columns that contain date values
+
+        Returns:
+            pd.DataFrame
+        """
+
+        for var_name in kwargs.values():
+            col_name = self.config_parser(self.fix_cfg["sensing_based"]["gps_weather"],
+                                          "continuous",
+                                          var_name)[0]["item_names"][self.dataset]
+            # Convert to datetime if the column is not already in datetime format
+            df[col_name] = pd.to_datetime(df[col_name], errors='coerce')
+            # Calculate the number of minutes since the start of the day (midnight)
+            df[col_name] = df[col_name].dt.hour * 60 + df[col_name].dt.minute
+
+        return df
+
+    def apply_cut_offs(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        This method filters the sensing variables and excludes values that exceed a certain threshold we define.
+        These values are set to np.nan. The variable-specific threshold are stored in the config.
+
+        Args:
+            df:
+
+        Returns:
+            pd.DataFrame
+        """
+        return df  # TODO Implement
+
+    def merge_state_df_sensing(self, df_states: pd.DataFrame, df_sensing: pd.DataFrame) -> pd.DataFrame:
+        """
+        This methods merges the sensing data to the trait-level data
+        Using an outer join makes sense here
+            - for the analysis without the sensing data, we use all samples that have questionnaire data
+            - for the analysis with the sensing data, we may exclude this samples
+            - furthermore, it could be possible that people do not have trait data, but esm and sensing data
+
+        Args:
+            df_states:
+            df_sensing:
+
+        Returns:
+            pd.DataFrame
+        """
+        df_states = pd.merge(left=df_states,
+                             right=df_sensing,
+                             left_on=[self.raw_esm_id_col],
+                             right_on=[self.raw_sensing_id_col],
+                             how="left")
+        return df_states

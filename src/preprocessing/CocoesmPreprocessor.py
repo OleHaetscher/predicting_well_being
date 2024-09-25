@@ -150,7 +150,7 @@ class CocoesmPreprocessor(BasePreprocessor):
 
         Returns:
 
-        """
+        """  # TODO which join? Check if using df_states would change anything
         df_country_level = reduce(
             lambda left, right: pd.merge(
                 left=left,
@@ -163,7 +163,7 @@ class CocoesmPreprocessor(BasePreprocessor):
         df_traits = pd.merge(left=df_traits,
                              right=df_country_level,
                              on=["country", "year"],
-                             how="left")  # TODO which join?
+                             how="left")
         # Correct democracy index column
         df_traits["democracy_index"] = pd.to_numeric(df_traits["democracy_index"].str.replace(',', '.', regex=False))
         return df_traits
