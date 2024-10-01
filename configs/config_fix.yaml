@@ -1800,10 +1800,6 @@ sensing_based:
         cocoms: dur_on_bicycle
         zpid: activity_total_duration_on_bicycle
 
-
-
-
-
 # macro context -> nothing necessary
 
 # For easier filtering

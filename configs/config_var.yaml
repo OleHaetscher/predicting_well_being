@@ -1,13 +1,19 @@
 general:
-  datasets_to_be_included: [cocoesm, cocoms, cocout, emotions, pia, zpid]  # , cocout, emotions, pia, zpid]  # cocoesm, cocoms, cocout, emotions, pia, zpid
-  log_dir: "../logs/all"
-  log_name: xxx
+  datasets_to_be_included: [cocoesm, cocout, cocoms, emotions, pia, zpid] # , cocout, cocoms, emotions, pia, zpid]  # cocoesm, cocoms, cocout, emotions, pia, zpid
+  log_dir: "../logs/test_analysis"
+  log_name: 01092024
+
+  steps:
+    preprocessing: false
+    analysis: true
+    postprocessing: false
 
 preprocessing:
   path_to_raw_data: "../data/raw"
+  store_data: false
   path_to_preprocessed_data: "../data/preprocessed"
   min_num_esm_measures: 5  # 5
-  nrows: 9999
+  nrows: 500
   need_inverse_coding: ["cocout", "emotions", "pia", "zpid", "cocoms"]  # all except cocoesm, do not change
   # joint id col -> ID is the index in every dataset
   sanity_checking:
@@ -38,6 +44,91 @@ preprocessing:
       zpid: 67 # inklusive 4x wb
 
 analysis:
+  load_data: true
+  path_to_preprocessed_data: "../data/preprocessed"
+  random_state: 42
+
+  methods_to_apply:
+    - select_samples
+    - select_features
+    - select_criterion
+    - create_pipeline
+    - repeated_nested_cv
+    - get_average_coefficients
+    - store_analysis_results  # CAUTION
+
+# for each combination, we will also use all samples and always compare it against the same samples using only pl
+  sample_combinations:
+    # 1
+    pl: [emotions, cocout, cocoesm, cocoms]
+    srmc: [emotions, cocout, cocoesm, cocoms]
+    sens: [zpid, cocoms]
+    srmc_sens: [cocoms]
+    mac: [cocoesm]
+    # 2  filter for "pl_" for comparisons
+    pl_srmc: [emotions, cocout, cocoesm, cocoms]
+    pl_sens: [zpid, cocoms]
+    pl_srmc_sens: [cocoms]
+    pl_mac: [cocoesm]
+    # 3
+    pl_srmc_mac: [cocoesm]
+    # 4 all
+
+  params: # adjusted by SLURM
+    prediction_model: enr  # enr, rfr -> This also determines the imputation model
+    crit: state_wb  # state_wb, state_pa, state_na, trait_wb, trait_na, trait_pa
+    sample_combination: pl  # pl, srmc, sens, mac, pl_srmc, pl_sens, pl_srmc_sens, pl_mac, pl_srmc_mac, all
+    samples_to_include: selected  # all, selected, control
+
+  cv:
+    num_inner_cv: 3  # 10
+    verbose_inner_cv: 0  #
+    num_outer_cv: 3  # 10
+    num_reps: 2  # 10
+    id_grouping_col: other_unique_id
+
+  imputation:
+    num_imputations: 3  # 5
+    max_iter: 3  # 100
+
+  scoring_metric:  # TODO: Check
+    inner_cv_loop:
+      name: neg_mean_squared_error
+    outer_cv_loop: # only for evaluation in the outer loop, not for fitting, all tested
+      - r2
+      - neg_mean_squared_error
+      - spearman
+
+  model_hyperparameters:
+    elasticnet:  # verify
+      model__alpha: [0.1, 1]
+      model__l1_ratio: [0, 1]
+      # model__alpha: [0.00001, 0.0001, 0.001, 0.01, 0.1, 1, 10, 100, 1000, 10000, 100000]
+      # model__l1_ratio: [0, 0.1, 0.2, 0.3, 0.4, 0.4, 0.6, 0.7, 0.8, 0.9, 1]
+      # model__max_iter: [ 1000, 10000 ]
+      # model__tol: [0.1, 0.01, 0.001, 0.0001]
+    randomforestregressor:
+      model__n_estimators: [ 10 ]
+      model__max_depth: [2, 5]
+      # model__n_estimators: [ 100, 1000 ]
+      # model__max_features: [ 'sqrt', 0.25, 0.5, 0.75 ]
+      # model__max_depth: [2, 4, 6, 8, 10, 15, 20, 25]
+      # model__min_samples_split: [2, 4, 6, 8, 10, 15, 20, 25]
+
+  parallelize:
+    parallelize_shap: true
+    shap_n_jobs: 1
+    parallelize_inner_cv: true
+    inner_cv_n_jobs: 1
+
+  comp_shap_ia_values: false
+
+  output_base_path: "../results"
+  output_filenames:
+    performance: 'cv_results.json'
+    shap_values: 'shap_values.pkl'  # contains shap_values, base_values, and data
+    shap_ia_values: 'shap_ia_values.pkl'
+    lin_model_coefs: 'lin_model_coefficients.json'
 
 
 

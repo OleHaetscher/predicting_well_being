@@ -3,9 +3,9 @@ import pandas as pd
 import pyreadr
 
 class DataLoader:
-    def __init__(self, nrows: int):
+    def __init__(self, nrows: int = None):
         """
-        Initializes the DataLoader with the specified number of rows to load.
+        Initializes the DataLoader with the specified number of rows to load (for csv files).
 
         Args:
             nrows (int): Number of rows to read from each file. For R files, it will load all rows.
@@ -75,4 +75,15 @@ class DataLoader:
 
         return df_dct
 
-    # def read_pkl  TBA
+    def read_pkl(self, path_to_dataset: str) -> pd.DataFrame:
+        """
+        This method loads a pickle file from a given directory and returns a dataframe.
+
+        Args:
+            path_to_dataset:
+
+        Returns:
+            pd.DataFrame
+        """
+        df = pd.read_pickle(path_to_dataset)
+        return df

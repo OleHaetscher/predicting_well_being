@@ -178,6 +178,7 @@ class BasePreprocessor(ABC):
             (self.create_scale_means, {'df': None}),
             (self.create_criteria, {'df': None}),
             (self.set_full_col_df_as_attr, {'df': None}),
+            (self.fill_unique_id_col, {'df': None}),
             (self.select_final_columns, {'df': None}),
             (self.sanity_checking, {'df': None}),  # this includes selecting the final columns
         ]
@@ -1353,6 +1354,27 @@ class BasePreprocessor(ABC):
                 print(f"  Some columns of {selected_columns} are not present in {self.dataset} df")
         return final_df
 
+    def fill_unique_id_col(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        This function creates a column "unique_id" in all datasets except cocoms and sets the dataframes
+        indices as values (thus, except in cocoms, all values in "unique_id" are unique)
+        This will allow us to use "GroupKFOld" consistently in the cv procedure so that it affects only cocoms.
+
+        Args:
+            df:
+
+        Returns:
+            pd.DataFrame
+        """
+        if "unique_id" in df.columns:
+            df["unique_id"] = df["unique_id"].fillna(df.index.to_series())
+        else:
+            df["unique_id"] = df.index
+
+        test = df.unique_id.isna().sum()
+        return df
+
+
     def process_and_merge_sensing_data(self, sensing_dct: dict[str, pd.DataFrame], df_states: pd.DataFrame) -> pd.DataFrame:
         """
         This method
@@ -1382,6 +1404,7 @@ class BasePreprocessor(ABC):
             (self.select_columns, {'df': None, 'df_type': "sensing_based"}),
             (self.dataset_specific_sensing_processing, {'df_sensing': None, }),
             (self.change_datetime_to_minutes, {'df': None, "col1": "daily_sunset", "col2": "daily_sunrise"}),
+            # TODO: Fix time issues with firstScreen / lastScreen time alignment -> see jupyter
             (self.apply_cut_offs, {'df': None}),
             (self.create_person_level_desc_stats, {'df': None, 'feature_category': "sensing_based"}),
             (self.collapse_df, {'df': None, "df_type": "sensing_based"}),
