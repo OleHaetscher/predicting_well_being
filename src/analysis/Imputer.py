@@ -3,6 +3,7 @@ from sklearn.base import BaseEstimator, TransformerMixin
 from sklearn.experimental import enable_iterative_imputer  # Required to use IterativeImputer
 from sklearn.impute import IterativeImputer
 import pandas as pd
+from sklearn.linear_model import BayesianRidge
 from sklearn.tree import DecisionTreeRegressor, DecisionTreeClassifier
 
 pd.options.mode.chained_assignment = None  # default='warn'
@@ -14,10 +15,11 @@ class Imputer(BaseEstimator, TransformerMixin):
     Can be used in an sklearn pipeline.
     """
 
-    def __init__(self, model='enr', fix_rs=42, num_imputations=1, max_iter=100):
+    def __init__(self, model, fix_rs, num_imputations, max_iter):
         self.model = model
         self.fix_rs = fix_rs
         self.max_iter = max_iter
+        self.num_imputations = num_imputations  # total num imputations
 
     def fit(self, X, y=None):
         """
@@ -25,38 +27,42 @@ class Imputer(BaseEstimator, TransformerMixin):
         """
         return self
 
-    def transform(self, X, y=None):
+    def transform(self, X, y=None, num_imputation=None):
         """
         Applies the appropriate imputation method based on the model type.
         """
         df = X.copy()
-
-        if self.model == 'elasticnet':  # TODO Adjust maybe
-            X_imputed = self.apply_linear_imputations(df=df)
-
+        if self.model == 'elasticnet':
+            X_imputed = self.apply_linear_imputations(df=df, num_imputation=num_imputation)
         elif self.model == 'randomforestregressor':
-            X_imputed = self.apply_nonlinear_imputations(df=df)
-
+            X_imputed = self.apply_nonlinear_imputations(df=df, num_imputation=num_imputation)
         else:
             raise ValueError(f"Imputations for model {self.model} not implemented")
-
         return pd.DataFrame(X_imputed, columns=X.columns, index=X.index)
 
-    def apply_linear_imputations(self, df: pd.DataFrame) -> pd.DataFrame:
+    def apply_linear_imputations(self, df: pd.DataFrame, num_imputation: int) -> pd.DataFrame:
         """
         Applies linear imputations using the IterativeImputer from sklearn.
         """
-        imputer = IterativeImputer(random_state=self.fix_rs, max_iter=3)
+        imputer = IterativeImputer(
+            estimator=BayesianRidge(),
+            max_iter=self.max_iter,
+            random_state=self.fix_rs + num_imputation,  # Different seed for each imputation
+            sample_posterior=True
+        )
         imputer.fit(df)
         df_imputed = imputer.transform(df)
         return df_imputed
 
-    def apply_nonlinear_imputations(self, df: pd.DataFrame) -> pd.DataFrame:
+    def apply_nonlinear_imputations(self, df: pd.DataFrame, num_imputation: int) -> pd.DataFrame:
         """
         Applies recursive partitioning (using CART) to impute missing values in the dataframe.
         It handles both continuous and binary variables.
+        See "Recursive partitioning for missing data imputation in the presence of interaction effects"
+        from Doove et al (2014) for details
+
         """
-        np.random.seed(self.fix_rs)
+        np.random.seed(self.fix_rs + num_imputation)
         df_imputed = df.copy()
 
         # Columns with missing values ordered by the number of missing values

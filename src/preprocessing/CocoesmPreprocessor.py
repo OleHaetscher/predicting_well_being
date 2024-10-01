@@ -150,7 +150,7 @@ class CocoesmPreprocessor(BasePreprocessor):
 
         Returns:
 
-        """  # TODO which join? Check if using df_states would change anything
+        """
         df_country_level = reduce(
             lambda left, right: pd.merge(
                 left=left,

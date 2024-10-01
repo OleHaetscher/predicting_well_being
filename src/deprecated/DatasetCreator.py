@@ -1,5 +1,5 @@
 import pandas as pd
-from src.utils.logger import Logger
+from src.utils.Logger import Logger
 
 
 class DatasetCreator:

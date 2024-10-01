@@ -1,6 +1,8 @@
+import inspect
 import json
 import os
 import pickle
+import threading
 import warnings
 from abc import ABC, abstractmethod
 
@@ -10,6 +12,7 @@ import sklearn
 from joblib import Parallel, delayed
 from scipy.stats import spearmanr
 from sklearn import set_config
+from sklearn.base import clone
 from sklearn.exceptions import ConvergenceWarning
 from sklearn.metrics import (
     make_scorer,
@@ -23,9 +26,9 @@ from sklearn.preprocessing import LabelEncoder
 from src.analysis.CustomScaler import CustomScaler
 from src.analysis.Imputer import Imputer
 from src.analysis.ShuffledGroupKFold import ShuffledGroupKFold
-from src.utils.dataloader import DataLoader
-from src.utils.logger import Logger
-from src.utils.timer import Timer
+from src.utils.DataLoader import DataLoader
+from src.utils.Logger import Logger
+from src.utils.Timer import Timer
 
 pd.options.mode.chained_assignment = None  # default='warn'
 
@@ -80,7 +83,7 @@ class BaseMLAnalyzer(ABC):
     def __init__(
         self,
         var_cfg,
-        output_dir,
+        spec_output_path,
         df,
     ):
         """
@@ -91,38 +94,40 @@ class BaseMLAnalyzer(ABC):
             output_dir: Specific directory where the results are stored
         """
         self.var_cfg = var_cfg
+        self.spec_output_path = spec_output_path
 
-        self.logger = Logger(log_dir=self.var_cfg["general"]["log_dir"], log_file=self.var_cfg["general"]["log_name"])
+        self.crit = self.var_cfg["analysis"]["params"]["crit"]
+        self.feature_combination = self.var_cfg["analysis"]["params"]["feature_combination"]
+        self.samples_to_include = self.var_cfg["analysis"]["params"]["samples_to_include"]
+
+        self.logger = Logger(log_dir=self.spec_output_path, log_file=self.var_cfg["general"]["log_name"])
         self.timer = Timer(self.logger)
         self.data_loader = DataLoader()
 
-        # Methods that got clocked
+        # Methods that get clocked
         self.repeated_nested_cv = self.timer._decorator(self.repeated_nested_cv)
         self.nested_cv = self.timer._decorator(self.nested_cv)
         self.summarize_shap_values_outer_cv = self.timer._decorator(self.summarize_shap_values_outer_cv)
         self.impute_datasets_for_fold = self.timer._decorator(self.impute_datasets_for_fold)
 
+        # Data
         self.df = df
         self.X = None
         self.y = None
 
-        # Old
-        self.output_dir = output_dir
+        # Results
         self.best_models = {}
         self.repeated_nested_scores = {}
         self.shap_results = {'shap_values': {}, "base_values": {}, "data": {}}
         self.shap_ia_values = {}  # ggfs adjust
         self.lin_model_coefs = {}  # ggfs adjust
-        self.pipeline = None
 
         # Defined in subclass
         self.model = None
 
-        # New
+        # CV parameters
+        self.pipeline = None
         self.datasets_included = None
-        self.crit = self.var_cfg["analysis"]["params"]["crit"]
-        self.sample_combination = self.var_cfg["analysis"]["params"]["sample_combination"]
-        self.samples_to_include = self.var_cfg["analysis"]["params"]["samples_to_include"]
         self.num_inner_cv = self.var_cfg["analysis"]["cv"]["num_inner_cv"]
         self.num_outer_cv = self.var_cfg["analysis"]["cv"]["num_outer_cv"]
         self.num_reps = self.var_cfg["analysis"]["cv"]["num_reps"]
@@ -140,24 +145,13 @@ class BaseMLAnalyzer(ABC):
             model=self.model_name,
             fix_rs=self.var_cfg["analysis"]["random_state"],
             max_iter=self.var_cfg["analysis"]["imputation"]["max_iter"],
+            num_imputations=self.var_cfg["analysis"]["imputation"]["num_imputations"]
                        )
 
     @property
     def hyperparameter_grid(self):
         """Set hyperparameter grid defined in var_cfg for the specified model as class attribute."""
         return self.var_cfg["analysis"]["model_hyperparameters"][self.model_name]
-
-    @property
-    def spec_output_path(self):
-        """Create analysis-specific output path."""
-        return os.path.normpath(os.path.join(
-            self.output_dir,
-            self.sample_combination,
-            self.samples_to_include,
-            self.crit,
-            self.model_name
-            )
-        )
 
     def apply_methods(self):
         """This function applies the preprocessing methods specified in the var_cfg."""
@@ -175,12 +169,17 @@ class BaseMLAnalyzer(ABC):
         to the samples (e.g., cocoesm_1)
         """
         if self.samples_to_include in ["selected", "control"]:
-            self.datasets_included = self.var_cfg["analysis"]["sample_combinations"][self.sample_combination]
+            datasets_included = self.var_cfg["analysis"]["feature_sample_combinations"][self.feature_combination]
+            datasets_included_filtered = [dataset for dataset in datasets_included if dataset in
+                                          self.var_cfg["analysis"]["crit_available"][self.crit]]
+            self.datasets_included = datasets_included_filtered
             df_filtered = self.df[self.df.index.to_series().apply(
                 lambda x: any(x.startswith(sample) for sample in self.datasets_included))]
-            # just for testing: TODO remove
-            df_filtered = df_filtered.sample(n=300)
+            # TODO remove
+            df_filtered = df_filtered.sample(n=1000)
             self.df = df_filtered
+        else:  # include all datasets
+            self.datasets_included = self.var_cfg["analysis"]["feature_sample_combinations"]["all_in"]
 
     def select_features(self):
         """
@@ -191,7 +190,7 @@ class BaseMLAnalyzer(ABC):
         """
         selected_columns = [self.id_grouping_col]
         if self.samples_to_include in ["all", "selected"]:
-            feature_prefix_lst = self.sample_combination.split("_")
+            feature_prefix_lst = self.feature_combination.split("_")
         elif self.samples_to_include == "control":
             feature_prefix_lst = ["pl"]
         else:
@@ -215,12 +214,47 @@ class BaseMLAnalyzer(ABC):
         current analysis and sets the loaded features as a class attribute "y".
         ADJUST!!!!
         """
-        y = self.df[f'crit_{self.var_cfg["analysis"]["params"]["crit"]}']
+        y = self.df[f'crit_{self.crit}']
         assert len(self.X) == len(
             y
         ), f"Features and criterion differ in length, len(X) == {len(self.X)}, len(y) == {len(y)}"
 
         setattr(self, "y", y)
+
+    def initial_info_log(self):
+        """
+        Create log message at the beginning of the analysis. This helps to identify logs, validate the parameter passing
+        of the SLURM script and provides further sanity-checking information.
+        """
+        self.logger.log("----------------------------------------------")
+
+        self.logger.log("Global analysis params")
+        self.logger.log(f"    Prediction model: {self.model_name}")
+        self.logger.log(f"    Criterion: {self.crit}")
+        self.logger.log(f"    Feature combination: {self.feature_combination}")
+        self.logger.log(f"    Samples to included: {self.samples_to_include}")
+        self.logger.log(f"    Actual datasets: {self.datasets_included}")
+
+        self.logger.log("CV params")
+        self.logger.log(f"    N repetitions: {self.num_reps}")
+        self.logger.log(f"    N outer_cv: {self.num_outer_cv}")
+        self.logger.log(f"    N inner_cv: {self.num_inner_cv}")
+        self.logger.log(f"    N imputations: {self.num_imputations}")
+        self.logger.log(f'    Model hyperparameters: {self.var_cfg["analysis"]["model_hyperparameters"][self.model_name]}')
+        self.logger.log(f'    Optimization metric: {self.var_cfg["analysis"]["scoring_metric"]["inner_cv_loop"]["name"]}')
+
+        self.logger.log("Parallelization params")
+        self.logger.log(f'    N jobs inner_cv: {self.var_cfg["analysis"]["parallelize"]["inner_cv_n_jobs"]}')
+        self.logger.log(f'    N jobs shap: {self.var_cfg["analysis"]["parallelize"]["shap_n_jobs"]}')
+        self.logger.log(f'    N jobs imputations: {self.var_cfg["analysis"]["parallelize"]["imputations_n_jobs"]}')
+        if self.var_cfg["analysis"]["shap_ia_values"]["comp_shap_ia_values"]:
+            self.logger.log(f'    N jobs shap_ia_values: {self.var_cfg["analysis"]["parallelize"]["shap_ia_values_n_jobs"]}')
+
+        self.logger.log("Data params")
+        self.logger.log(f"    Number of rows: {self.X.shape[0]}")
+        self.logger.log(f"    Number of cols: {self.X.shape[1]}")
+
+        self.logger.log("----------------------------------------------")
 
     def fit(self, X, y):
         """Scikit-Learns "Fit" method of the machine learning model, model dependent, implemented in the subclasses."""
@@ -428,29 +462,49 @@ class BaseMLAnalyzer(ABC):
 
     def impute_datasets_for_fold(self, X_train: pd.DataFrame, X_test: pd.DataFrame):
         """
-        This function creates num_imputations datasets
+        This function creates num_imputations datasets in parallel using joblib.
 
         Args:
-            num_imputations:
-            X_train:
-            X_test:
+            X_train: Training data
+            X_test: Test data
 
         Returns:
-            tuple(list[pd.DataFrame], list[pd.DataFrame]): tuple containing alist of imputed train and test datasets
-                that have both lengths of self.num_imputations
+            tuple(list[pd.DataFrame], list[pd.DataFrame]): tuple containing a list of imputed train and test datasets
+                that both have lengths of self.num_imputations
         """
-        X_train_imputed_sublst = []
-        X_test_imputed_sublst = []
-        for i in range(self.num_imputations):
-            # Fit on train set, transform train and test set
-            print("imputing dataset", i)
-            self.imputer.fit(X_train.select_dtypes("number"))
-            X_train_imputed = self.imputer.transform(X_train.select_dtypes("number"))
+        # Ensure that the grouping column is not in the numeric data
+        X_train_numeric = X_train.select_dtypes(include="number")
+        X_test_numeric = X_test.select_dtypes(include="number")
+
+        # Define the parallel imputation function
+        def impute_single_dataset(i):
+            self.log_thread()
+            # Clone the imputer to avoid shared state
+            imputer = clone(self.imputer)
+
+            # Fit the imputer on the training data
+            imputer.fit(X_train_numeric)
+            # Transform both training and test data
+            X_train_imputed = imputer.transform(X_train_numeric, num_imputation=i)
+            X_test_imputed = imputer.transform(X_test_numeric, num_imputation=i)
+
+            # Convert numpy arrays back to DataFrames
+            # X_train_imputed = pd.DataFrame(X_train_imputed, columns=X_train_numeric.columns, index=X_train_numeric.index)
+            # X_test_imputed = pd.DataFrame(X_test_imputed, columns=X_test_numeric.columns, index=X_test_numeric.index)
+
+            # Concatenate non-numeric columns if necessary
             X_train_imputed = pd.concat([X_train_imputed, X_train[self.id_grouping_col]], axis=1)
-            X_test_imputed = self.imputer.transform(X_test.select_dtypes("number"))
-            X_train_imputed_sublst.append(X_train_imputed)
-            X_test_imputed_sublst.append(X_test_imputed)
-        return X_train_imputed_sublst, X_test_imputed_sublst
+
+            return X_train_imputed, X_test_imputed
+
+        # Run the imputation in parallel
+        results = Parallel(n_jobs=self.var_cfg["analysis"]["parallelize"]["imputations_n_jobs"])(
+            delayed(impute_single_dataset)(i) for i in range(self.num_imputations)
+        )
+
+        # Unpack the results
+        X_train_imputed_sublst, X_test_imputed_sublst = zip(*results)
+        return list(X_train_imputed_sublst), list(X_test_imputed_sublst)
 
     def get_scores(self, grid_search, X_test, y_test):
         """
@@ -540,7 +594,7 @@ class BaseMLAnalyzer(ABC):
 
         if (
             self.model_name == "randomforestregressor"
-            and self.var_cfg["analysis"]["comp_shap_ia_values"]
+            and self.var_cfg["analysis"]["shap_ia_values"]["comp_shap_ia_values"]
         ):
 
             # TODO: Store data and base values also for interactions? See SHAP-IQ... -> If so, we need a 4D array
@@ -657,7 +711,7 @@ class BaseMLAnalyzer(ABC):
         # TODO adjust
         if (
             self.model_name == "randomforestregressor"
-            and self.var_cfg["analysis"]["comp_shap_ia_values"]
+            and self.var_cfg["analysis"]["shap_ia_values"]["comp_shap_ia_values"]
         ):
             ia_test_shap_values = np.zeros((X.shape[0], X.shape[1], X.shape[1]))
             # Aggregate results from all folds
@@ -720,8 +774,8 @@ class BaseMLAnalyzer(ABC):
 
             if (
                 self.model_name == "randomforestregressor"
-                and self.var_cfg["analysis"]["comp_shap_ia_values"]
-            ):  # TODO Test this -> More summarizing necessary? we have one shap_ia_values_test per rep
+                and self.var_cfg["analysis"]["shap_ia_values"]["comp_shap_ia_values"]
+            ):  # TODO Adjust after main analysis
                 self.summarize_shap_interaction_values(
                     shap_ia_values=shap_ia_values_test, columns=X.columns, dataset="test"
                 )
@@ -911,3 +965,18 @@ class BaseMLAnalyzer(ABC):
         y_pred = y_pred_raw
         rank_corr, _ = spearmanr(y_true, y_pred)
         return rank_corr
+
+    def log_thread(self):
+        """
+        Logs the current process ID and thread name, along with the method name in which this method is executed.
+        """
+        process_id = os.getpid()
+        thread_name = threading.current_thread().name
+
+        # Use inspect to get the name of the calling function
+        current_frame = inspect.currentframe()
+        caller_frame = inspect.getouterframes(current_frame, 2)
+        method_name = caller_frame[1].function
+
+        print(f"        Executing {method_name} using Process ID: {process_id}, Thread: {thread_name}")
+        self.logger.log(f"        Executing {method_name} using Process ID: {process_id}, Thread: {thread_name}")

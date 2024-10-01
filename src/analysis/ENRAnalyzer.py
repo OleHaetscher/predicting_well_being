@@ -1,5 +1,6 @@
 import json
 import os
+from collections import defaultdict
 
 import numpy as np
 import shap
@@ -32,20 +33,29 @@ class ENRAnalyzer(BaseMLAnalyzer):
     def get_average_coefficients(self):
         """Calculate the average coefficients across all outer cv loops stored in self.best_models."""
         feature_names = self.X.columns.tolist()
-        # feature_names = self.current_feature_col_order # this would fix the problem
-        for rep in range(1, self.num_repeats + 1):
-            coefs_dict_lst = []
-            # print(self.best_models.keys())
-            for model in self.best_models[f"rep_{rep}"]:
-                # Create a dictionary with feature names as keys and coefficients as values
-                coefs_dict = dict(zip(feature_names, model.coef_))
-                sorted_coefs_dict = dict(
-                    sorted(
-                        coefs_dict.items(), key=lambda item: abs(item[1]), reverse=True
+        feature_names.remove(self.id_grouping_col)
+        coefs_dict = defaultdict(lambda: defaultdict(lambda: defaultdict(dict)))
+
+        for rep in range(self.num_reps):
+            for outer_fold_idx, outer_fold in enumerate(self.best_models[f"rep_{rep}"]):
+                for imputation_idx, model in enumerate(outer_fold):
+                    print(rep, outer_fold_idx, imputation_idx)
+                    coefs_sub_dict = dict(zip(feature_names, model.coef_))
+                    sorted_coefs_sub_dict = dict(
+                        sorted(
+                            coefs_sub_dict.items(), key=lambda item: abs(item[1]), reverse=True
+                        )
                     )
-                )
-                coefs_dict_lst.append(sorted_coefs_dict)
-            self.lin_model_coefs[f"rep_{rep}"] = coefs_dict_lst
+                    # Insert sorted_coefs_dict into coefs_dict according to the hierarchy
+                    coefs_dict[f"rep_{rep}"][f"outer_fold_{outer_fold_idx}"][f"imputation_{imputation_idx}"] = sorted_coefs_sub_dict
+
+        regular_dict = self.defaultdict_to_dict(coefs_dict)
+        self.lin_model_coefs = regular_dict
+
+    def defaultdict_to_dict(self, dct):
+        if isinstance(dct, defaultdict):
+            dct = {k: self.defaultdict_to_dict(v) for k, v in dct.items()}
+        return dct
 
     def calculate_shap_for_instance(self, n_instance, instance, explainer):
         """
@@ -59,6 +69,8 @@ class ENRAnalyzer(BaseMLAnalyzer):
         Returns:
             explainer(instance.reshape(1, -1)).values: array containing the SHAP values for "n_instance"
         """
+        if n_instance < 3:
+            self.log_thread()
         return (explainer(instance.reshape(1, -1)).values,
                 explainer(instance.reshape(1, -1)).base_values,
                 explainer(instance.reshape(1, -1)).data)

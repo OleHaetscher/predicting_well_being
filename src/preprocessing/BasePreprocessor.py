@@ -5,11 +5,11 @@ from typing import Union
 
 import pandas as pd
 
-from src.utils.configparser import *
-from src.utils.dataloader import DataLoader
-from src.utils.logger import *
+from src.utils.ConfigParser import *
+from src.utils.DataLoader import DataLoader
+from src.utils.Logger import *
 from src.utils.sanitychecker import *
-from src.utils.timer import *
+from src.utils.Timer import *
 
 
 class BasePreprocessor(ABC):
@@ -30,8 +30,8 @@ class BasePreprocessor(ABC):
 
         self.logger = Logger(log_dir=self.var_cfg["general"]["log_dir"], log_file=self.var_cfg["general"]["log_name"])
         self.timer = Timer(self.logger)
-        self.config_parser = ConfigParser().cfg_parser   # rethink?
-        self.config_key_finder = ConfigParser().find_key_in_config # TODO Could be refactored
+        self.config_parser = ConfigParser().cfg_parser
+        self.config_key_finder = ConfigParser().find_key_in_config
         self.apply_preprocessing_methods = self.timer._decorator(self.apply_preprocessing_methods)
         self.sanity_checker = SanityChecker(logger=self.logger,
                                             fix_cfg=self.fix_cfg,

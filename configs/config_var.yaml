@@ -1,6 +1,6 @@
 general:
   datasets_to_be_included: [cocoesm, cocout, cocoms, emotions, pia, zpid] # , cocout, cocoms, emotions, pia, zpid]  # cocoesm, cocoms, cocout, emotions, pia, zpid
-  log_dir: "../logs/test_analysis"
+  log_dir: "../logs/final_tests_analysis"
   log_name: 01092024
 
   steps:
@@ -52,13 +52,14 @@ analysis:
     - select_samples
     - select_features
     - select_criterion
+    - initial_info_log
     - create_pipeline
     - repeated_nested_cv
     - get_average_coefficients
     - store_analysis_results  # CAUTION
 
 # for each combination, we will also use all samples and always compare it against the same samples using only pl
-  sample_combinations:
+  feature_sample_combinations:
     # 1
     pl: [emotions, cocout, cocoesm, cocoms]
     srmc: [emotions, cocout, cocoesm, cocoms]
@@ -72,24 +73,33 @@ analysis:
     pl_mac: [cocoesm]
     # 3
     pl_srmc_mac: [cocoesm]
-    # 4 all
+    # 4 all_in
+    all_in: [cocoesm, cocout, cocoms, emotions, pia, zpid]
 
   params: # adjusted by SLURM
-    prediction_model: enr  # enr, rfr -> This also determines the imputation model
+    prediction_model: elasticnet  # elasticnet, randomforestregressor
     crit: state_wb  # state_wb, state_pa, state_na, trait_wb, trait_na, trait_pa
-    sample_combination: pl  # pl, srmc, sens, mac, pl_srmc, pl_sens, pl_srmc_sens, pl_mac, pl_srmc_mac, all
-    samples_to_include: selected  # all, selected, control
+    feature_combination: pl  # pl, srmc, sens, mac, pl_srmc, pl_sens, pl_srmc_sens, pl_mac, pl_srmc_mac, all
+    samples_to_include: all  # all, selected, control
 
   cv:
     num_inner_cv: 3  # 10
     verbose_inner_cv: 0  #
     num_outer_cv: 3  # 10
-    num_reps: 2  # 10
+    num_reps: 3  # 10
     id_grouping_col: other_unique_id
+
+  crit_available: # not all criteria are available for all samples
+    state_wb: [cocoesm, cocout, cocoms, emotions, pia, zpid]
+    state_pa: [cocoesm, cocout, cocoms, emotions, pia]
+    state_na: [cocoesm, cocout, cocoms, emotions, pia]
+    trait_wb: [cocoesm, cocout, cocoms, pia, zpid]
+    trait_pa: [cocoesm, cocout, cocoms, pia, zpid]
+    trait_na: [cocoesm, cocout, cocoms, pia, zpid]
 
   imputation:
     num_imputations: 3  # 5
-    max_iter: 3  # 100
+    max_iter: 5  # 100
 
   scoring_metric:  # TODO: Check
     inner_cv_loop:
@@ -120,10 +130,19 @@ analysis:
     shap_n_jobs: 1
     parallelize_inner_cv: true
     inner_cv_n_jobs: 1
+    parallelize_shap_ia_values: true
+    shap_ia_values_n_jobs: 1
+    parallelize_imputations: true
+    imputations_n_jobs: 1  # TODO: Caution with RFR imputation model, test further
 
-  comp_shap_ia_values: false
+  shap_ia_values:  # TODO Needs to be implemented based on our affordances
+    comp_shap_ia_values: false
+    min_order: 2  # min interaction order, we already got 1 (the normal SHAP values)
+    max_order: 3  # max interaction order, one correspond to the normal SHAP values
+    budget: x  # budget for computation
 
-  output_base_path: "../results"
+
+  output_path: "../results"
   output_filenames:
     performance: 'cv_results.json'
     shap_values: 'shap_values.pkl'  # contains shap_values, base_values, and data
