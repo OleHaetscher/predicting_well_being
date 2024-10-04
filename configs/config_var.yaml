@@ -51,6 +51,7 @@ analysis:
     - select_samples
     - select_features
     - select_criterion
+    - separate_binary_continuous_cols
     - initial_info_log
     - create_pipeline
     - repeated_nested_cv
