@@ -109,13 +109,13 @@ class RFRAnalyzer(BaseMLAnalyzer):
         data_array = np.vstack(data_lst)
 
         # SHAP IA Value computations
-        if self.var_cfg["analysis"]["comp_shap_ia_values"]:
+        if self.var_cfg["analysis"]["shap_ia_values"]["comp_shap_ia_values"]:
             shap_iq_tree_explainer = shapiq.TreeExplainer(
                 model=pipeline.named_steps["model"].regressor_,
                 index="k-SII",
-                min_order=self.var_cfg["shap_ia_values"]["min_order"],
-                max_order=self.var_cfg["shap_ia_values"]["max_order"],
-                budget=self.var_cfg["shap_ia_values"]["budget"],
+                min_order=self.var_cfg["analysis"]["shap_ia_values"]["min_order"],
+                max_order=self.var_cfg["analysis"]["shap_ia_values"]["max_order"],
+                budget=self.var_cfg["analysis"]["shap_ia_values"]["budget"],
             )
             # Parallelize the calculations processing chunks of the data
             n_jobs = self.var_cfg["analysis"]["parallelize"]["shap_ia_values_n_jobs"]
