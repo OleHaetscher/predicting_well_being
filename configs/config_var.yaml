@@ -1,6 +1,6 @@
 general:
   datasets_to_be_included: [cocoesm, cocout, cocoms, emotions, pia, zpid] # , cocout, cocoms, emotions, pia, zpid]  # cocoesm, cocoms, cocout, emotions, pia, zpid
-  log_dir: "../logs/tests_slurm"
+  log_dir: "../logs/111111"
   log_name: xxx
 
   steps:
@@ -83,7 +83,7 @@ analysis:
 
   cv:
     num_inner_cv: 3  # 10
-    verbose_inner_cv: 0  #
+    verbose_inner_cv: 0 # 10
     num_outer_cv: 3  # 10
     num_reps: 2  # 10
     id_grouping_col: other_unique_id
@@ -126,13 +126,13 @@ analysis:
 
   parallelize:
     parallelize_shap: true
-    shap_n_jobs: 1
+    shap_n_jobs: 3
     parallelize_inner_cv: true
-    inner_cv_n_jobs: 1
+    inner_cv_n_jobs: 3
     parallelize_shap_ia_values: true
     shap_ia_values_n_jobs: 1
     parallelize_imputations: true
-    imputations_n_jobs: 1  # TODO: Caution with RFR imputation model, test further
+    imputations_n_jobs: 3  # TODO: Caution with RFR imputation model, test further
 
   shap_ia_values:  # TODO Needs to be implemented based on our affordances
     comp_shap_ia_values: false

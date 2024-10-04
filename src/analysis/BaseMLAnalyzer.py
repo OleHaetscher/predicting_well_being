@@ -177,7 +177,7 @@ class BaseMLAnalyzer(ABC):
             df_filtered = self.df[self.df.index.to_series().apply(
                 lambda x: any(x.startswith(sample) for sample in self.datasets_included))]
             # TODO remove
-            df_filtered = df_filtered.sample(n=200)
+            df_filtered = df_filtered.sample(n=2000)
             self.df = df_filtered
         else:  # include all datasets
             self.datasets_included = self.var_cfg["analysis"]["feature_sample_combinations"]["all_in"]
