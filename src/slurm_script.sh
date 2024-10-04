@@ -13,6 +13,7 @@ Changeable variables/settings:
 - samples_to_include ("all", "selected", "control")
 '
 
+# TODO: Use only current time as log name -> change folders of slurm slogs
 # Variables
 PREDICTION_MODELS=("elasticnet")  # elasticnet, randomforestregressor
 CRITERIA=("state_wb")             # state_wb, state_pa, state_na, trait_wb, trait_na, trait_pa
@@ -76,7 +77,8 @@ for crit in "${CRITERIA[@]}"; do
         LOG_DIR="${LOG_BASE_DIR}/${feature_combination}/${samples_to_include}/${crit}/${prediction_model}"
         mkdir -p "$LOG_DIR"
 
-        JOB_LOG_NAME="job_${prediction_model}_${crit}_${feature_combination}_${samples_to_include}_${CURRENT_TIME}"
+        # JOB_LOG_NAME="job_${prediction_model}_${crit}_${feature_combination}_${samples_to_include}_${CURRENT_TIME}"
+        JOB_LOG_NAME="job_${CURRENT_TIME}"
         FULL_LOG_PATH_LOG="${LOG_DIR}/${JOB_LOG_NAME}.log"
         FULL_LOG_PATH_ERR="${LOG_DIR}/${JOB_LOG_NAME}.err"
 

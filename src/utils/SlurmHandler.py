@@ -171,8 +171,8 @@ class SlurmHandler:
         Returns:
             var_cfg: Dict, containing the updated YAML var_cfg
         """
-        if "store_analysis_results" not in var_cfg["analysis"]["machine_learning_methods"]:
-            var_cfg["analysis"]["machine_learning_methods"].append("store_analysis_results")
+        if "store_analysis_results" not in var_cfg["analysis"]["methods_to_apply"]:
+            var_cfg["analysis"]["methods_to_apply"].append("store_analysis_results")
 
         # for safety, adjust number of reps and outer cvs
         #var_cfg["analysis"]["cv"]["num_inner_cv"] = 10

@@ -5,6 +5,7 @@ import yaml
 
 from src.analysis.ENRAnalyzer import ENRAnalyzer
 from src.analysis.RFRAnalyzer import RFRAnalyzer
+from src.postprocessing.SignificanceTesting import SignificanceTesting
 from src.preprocessing.CocoesmPreprocessor import CocoesmPreprocessor
 from src.preprocessing.CocomsPreprocessor import CocomsPreprocessor
 from src.preprocessing.CocoutPreprocessor import CocoutPreprocessor
