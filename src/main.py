@@ -44,6 +44,7 @@ if __name__ == "__main__":
                 raise ValueError(f"Warning: No preprocessor defined for dataset '{dataset_name}'")
 
         df = pd.concat(df_lst, axis=0, ignore_index=False, sort=False, join='outer')
+        print()
 
         if var_cfg["preprocessing"]["store_data"]:
             with open("../data/preprocessed/full_data", "wb") as f:
@@ -75,6 +76,10 @@ if __name__ == "__main__":
             rfr_analyzer.apply_methods()
         else:
             raise ValueError(f"Model {prediction_model} not implemented")
+
+    if var_cfg["general"]["steps"]["postprocessing"]:
+        significance_testing = SignificanceTesting(var_cfg=var_cfg)
+        significance_testing.apply_methods()
 
 
 

@@ -1,11 +1,11 @@
 general:
-  datasets_to_be_included: [cocoesm, cocout, cocoms, emotions, pia, zpid] # , cocout, cocoms, emotions, pia, zpid]  # cocoesm, cocoms, cocout, emotions, pia, zpid
+  datasets_to_be_included: [cocoesm] # , cocout, cocoms, emotions, pia, zpid]  # cocoesm, cocoms, cocout, emotions, pia, zpid
   log_dir: "../logs/final_tests_analysis"
   log_name: 01092024
 
   steps:
-    preprocessing: false
-    analysis: true
+    preprocessing: true
+    analysis: false
     postprocessing: false
 
 preprocessing:
@@ -13,7 +13,7 @@ preprocessing:
   store_data: false
   path_to_preprocessed_data: "../data/preprocessed"
   min_num_esm_measures: 5  # 5
-  nrows: 500
+  nrows: 99999
   need_inverse_coding: ["cocout", "emotions", "pia", "zpid", "cocoms"]  # all except cocoesm, do not change
   # joint id col -> ID is the index in every dataset
   sanity_checking:
@@ -79,14 +79,14 @@ analysis:
   params: # adjusted by SLURM
     prediction_model: elasticnet  # elasticnet, randomforestregressor
     crit: state_wb  # state_wb, state_pa, state_na, trait_wb, trait_na, trait_pa
-    feature_combination: pl  # pl, srmc, sens, mac, pl_srmc, pl_sens, pl_srmc_sens, pl_mac, pl_srmc_mac, all
-    samples_to_include: all  # all, selected, control
+    feature_combination: srmc  # pl, srmc, sens, mac, pl_srmc, pl_sens, pl_srmc_sens, pl_mac, pl_srmc_mac, all
+    samples_to_include: selected  # all, selected, control
 
   cv:
     num_inner_cv: 3  # 10
     verbose_inner_cv: 0  #
     num_outer_cv: 3  # 10
-    num_reps: 3  # 10
+    num_reps: 2  # 10
     id_grouping_col: other_unique_id
 
   crit_available: # not all criteria are available for all samples
@@ -98,8 +98,8 @@ analysis:
     trait_na: [cocoesm, cocout, cocoms, pia, zpid]
 
   imputation:
-    num_imputations: 3  # 5
-    max_iter: 5  # 100
+    num_imputations: 2  # 5
+    max_iter: 3  # 100
 
   scoring_metric:  # TODO: Check
     inner_cv_loop:
@@ -111,15 +111,15 @@ analysis:
 
   model_hyperparameters:
     elasticnet:  # verify
-      model__alpha: [0.1, 1]
-      model__l1_ratio: [0, 1]
+      model__regressor__alpha: [0.1, 1]
+      model__regressor__l1_ratio: [0, 1]
       # model__alpha: [0.00001, 0.0001, 0.001, 0.01, 0.1, 1, 10, 100, 1000, 10000, 100000]
       # model__l1_ratio: [0, 0.1, 0.2, 0.3, 0.4, 0.4, 0.6, 0.7, 0.8, 0.9, 1]
       # model__max_iter: [ 1000, 10000 ]
       # model__tol: [0.1, 0.01, 0.001, 0.0001]
     randomforestregressor:
-      model__n_estimators: [ 10 ]
-      model__max_depth: [2, 5]
+      model__regressor__n_estimators: [ 10 ]
+      model__regressor__max_depth: [2, 5]
       # model__n_estimators: [ 100, 1000 ]
       # model__max_features: [ 'sqrt', 0.25, 0.5, 0.75 ]
       # model__max_depth: [2, 4, 6, 8, 10, 15, 20, 25]
@@ -142,12 +142,20 @@ analysis:
     budget: x  # budget for computation
 
 
-  output_path: "../results"
+  output_path: "../results/ml_analysis"
   output_filenames:
     performance: 'cv_results.json'
     shap_values: 'shap_values.pkl'  # contains shap_values, base_values, and data
     shap_ia_values: 'shap_ia_values.pkl'
     lin_model_coefs: 'lin_model_coefficients.json'
+
+postprocessing:
+  significance_testing:
+    output_path: "../results/significance_tests"
+    alpha:
+    metric: r2
+    methods:
+      - xxx
 
 
 

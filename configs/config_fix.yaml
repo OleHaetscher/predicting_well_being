@@ -24,13 +24,25 @@ person_level:
       item_names:
         cocoms: unique_id
 
+    # TODO Change this
     - name: time_col  # only for cocoesm to merge the country-level vars
       item_names:
         cocoesm: created_demographics
+        cocoms: datetime # _t1?
+        emotions: created_demog
+        pia: created_demog
+        zpid: created_demog  # created in ZPID preprocessor
+        cocout: RecordedDateConvert
 
     - name: country_col
       item_names:
         cocoesm: country
+        cocoms: country
+        emotions: country
+        pia: country
+        zpid: country
+        cocout: country
+
 
   personality:
     - name: sociability

@@ -1,6 +1,7 @@
 import re
 from abc import ABC, abstractmethod
 from copy import deepcopy
+from functools import reduce
 from typing import Union
 
 import pandas as pd
@@ -53,10 +54,7 @@ class BasePreprocessor(ABC):
     @property
     def path_to_country_level_data(self):
         """Path to the folder containing the raw files for self.dataset."""
-        if self.dataset == "cocoesm": # os.path.join(self.path_to_raw_data, "country_level_vars")
-            return os.path.join(self.var_cfg["preprocessing"]["path_to_raw_data"], "cocoesm", "country_level_vars")
-        else:
-            return None
+        return os.path.join(self.var_cfg["preprocessing"]["path_to_raw_data"], "country_level_vars")
 
     @property
     def path_to_sensing_data(self):
@@ -104,8 +102,6 @@ class BasePreprocessor(ABC):
         df_dct = self.data_loader.read_csv(path_to_dataset=self.path_to_raw_data)
         df_traits = None  # Initialize df_traits as None
         df_states = None
-        df_country_level = None
-        df_sensed = None
         df_joint = None
 
         # Step 2: Process and transform trait data
@@ -153,25 +149,27 @@ class BasePreprocessor(ABC):
             kwargs = {k: v if v is not None else df_states for k, v in kwargs.items()}
             df_states = self._log_and_execute(method, **kwargs)
 
+        # Step 4: Merge state and trait data
+        df_joint = self._log_and_execute(self.merge_dfs_on_id, **{"df_states": df_states, "df_traits": df_traits})
+
         # Step 4 (optional): Specific sensed data processing
         if self.dataset in ["cocoms", "zpid"]:
             self.logger.log(f".")
             self.logger.log(f"  Preprocess sensed data")
             df_dct = self.data_loader.read_r(path_to_dataset=self.path_to_sensing_data)
-            df_states = self.process_and_merge_sensing_data(sensing_dct=df_dct, df_states=df_states)
+            df_joint = self.process_and_merge_sensing_data(sensing_dct=df_dct, df=df_joint)
 
-        # Step 5 (optional): Specific country-data processing
-        if self.dataset == "cocoesm":
-            self.logger.log(f".")
-            self.logger.log(f"  Preprocess country-level data")
-            df_dct = self.data_loader.read_csv(path_to_dataset=self.path_to_country_level_data)
-            df_traits = self.merge_trait_df_country_vars(country_var_dct=df_dct, df_traits=df_traits)
+        # Step 5: Specific country-data processing -> this applies to all datasets
+        self.logger.log(f".")
+        self.logger.log(f"  Preprocess country-level data")
+        df_dct = self.data_loader.read_csv(path_to_dataset=self.path_to_country_level_data)
+        df_joint = self.merge_country_data(country_var_dct=df_dct, df=df_joint)
 
         # Step 4: merge data
         self.logger.log(f".")
         self.logger.log(f"  Preprocess joint data")
         preprocess_steps_joint = [
-            (self.merge_dfs_on_id, {"df_states": df_states, "df_traits": df_traits}),
+            # (self.merge_dfs_on_id, {"df_states": df_states, "df_traits": df_traits}),
             (self.dataset_specific_post_processing, {'df': None}),
             (self.set_id_as_index, {'df': None}),
             (self.inverse_coding, {'df': None}),  # this makes sense here
@@ -624,6 +622,7 @@ class BasePreprocessor(ABC):
             (self.create_early_day_responses, {'df_states': None}),
             (self.create_number_responses, {'df_states': None}),
             (self.create_percentage_responses, {'df_states': None}),
+            (self.create_years_of_participation, {'df_states': None}),
             (self.average_criterion_items, {'df_states': None}),
         ]
 
@@ -975,6 +974,36 @@ class BasePreprocessor(ABC):
         )
         return df_states
 
+    def create_years_of_participation(self, df_states: pd.DataFrame) -> pd.DataFrame:
+        """
+        This method creates a column that contains a list of years in corresponding to the years in which
+        participants answered ESM surveys. If they participated only in one year, it contains only one item,
+        if they participated in two years, in contains to items.
+
+        Args:
+            df_states:
+
+        Returns:
+            pd.DataFrame: The DataFrame with an additional column "years_of_participation", containing the list of unique years
+                        in which each participant participated.
+        """
+        # Extract the year from the timestamp column
+        df_states['year'] = pd.to_datetime(df_states[self.esm_timestamp]).dt.year
+
+        # Group by person_id and collect unique years of participation for each person
+        df_years = df_states.groupby(self.raw_esm_id_col)['year'].apply(lambda x: tuple(sorted(x.unique()))).reset_index()
+
+        # Rename the column to 'years_of_participation'
+        df_years = df_years.rename(columns={'year': 'years_of_participation'})
+
+        # Merge the years of participation back into the original DataFrame on the person_id column
+        df_states = df_states.merge(df_years, on=self.raw_esm_id_col, how='left')
+
+        # Drop the temporary 'year' column, as it's no longer needed
+        df_states = df_states.drop(columns=['year'])
+
+        return df_states
+
     def average_criterion_items(self, df_states: pd.DataFrame) -> pd.DataFrame:
         """
         In this method, we compute averages of the items assessing positive and negative
@@ -1161,9 +1190,42 @@ class BasePreprocessor(ABC):
                     columns.append(value)
         return columns
 
-    def merge_trait_df_country_vars(self, country_var_dct: dict[str, pd.DataFrame], df_traits: pd.DataFrame) -> pd.DataFrame:
-        """Only implemented in the CoCo ESM subclass."""
-        pass
+    def merge_country_data(self, country_var_dct: dict[str, pd.DataFrame], df: pd.DataFrame) -> pd.DataFrame:
+        """
+        This method:
+            a) merges the 3 country-level var DataFrames (health, psycho-political, socio-economic),
+            b) merges the resulting DataFrame with df on country and the averaged year of participation.
+            If participants' assessments span multiple years, the country-level variables are averaged across those years.
+
+        Args:
+            country_var_dct: Dictionary containing country-level DataFrames keyed by variable type.
+            df: DataFrame containing participant-level data with a 'years_of_participation' column (list of years).
+
+        Returns:
+            pd.DataFrame: Merged DataFrame with country-level variables merged into participant data.
+        """
+        # Step 1: Merge the country-level DataFrames
+        df_country_level = reduce(
+            lambda left, right: pd.merge(left, right, on=["country", "year"], how="outer"),
+            country_var_dct.values()
+        )
+
+        df_country_level["democracy_index"] = pd.to_numeric(df_country_level["democracy_index"].str.replace(',', '.', regex=False), errors='coerce')
+        country_level_cols_to_agg = df_country_level.columns.drop(["country", "year"])
+
+        # Step 2: Handle multiple years of participation by exploding and merging on the "year" column
+        df = df.explode("years_of_participation").rename(columns={"years_of_participation": "year"})
+
+        # Merge participant data with country-level data
+        df = pd.merge(df, df_country_level, on=["country", "year"], how="left")
+
+        # Group by participant and country, and apply mean to country-level columns, keeping other columns unchanged
+        df = df.groupby([self.raw_esm_id_col, "country"], as_index=False).agg(
+            {**{col: 'mean' for col in country_level_cols_to_agg},
+             **{col: 'first' for col in df.columns.difference(country_level_cols_to_agg)}}
+        )
+
+        return df
 
     def merge_dfs_on_id(self, df_states: pd.DataFrame, df_traits: pd.DataFrame) -> pd.DataFrame:
         """
@@ -1375,7 +1437,7 @@ class BasePreprocessor(ABC):
         return df
 
 
-    def process_and_merge_sensing_data(self, sensing_dct: dict[str, pd.DataFrame], df_states: pd.DataFrame) -> pd.DataFrame:
+    def process_and_merge_sensing_data(self, sensing_dct: dict[str, pd.DataFrame], df: pd.DataFrame) -> pd.DataFrame:
         """
         This method
 
@@ -1392,7 +1454,7 @@ class BasePreprocessor(ABC):
 
         Args:
             sensing_dct:
-            df_states:
+            df:
 
         Returns:
             pd.DataFrame
@@ -1415,9 +1477,9 @@ class BasePreprocessor(ABC):
             df_sensing = self._log_and_execute(method, indent=6, **kwargs)
 
         # merge traits
-        df_states = self.merge_state_df_sensing(df_states=df_states, df_sensing=df_sensing)
+        df = self.merge_state_df_sensing(df=df, df_sensing=df_sensing)
 
-        return df_states
+        return df
 
     def dataset_specific_sensing_processing(self, df_sensing: pd.DataFrame) -> pd.DataFrame:
         """
@@ -1500,7 +1562,7 @@ class BasePreprocessor(ABC):
         """
         return df  # TODO Implement
 
-    def merge_state_df_sensing(self, df_states: pd.DataFrame, df_sensing: pd.DataFrame) -> pd.DataFrame:
+    def merge_state_df_sensing(self, df: pd.DataFrame, df_sensing: pd.DataFrame) -> pd.DataFrame:
         """
         This methods merges the sensing data to the trait-level data
         Using an outer join makes sense here
@@ -1515,9 +1577,9 @@ class BasePreprocessor(ABC):
         Returns:
             pd.DataFrame
         """
-        df_states = pd.merge(left=df_states,
-                             right=df_sensing,
-                             left_on=[self.raw_esm_id_col],
-                             right_on=[self.raw_sensing_id_col],
-                             how="left")
-        return df_states
+        df = pd.merge(left=df,
+                      right=df_sensing,
+                      left_on=[self.raw_esm_id_col],
+                      right_on=[self.raw_sensing_id_col],
+                      how="left")
+        return df

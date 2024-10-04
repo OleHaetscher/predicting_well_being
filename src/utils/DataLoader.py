@@ -87,3 +87,17 @@ class DataLoader:
         """
         df = pd.read_pickle(path_to_dataset)
         return df
+
+    def read_json(self, path_to_dataset: str) -> pd.DataFrame:
+        """
+        This method loads a JSON file from a given directory and returns a dataframe.
+        # TODO: Maybe add some verification that JSON file is not corrupted
+
+        Args:
+            path_to_dataset (str): The path to the JSON file to be loaded.
+
+        Returns:
+            pd.DataFrame: DataFrame loaded from the JSON file.
+        """
+        df = pd.read_json(path_to_dataset)
+        return df

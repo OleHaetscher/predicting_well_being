@@ -110,9 +110,12 @@ class CocomsPreprocessor(BasePreprocessor):
             t1_col = f"{base_col}_t1"
             if t1_col in df_traits.columns:
                 # Fill NaN values in the _t1 column with values from the corresponding _t2 column
-                df_traits[t1_col].fillna(df_traits[t2_col], inplace=True)
-                # Drop the _t2 column after merging
-                # df_traits.drop(columns=[t2_col], inplace=True)
+                if df_traits[t1_col].isna().any():
+                    print(t1_col)
+                    print("num NaN before filling: ", df_traits[t1_col].isna().sum())
+                    df_traits[t1_col].fillna(df_traits[t2_col], inplace=True)
+                    print("num NaN after filling: ", df_traits[t1_col].isna().sum())
+                    print("------")
 
         df_traits.columns = updated_columns
 
@@ -135,6 +138,7 @@ class CocomsPreprocessor(BasePreprocessor):
         party_number_map = [entry["party_num_mapping"] for entry in self.fix_cfg["person_level"]["personality"]
                             if "party_num_mapping" in entry.keys()][0]["cocoms"]
         df_traits['vote_general'] = df_traits['vote_general'].map(party_number_map).fillna(np.nan)
+        df_traits["country"] = "germany"
         return df_traits
 
     def dataset_specific_state_processing(self, df_states: pd.DataFrame) -> pd.DataFrame:

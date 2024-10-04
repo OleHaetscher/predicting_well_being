@@ -1,6 +1,7 @@
 from src.preprocessing.BasePreprocessor import BasePreprocessor
 import pandas as pd
 import re
+import numpy as np
 
 class PiaPreprocessor(BasePreprocessor):
     def __init__(self, fix_cfg: dict, var_cfg: dict):
@@ -16,6 +17,18 @@ class PiaPreprocessor(BasePreprocessor):
 
     def merge_traits(self, df_dct):
         return df_dct["data_traits"]
+
+    def dataset_specific_trait_processing(self, df_traits: pd.DataFrame) -> pd.DataFrame:
+        """
+
+        Args:
+            df_traits:
+
+        Returns:
+
+        """
+        df_traits["country"] = "germany"
+        return df_traits
 
     def merge_states(self, df_dct):
         return df_dct["data_esm"]

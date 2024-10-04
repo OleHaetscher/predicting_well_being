@@ -92,7 +92,7 @@ class RFRAnalyzer(BaseMLAnalyzer):
 
         # SHAP computations
         print(self.var_cfg["analysis"]["parallelize"]["shap_n_jobs"])
-        explainer_tree = shap.explainers.Tree(pipeline.named_steps["model"])
+        explainer_tree = shap.explainers.Tree(pipeline.named_steps["model"].regressor_)
         results = Parallel(
             n_jobs=self.var_cfg["analysis"]["parallelize"]["shap_n_jobs"], verbose=0
         )(
@@ -111,7 +111,7 @@ class RFRAnalyzer(BaseMLAnalyzer):
         # SHAP IA Value computations
         if self.var_cfg["analysis"]["comp_shap_ia_values"]:
             shap_iq_tree_explainer = shapiq.TreeExplainer(
-                model=pipeline.named_steps["model"],
+                model=pipeline.named_steps["model"].regressor_,
                 index="k-SII",
                 min_order=self.var_cfg["shap_ia_values"]["min_order"],
                 max_order=self.var_cfg["shap_ia_values"]["max_order"],

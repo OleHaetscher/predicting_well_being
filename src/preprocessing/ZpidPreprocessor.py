@@ -44,6 +44,8 @@ class ZpidPreprocessor(BasePreprocessor):
         df_traits = self.merge_bfi_items(df_traits=df_traits)
         df_traits = self.adjust_professional_status_col(df_traits=df_traits)
         df_traits = self.create_home_office(df_traits=df_traits)
+        df_traits["created_demog"] = "2020-01-01"
+        df_traits["country"] = "germany"
         return df_traits
 
     def replace_values(self, df_traits: pd.DataFrame) -> pd.DataFrame:

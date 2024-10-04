@@ -96,7 +96,7 @@ class CocoesmPreprocessor(BasePreprocessor):
         df_states = self.create_relationship(df_states=df_states)
         return df_states
 
-    def create_relationship(self, df_states: pd.DataFrame) -> None:
+    def create_relationship(self, df_states: pd.DataFrame) -> pd.DataFrame:
         """
         Infers the relationship status from the ESM surveys based on interactions with a partner. If any row for a
         person has a value of 4 in the "selection_partners" column, all rows for that person are inferred to be in a
@@ -132,41 +132,6 @@ class CocoesmPreprocessor(BasePreprocessor):
 
         self.relationship = deepcopy(df_states[["relationship", self.raw_esm_id_col]].drop_duplicates(keep="first"))
         return df_states
-
-    def merge_trait_df_country_vars(self, country_var_dct: dict[str, pd.DataFrame], df_traits: pd.DataFrame) -> pd.DataFrame:
-        """
-        This method
-            a) merges the 3 country-level var dfs (health, psycho-political, socio-economic)
-            b) merges the df_traits with the country-level df
-        For the second step, we need to create a column that contains the year of the assessment. Because the assessment
-        is about several weeks, it is possible that some participants started in one year and ended in a second year (but this
-        case is negligible small, only around 50 participants are affected). Therefore, we just take the "demographics_created_t1"
-        column as a reference for the year of participation.
-
-
-        Args:
-            country_var_dct:
-            df_traits:
-
-        Returns:
-
-        """
-        df_country_level = reduce(
-            lambda left, right: pd.merge(
-                left=left,
-                right=right,
-                on=["country", "year"],
-                how="outer"),
-            country_var_dct.values())
-        df_country_level.columns = [f"{col}" for col in df_country_level.columns]  # add column prefix
-        df_traits["year"] = pd.to_datetime(df_traits["created_demographics"]).dt.year
-        df_traits = pd.merge(left=df_traits,
-                             right=df_country_level,
-                             on=["country", "year"],
-                             how="left")
-        # Correct democracy index column
-        df_traits["democracy_index"] = pd.to_numeric(df_traits["democracy_index"].str.replace(',', '.', regex=False))
-        return df_traits
 
     def dataset_specific_post_processing(self, df: pd.DataFrame) -> pd.DataFrame:
         """

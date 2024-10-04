@@ -13,6 +13,7 @@ from joblib import Parallel, delayed
 from scipy.stats import spearmanr
 from sklearn import set_config
 from sklearn.base import clone
+from sklearn.compose import TransformedTargetRegressor
 from sklearn.exceptions import ConvergenceWarning
 from sklearn.metrics import (
     make_scorer,
@@ -21,7 +22,7 @@ from sklearn.metrics import (
 )
 from sklearn.model_selection import GridSearchCV
 from sklearn.pipeline import Pipeline
-from sklearn.preprocessing import LabelEncoder
+from sklearn.preprocessing import LabelEncoder, StandardScaler
 
 from src.analysis.CustomScaler import CustomScaler
 from src.analysis.Imputer import Imputer
@@ -176,7 +177,7 @@ class BaseMLAnalyzer(ABC):
             df_filtered = self.df[self.df.index.to_series().apply(
                 lambda x: any(x.startswith(sample) for sample in self.datasets_included))]
             # TODO remove
-            df_filtered = df_filtered.sample(n=1000)
+            df_filtered = df_filtered.sample(n=200)
             self.df = df_filtered
         else:  # include all datasets
             self.datasets_included = self.var_cfg["analysis"]["feature_sample_combinations"]["all_in"]
@@ -266,24 +267,29 @@ class BaseMLAnalyzer(ABC):
 
     def create_pipeline(self):
         """
-        This function creates a pipeline with preprocessing steps (e.g., scaling and feature selection) and
+        This function creates a pipeline with preprocessing steps (e.g., scaling X, scaling y) and
         the estimator used in the repeated nested CV procedure. It sets the pipeline as a class attribute.
         """
         preprocessor = self.get_custom_scaler(data=self.X)
+        target_scaler = StandardScaler()
+
+        # Wrap your model (preprocessors are only applied to X, not to)
+        model_wrapped = TransformedTargetRegressor(
+            regressor=self.model,
+            transformer=target_scaler
+        )
+        # create pipeline
         pipe = Pipeline(
             [
                 ("preprocess", preprocessor),
-                ("model", self.model),
+                ("model", model_wrapped),
             ]
         )
         setattr(self, "pipeline", pipe)
 
     def get_custom_scaler(self, data):
         """
-        This function creates a custom scaler that scales only continuous columns. Because the
-        data.columns.difference() method unexpectedly ordered the features by alphabet, we
-        preserved the new order of the columns for reassigning feature importances after the
-        prediction procedure.
+        This function creates a custom scaler that scales only continuous columns. Feature order is preserved.
 
         Args:
             data: df, containing the features for a given analysis setting (binary and continuous)
@@ -296,7 +302,6 @@ class BaseMLAnalyzer(ABC):
         continuous_cols = [col for col in data.columns if col not in binary_cols]  # ordered as in df
         continuous_cols.remove(self.id_grouping_col)
         preprocessor = CustomScaler(cols_to_scale=continuous_cols)
-        # TODO Test this!!!
         return preprocessor
 
     def nested_cv(
@@ -425,7 +430,7 @@ class BaseMLAnalyzer(ABC):
                 grid_search.fit(X_train_current, y_train, groups=groups_numeric)
 
                 # append tuned models on an imputed dataset to sublst
-                ml_models_sublst.append(grid_search.best_estimator_.named_steps["model"])
+                ml_models_sublst.append(grid_search.best_estimator_.named_steps["model"].regressor_)
                 ml_pipelines_sublst.append(grid_search.best_estimator_)
 
                 # Evaluate the model on the imputed test set and store the metrics
@@ -508,7 +513,8 @@ class BaseMLAnalyzer(ABC):
 
     def get_scores(self, grid_search, X_test, y_test):
         """
-        This method generates scoring functions and evaluates the best model on the test set.
+        This method generates scoring functions and evaluates the best model on the test set,
+        verifying that the scaling operations were applied to X_test and y_test.
 
         Args:
             grid_search: The trained grid search object with the best estimator.
@@ -520,13 +526,9 @@ class BaseMLAnalyzer(ABC):
         """
         # Define the scoring functions
         scoring_functions = {
-            "neg_mean_squared_error": get_scorer(
-                "neg_mean_squared_error"
-            ),
+            "neg_mean_squared_error": get_scorer("neg_mean_squared_error"),
             "r2": get_scorer("r2"),
-            "spearman": make_scorer(
-                self.spearman_corr
-            ),  # Assuming self.spearman_corr is already defined elsewhere
+            "spearman": make_scorer(self.spearman_corr),  # Assuming self.spearman_corr is defined
         }
 
         scorers = {
@@ -534,7 +536,8 @@ class BaseMLAnalyzer(ABC):
             for metric in self.var_cfg["analysis"]["scoring_metric"]["outer_cv_loop"]
         }
 
-        # Evaluate the best model on the outer folds' test set and return the results
+        # Evaluate the best model on the test set
+        # Note: This handles the crit scaling internally using "y_test" and "best_estimator"
         scores = {
             metric: scorer(grid_search.best_estimator_, X_test, y_test)
             for metric, scorer in scorers.items()

@@ -105,6 +105,7 @@ class CocoutPreprocessor(BasePreprocessor):
         df_traits["professional_status"] = 1
         df_traits["educational_attainment"] = 4  # Abi eq in 1-6 scale
         df_traits["studyWave"] = np.nan
+        df_traits["country"] = "usa"
         return df_traits
 
     def merge_states(self, df_dct):

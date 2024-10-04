@@ -95,7 +95,7 @@ class ENRAnalyzer(BaseMLAnalyzer):
         X_processed = pipeline.named_steps["preprocess"].transform(X)  # must contain imputations
 
         explainer_lin = shap.LinearExplainer(
-            pipeline.named_steps["model"], X_processed
+            pipeline.named_steps["model"].regressor_, X_processed
         )
 
         results = Parallel(

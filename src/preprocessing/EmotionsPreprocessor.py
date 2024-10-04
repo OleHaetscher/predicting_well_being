@@ -75,11 +75,29 @@ class EmotionsPreprocessor(BasePreprocessor):
                 suffix_col = f"{base_col}{suffix}"
                 if suffix_col in df_traits.columns:
                     # Fill NaNs in the base column with the suffix column values
-                    df_traits[base_col].fillna(df_traits[suffix_col], inplace=True)
-                    df_traits = df_traits.drop(columns=suffix_col)
+                    if df_traits[base_col].isna().any:
+                        print(base_col)
+                        print("num NaN before filling: ", df_traits[base_col].isna().sum())
+                        df_traits[base_col].fillna(df_traits[suffix_col], inplace=True)
+                        print("num NaN after filling: ", df_traits[base_col].isna().sum())
+                        print("------")
+
+                        df_traits = df_traits.drop(columns=suffix_col)
 
         assert len(df_traits.columns) == len(set(df_traits.columns)), "Duplicate column names found after renaming!"
 
+        return df_traits
+
+    def dataset_specific_trait_processing(self, df_traits: pd.DataFrame) -> pd.DataFrame:
+        """
+
+        Args:
+            df_traits:
+
+        Returns:
+
+        """
+        df_traits["country"] = "germany"
         return df_traits
 
     def merge_states(self, df_dct: dict[str, pd.DataFrame]) -> pd.DataFrame:
