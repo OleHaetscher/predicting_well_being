@@ -47,38 +47,33 @@ class SlurmHandler:
         # Loop through the dictionary and add each argument
         for arg, params in args_dict.items():
             parser.add_argument(
-                arg, type=str, default=params["default"], help=params["help"]
+                arg, type=str, help=params["help"]
             )
 
         # In the get_slurm_vars function, when adding arguments, specify the type as str2bool for boolean variables
         parser.add_argument(
-            "--calc_ia_values",
+            "--comp_shap_ia_values",
             type=self.str2bool,
-            default=var_cfg["analysis"]["compute_ia_values"],
             help="if for rfr ia_values are calculated, Bool",
         )
         parser.add_argument(
             "--parallelize_imputations",
             type=self.str2bool,
-            default=var_cfg["analysis"]["parallelize"]["parallelize_imputations"],
             help="if we parallelize the creation of the imputed datasets, Bool",
         )
         parser.add_argument(
             "--parallelize_inner_cv",
             type=self.str2bool,
-            default=var_cfg["analysis"]["parallelize"]["parallelize_inner_cv"],
             help="if we parallelize the inner cv of the analysis, Bool",
         )
         parser.add_argument(
             "--parallelize_shap_ia_values",
             type=self.str2bool,
-            default=var_cfg["analysis"]["parallelize"]["parallelize_shap_ia_values"],
             help="if we parallelize the shap ia value calculations, Bool",
         )
         parser.add_argument(
             "--parallelize_shap",
             type=self.str2bool,
-            default=var_cfg["analysis"]["parallelize"]["parallelize_shap"],
             help="if we parallelize the shap calculations, Bool",
         )
         args = parser.parse_args()
@@ -162,7 +157,7 @@ class SlurmHandler:
         return var_cfg
 
     @staticmethod
-    def sanity_checks_cfg_cluster(var_cfg):  # TODO test this
+    def sanity_checks_cfg_cluster(var_cfg):  # TODO This does not work yet
         """
         This function sets certain variables automatically when using the cluster which I probably change
         locally during testing. For example, for testing certain analysis settings, I might run the CV
@@ -180,10 +175,10 @@ class SlurmHandler:
             var_cfg["analysis"]["machine_learning_methods"].append("store_analysis_results")
 
         # for safety, adjust number of reps and outer cvs
-        var_cfg["analysis"]["cv"]["num_inner_cv"] = 10
-        var_cfg["analysis"]["cv"]["num_outer_cv"] = 10
-        var_cfg["analysis"]["cv"]["num_reps"] = 10
-        var_cfg["analysis"]["imputation"]["num_imputations"] = 5
+        #var_cfg["analysis"]["cv"]["num_inner_cv"] = 10
+        #var_cfg["analysis"]["cv"]["num_outer_cv"] = 10
+        #var_cfg["analysis"]["cv"]["num_reps"] = 10
+        #var_cfg["analysis"]["imputation"]["num_imputations"] = 5
 
         # for safety, adjust the method -> only machine learning is done on the cluster
         var_cfg["general"]["steps"]["preprocessing"] = False

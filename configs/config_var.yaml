@@ -1,11 +1,11 @@
 general:
   datasets_to_be_included: [cocoesm, cocout, cocoms, emotions, pia, zpid] # , cocout, cocoms, emotions, pia, zpid]  # cocoesm, cocoms, cocout, emotions, pia, zpid
-  log_dir: "../logs/final_tests_analysis"
-  log_name: 01092024
+  log_dir: "../logs/tests_slurm"
+  log_name: xxx
 
   steps:
-    preprocessing: true
-    analysis: false
+    preprocessing: false
+    analysis: true
     postprocessing: false
 
 preprocessing:
@@ -33,7 +33,6 @@ preprocessing:
     - creative_imagination
     - productiveness
     - responsibility
-
 
     number_of_features:  # as in PreReg Table, without sensing ye
       cocoesm: 149 # inklusive 6x wb, davon MAC 54
