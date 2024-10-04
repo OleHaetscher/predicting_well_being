@@ -1,5 +1,5 @@
 general:
-  datasets_to_be_included: [cocoesm] # , cocout, cocoms, emotions, pia, zpid]  # cocoesm, cocoms, cocout, emotions, pia, zpid
+  datasets_to_be_included: [cocoesm, cocout, cocoms, emotions, pia, zpid] # , cocout, cocoms, emotions, pia, zpid]  # cocoesm, cocoms, cocout, emotions, pia, zpid
   log_dir: "../logs/final_tests_analysis"
   log_name: 01092024
 
@@ -10,10 +10,10 @@ general:
 
 preprocessing:
   path_to_raw_data: "../data/raw"
-  store_data: false
+  store_data: true
   path_to_preprocessed_data: "../data/preprocessed"
   min_num_esm_measures: 5  # 5
-  nrows: 99999
+  nrows: 30000
   need_inverse_coding: ["cocout", "emotions", "pia", "zpid", "cocoms"]  # all except cocoesm, do not change
   # joint id col -> ID is the index in every dataset
   sanity_checking:
