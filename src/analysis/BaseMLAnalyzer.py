@@ -392,7 +392,7 @@ class BaseMLAnalyzer(ABC):
         # Containers to hold the results
         ml_pipelines = []
         ml_models = []
-        nested_scores_rep = {f"rep_{rep}": {}}
+        nested_scores_rep = {}
         X_test_imputed_lst = []
 
         # Loop over outer cross-validation splits
@@ -400,7 +400,7 @@ class BaseMLAnalyzer(ABC):
 
             ml_pipelines_sublst = []
             ml_models_sublst = []
-            nested_scores_rep[f"rep_{rep}"][f"outer_fold_{cv_idx}"] = {}
+            nested_scores_rep[f"outer_fold_{cv_idx}"] = {}
 
             # Convert indices and select data
             train_indices = X.index[train_index]
@@ -433,7 +433,7 @@ class BaseMLAnalyzer(ABC):
                     n_jobs=self.var_cfg["analysis"]["parallelize"]["inner_cv_n_jobs"],
                 )
 
-                nested_scores_rep[f"rep_{rep}"][f"outer_fold_{cv_idx}"][f"imp_{imputed_idx}"] = {}
+                nested_scores_rep[f"outer_fold_{cv_idx}"][f"imp_{imputed_idx}"] = {}
 
                 # This would be cleaner with metadata routing, but this works ATM
                 groups = X_train_imputed_sublst[imputed_idx].pop('other_unique_id')
@@ -452,7 +452,7 @@ class BaseMLAnalyzer(ABC):
                 # Evaluate the model on the imputed test set and store the metrics
                 scores = self.get_scores(grid_search, X_test_current, y_test)
                 for metric, score in scores.items():
-                    nested_scores_rep[f"rep_{rep}"][f"outer_fold_{cv_idx}"][f"imp_{imputed_idx}"][metric] = score
+                    nested_scores_rep[f"outer_fold_{cv_idx}"][f"imp_{imputed_idx}"][metric] = score
 
             # Append sublists to list
             ml_models.append(ml_models_sublst)
@@ -785,7 +785,8 @@ class BaseMLAnalyzer(ABC):
             self.shap_results["shap_values"][f"rep_{rep}"] = rep_shap_values
             self.shap_results["base_values"][f"rep_{rep}"] = rep_base_values
             self.shap_results["data"][f"rep_{rep}"] = rep_data
-            self.repeated_nested_scores = nested_scores_rep
+            self.repeated_nested_scores[f"rep_{rep}"] = nested_scores_rep
+            print()
 
             if (
                 self.model_name == "randomforestregressor"
