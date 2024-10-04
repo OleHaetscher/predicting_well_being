@@ -113,17 +113,17 @@ analysis:
     elasticnet:  # verify
       model__regressor__alpha: [0.1, 1]
       model__regressor__l1_ratio: [0, 1]
-      # model__alpha: [0.00001, 0.0001, 0.001, 0.01, 0.1, 1, 10, 100, 1000, 10000, 100000]
-      # model__l1_ratio: [0, 0.1, 0.2, 0.3, 0.4, 0.4, 0.6, 0.7, 0.8, 0.9, 1]
-      # model__max_iter: [ 1000, 10000 ]
-      # model__tol: [0.1, 0.01, 0.001, 0.0001]
+      # model__regressor__alpha: [0.00001, 0.0001, 0.001, 0.01, 0.1, 1, 10, 100, 1000, 10000, 100000]
+      # model__regressor__l1_ratio: [0, 0.1, 0.2, 0.3, 0.4, 0.4, 0.6, 0.7, 0.8, 0.9, 1]
+      # model__regressor__max_iter: [ 1000, 10000 ]
+      # model__regressor__tol: [0.1, 0.01, 0.001, 0.0001]
     randomforestregressor:
       model__regressor__n_estimators: [ 10 ]
       model__regressor__max_depth: [2, 5]
-      # model__n_estimators: [ 100, 1000 ]
-      # model__max_features: [ 'sqrt', 0.25, 0.5, 0.75 ]
-      # model__max_depth: [2, 4, 6, 8, 10, 15, 20, 25]
-      # model__min_samples_split: [2, 4, 6, 8, 10, 15, 20, 25]
+      # model__regressor__n_estimators: [ 100, 1000 ]
+      # model__regressor__max_features: [ 'sqrt', 0.25, 0.5, 0.75 ]
+      # model__regressor__max_depth: [2, 4, 6, 8, 10, 15, 20, 25]
+      # model__regressor__min_samples_split: [2, 4, 6, 8, 10, 15, 20, 25]
 
   parallelize:
     parallelize_shap: true
