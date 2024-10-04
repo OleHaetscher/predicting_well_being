@@ -1,6 +1,6 @@
 general:
   datasets_to_be_included: [cocoesm, cocout, cocoms, emotions, pia, zpid] # , cocout, cocoms, emotions, pia, zpid]  # cocoesm, cocoms, cocout, emotions, pia, zpid
-  log_dir: "../logs/111111"
+  log_dir: "../logs/test_cpu_efficiency"
   log_name: xxx
 
   steps:
@@ -83,10 +83,10 @@ analysis:
     samples_to_include: selected  # all, selected, control
 
   cv:
-    num_inner_cv: 3  # 10
+    num_inner_cv: 10  # 10
     verbose_inner_cv: 0 # 10
-    num_outer_cv: 3  # 10
-    num_reps: 2  # 10
+    num_outer_cv: 10  # 10
+    num_reps: 10  # 10
     id_grouping_col: other_unique_id
 
   crit_available: # not all criteria are available for all samples
@@ -98,10 +98,10 @@ analysis:
     trait_na: [cocoesm, cocout, cocoms, pia, zpid]
 
   imputation:
-    num_imputations: 2  # 5
-    max_iter: 3  # 100
+    num_imputations: 5  # 5
+    max_iter: 100  # 100
 
-  scoring_metric:  # TODO: Check
+  scoring_metric:
     inner_cv_loop:
       name: neg_mean_squared_error
     outer_cv_loop: # only for evaluation in the outer loop, not for fitting, all tested
@@ -118,12 +118,12 @@ analysis:
       # model__regressor__max_iter: [ 1000, 10000 ]
       # model__regressor__tol: [0.1, 0.01, 0.001, 0.0001]
     randomforestregressor:
-      model__regressor__n_estimators: [ 10 ]
-      model__regressor__max_depth: [2, 5]
-      # model__regressor__n_estimators: [ 100, 1000 ]
-      # model__regressor__max_features: [ 'sqrt', 0.25, 0.5, 0.75 ]
-      # model__regressor__max_depth: [2, 4, 6, 8, 10, 15, 20, 25]
-      # model__regressor__min_samples_split: [2, 4, 6, 8, 10, 15, 20, 25]
+      # model__regressor__n_estimators: [ 10 ]
+      # model__regressor__max_depth: [2, 5]
+      model__regressor__n_estimators: [ 100, 1000 ]
+      model__regressor__max_features: [ 'sqrt', 0.25, 0.5, 0.75 ]
+      model__regressor__max_depth: [2, 4, 6, 8, 10, 15, 20, 25]
+      model__regressor__min_samples_split: [2, 4, 6, 8, 10, 15, 20, 25]
 
   parallelize:
     parallelize_shap: true
@@ -131,9 +131,9 @@ analysis:
     parallelize_inner_cv: true
     inner_cv_n_jobs: 3
     parallelize_shap_ia_values: true
-    shap_ia_values_n_jobs: 1
+    shap_ia_values_n_jobs: 3
     parallelize_imputations: true
-    imputations_n_jobs: 3  # TODO: Caution with RFR imputation model, test further
+    imputations_n_jobs: 3
 
   shap_ia_values:  # TODO Needs to be implemented based on our affordances
     comp_shap_ia_values: false

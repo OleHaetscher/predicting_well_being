@@ -21,7 +21,7 @@ FEATURE_COMBINATIONS=("pl")       # pl, srmc, sens, mac, etc.
 SAMPLES_TO_INCLUDE=("all")        # all, selected, control
 
 # Parameters
-COMP_SHAP_IA_VALUES="true"
+COMP_SHAP_IA_VALUES="false"
 PARALLELIZE_INNER_CV="true"
 PARALLELIZE_SHAP="true"
 PARALLELIZE_SHAP_IA_VALUES="true"

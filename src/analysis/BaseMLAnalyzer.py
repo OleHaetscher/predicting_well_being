@@ -178,8 +178,7 @@ class BaseMLAnalyzer(ABC):
             self.datasets_included = datasets_included_filtered
             df_filtered = self.df[self.df.index.to_series().apply(
                 lambda x: any(x.startswith(sample) for sample in self.datasets_included))]
-            # TODO remove
-            df_filtered = df_filtered.sample(n=2000)
+            # df_filtered = df_filtered.sample(n=2000) just for testing
             self.df = df_filtered
         else:  # include all datasets
             self.datasets_included = self.var_cfg["analysis"]["feature_sample_combinations"]["all_in"]
@@ -413,6 +412,9 @@ class BaseMLAnalyzer(ABC):
             assert (X_test.index == y_test.index).all(), "Indices between test data differ"
             assert len(set(X_train[self.id_grouping_col]).intersection(set(X_test[self.id_grouping_col]))) == 0, \
                 "Grouping did not work as expected"
+
+            # TODO Remove, just for testing
+            y_test = np.random.randn(len(y_test))
 
             # Create imputed datasets and save the test datasets for SHAP computations
             X_train_imputed_sublst, X_test_imputed_sublst = self.impute_datasets_for_fold(X_train=X_train, X_test=X_test)
