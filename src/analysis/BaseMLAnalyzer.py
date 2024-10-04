@@ -781,11 +781,11 @@ class BaseMLAnalyzer(ABC):
             rep_data,
             shap_ia_values_test,
         ) in enumerate(results):
-            self.best_models[f"rep_{rep}"] = best_models[f"rep_{rep}"]  # TODO test this
+            self.best_models[f"rep_{rep}"] = best_models
             self.shap_results["shap_values"][f"rep_{rep}"] = rep_shap_values
             self.shap_results["base_values"][f"rep_{rep}"] = rep_base_values
             self.shap_results["data"][f"rep_{rep}"] = rep_data
-            self.repeated_nested_scores[f"rep_{rep}"] = nested_scores_rep
+            self.repeated_nested_scores = nested_scores_rep
 
             if (
                 self.model_name == "randomforestregressor"
