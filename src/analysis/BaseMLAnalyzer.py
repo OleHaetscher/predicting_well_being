@@ -115,6 +115,8 @@ class BaseMLAnalyzer(ABC):
         self.df = df
         self.X = None
         self.y = None
+        self.binary_cols = None
+        self.continuous_cols = None
 
         # Results
         self.best_models = {}
@@ -222,6 +224,21 @@ class BaseMLAnalyzer(ABC):
 
         setattr(self, "y", y)
 
+    def separate_binary_continuous_cols(self):
+        """
+        This function determines which features of the current data are continuous (i.e., containing not only 0/1 per column)
+        and which features are binary (i.e., only containing 0/1 per column). This may also includes NaNs.
+        It sets the resulting column lists as class attributes
+
+        Returns:
+
+        """
+        data = self.X.copy()
+        binary_cols = data.columns[(data.isin([0, 1]) | data.isna()).all(axis=0)]
+        continuous_cols = [col for col in data.columns if col not in binary_cols]  # ordered as in df
+        setattr(self, "binary_cols", binary_cols)
+        setattr(self, "continuous_cols", continuous_cols)
+
     def initial_info_log(self):
         """
         Create log message at the beginning of the analysis. This helps to identify logs, validate the parameter passing
@@ -298,8 +315,7 @@ class BaseMLAnalyzer(ABC):
             preprocessor: CustomScaler object that scales only continuous columns. Binary columns are still 0/1.
 
         """
-        binary_cols = data.columns[(data.isin([0, 1])).all(axis=0)]  # ordered as in df
-        continuous_cols = [col for col in data.columns if col not in binary_cols]  # ordered as in df
+        continuous_cols = self.continuous_cols.copy()
         continuous_cols.remove(self.id_grouping_col)
         preprocessor = CustomScaler(cols_to_scale=continuous_cols)
         return preprocessor
@@ -492,10 +508,6 @@ class BaseMLAnalyzer(ABC):
             # Transform both training and test data
             X_train_imputed = imputer.transform(X_train_numeric, num_imputation=i)
             X_test_imputed = imputer.transform(X_test_numeric, num_imputation=i)
-
-            # Convert numpy arrays back to DataFrames
-            # X_train_imputed = pd.DataFrame(X_train_imputed, columns=X_train_numeric.columns, index=X_train_numeric.index)
-            # X_test_imputed = pd.DataFrame(X_test_imputed, columns=X_test_numeric.columns, index=X_test_numeric.index)
 
             # Concatenate non-numeric columns if necessary
             X_train_imputed = pd.concat([X_train_imputed, X_train[self.id_grouping_col]], axis=1)
@@ -769,7 +781,7 @@ class BaseMLAnalyzer(ABC):
             rep_data,
             shap_ia_values_test,
         ) in enumerate(results):
-            self.best_models[f"rep_{rep}"] = best_models
+            self.best_models[f"rep_{rep}"] = best_models[f"rep_{rep}"]  # TODO test this
             self.shap_results["shap_values"][f"rep_{rep}"] = rep_shap_values
             self.shap_results["base_values"][f"rep_{rep}"] = rep_base_values
             self.shap_results["data"][f"rep_{rep}"] = rep_data

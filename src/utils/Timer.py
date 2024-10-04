@@ -40,7 +40,9 @@ class Timer:
             current_datetime = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             log_message = f"{time_statement} at {current_datetime}"
 
+            self.logger.log("-----------------------")
             self.logger.log(log_message)
+            self.logger.log("-----------------------")
             return result
 
         return wrapper

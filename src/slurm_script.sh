@@ -42,7 +42,7 @@ for crit in "${CRITERIA[@]}"; do
 
     # Set PRED_MODEL_MULT based on prediction_model
     case $prediction_model in
-      "rfr") PRED_MODEL_MULT=4 ;;
+      "randomforestregressor") PRED_MODEL_MULT=4 ;;
       "elasticnet") PRED_MODEL_MULT=1 ;;
     esac
 
@@ -70,10 +70,10 @@ for crit in "${CRITERIA[@]}"; do
         TIMELIMIT=$(printf "%02d:%02d:00" $HOURS $MINUTES)
 
         RESULT_DIR="${BASE_DIR}/${feature_combination}/${samples_to_include}/${crit}/${prediction_model}"
-        mkdir -p "$RESULT_DIR"
+        mkdir -p "$RESULT_DIR"nano s
 
         # Create log directory
-        LOG_BASE_DIR="slurm_logs"
+        LOG_BASE_DIR="../slurm_logs"
         LOG_DIR="${LOG_BASE_DIR}/${feature_combination}/${samples_to_include}/${crit}/${prediction_model}"
         mkdir -p "$LOG_DIR"
 
@@ -83,7 +83,8 @@ for crit in "${CRITERIA[@]}"; do
         FULL_LOG_PATH_ERR="${LOG_DIR}/${JOB_LOG_NAME}.err"
 
         # SLURM script filename
-        SLURM_SCRIPT="slurm_script_${JOB_LOG_NAME}.sh"
+        # SLURM_SCRIPT="slurm_script_${JOB_LOG_NAME}.sh"
+        SLURM_SCRIPT="${LOG_DIR}/slurm_script_${JOB_LOG_NAME}.sh"  # Save SLURM script in the same directory
 
         # Create a SLURM script
         cat > $SLURM_SCRIPT << EOF

@@ -69,8 +69,8 @@ class ENRAnalyzer(BaseMLAnalyzer):
         Returns:
             explainer(instance.reshape(1, -1)).values: array containing the SHAP values for "n_instance"
         """
-        if n_instance < 3:
-            self.log_thread()
+        # if n_instance < 3:
+        #     self.log_thread()
         return (explainer(instance.reshape(1, -1)).values,
                 explainer(instance.reshape(1, -1)).base_values,
                 explainer(instance.reshape(1, -1)).data)
