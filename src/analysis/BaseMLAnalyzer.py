@@ -711,9 +711,9 @@ class BaseMLAnalyzer(ABC):
 
         # Set up the array to store the results -> 3D arrays (rows x features x imputations)
         # base values may vary across samples
-        rep_shap_values = np.zeros((X.shape[0], X.shape[1], self.num_imputations))
-        rep_base_values = np.zeros((X.shape[0], self.num_imputations))  # we get different base values per fold
-        rep_data = np.zeros((X.shape[0], X.shape[1], self.num_imputations))
+        rep_shap_values = np.zeros((X.shape[0], X.shape[1], self.num_imputations), dtype=np.float32)
+        rep_base_values = np.zeros((X.shape[0], self.num_imputations), dtype=np.float32)  # we get different base values per fold
+        rep_data = np.zeros((X.shape[0], X.shape[1], self.num_imputations), dtype=np.float32)
 
         # Compute and aggregate SHAP values for one fold
         results = [
@@ -744,10 +744,9 @@ class BaseMLAnalyzer(ABC):
                     _,
             ) in enumerate(fold_results):
                 # Aggregate results for the current fold and imputation
-                rep_shap_values[test_idx, :, num_imputation] += shap_values_template
-                rep_base_values[test_idx, num_imputation] += base_values_template.flatten()
-                # rep_data[test_idx, :, num_imputation] += data_template
-                rep_data[test_idx, :, num_imputation] += X_test
+                rep_shap_values[test_idx, :, num_imputation] += shap_values_template.astype(np.float32)
+                rep_base_values[test_idx, num_imputation] += base_values_template.flatten().astype(np.float32)
+                rep_data[test_idx, :, num_imputation] += X_test.astype(np.float32)
 
         # We need to divide the base values, because we get base_values in every outer fold
         # Test if the SHAP assumptions hold with this procedure and plotting is possible
