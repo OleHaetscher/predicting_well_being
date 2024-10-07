@@ -102,10 +102,6 @@ class Imputer(BaseEstimator, TransformerMixin):
         # Function to process one column
         def process_column(col):
             # Remove, just for testing parallelism
-            process_id = os.getpid()
-            thread_name = threading.current_thread().name
-            self.logger.log(f"        Executing process_column using Process ID: {process_id}, Thread: {thread_name}")
-            # TODO test once on cluster, then remove
 
             # Read from df_imputed at the start of the iteration
             observed_mask = df[col].notna().values
