@@ -151,25 +151,32 @@ class SlurmHandler:
             var_cfg: Dict, containg the YAML var_cfg where the cores per tasks are included
         """
         print("total_cores in func:", total_cores)
+
         if var_cfg["analysis"]["parallelize"]["parallelize_inner_cv"]:
             var_cfg["analysis"]["parallelize"]["inner_cv_n_jobs"] = total_cores
-            print(var_cfg["analysis"]["parallelize"]["inner_cv_n_jobs"])
+        else:
+            var_cfg["analysis"]["parallelize"]["inner_cv_n_jobs"] = 1
 
         if var_cfg["analysis"]["parallelize"]["parallelize_imputation_runs"]:
             var_cfg["analysis"]["parallelize"]["imputation_runs_n_jobs"] = total_cores
-            print(var_cfg["analysis"]["parallelize"]["imputation_runs_n_jobs"])
+        else:
+            var_cfg["analysis"]["parallelize"]["imputation_runs_n_jobs"] = 1
 
         if var_cfg["analysis"]["parallelize"]["parallelize_imputation_columns"]:
             var_cfg["analysis"]["parallelize"]["imputation_columns_n_jobs"] = total_cores
-            print(var_cfg["analysis"]["parallelize"]["imputation_columns_n_jobs"])
+        else:
+            var_cfg["analysis"]["parallelize"]["imputation_columns_n_jobs"] = 1
 
         if var_cfg["analysis"]["parallelize"]["parallelize_shap"]:
             var_cfg["analysis"]["parallelize"]["shap_n_jobs"] = total_cores
-            print(var_cfg["analysis"]["parallelize"]["shap_n_jobs"])
+        else:
+            var_cfg["analysis"]["parallelize"]["shap_n_jobs"] = 1
 
         if var_cfg["analysis"]["parallelize"]["parallelize_shap_ia_values"]:
             var_cfg["analysis"]["parallelize"]["shap_ia_values_n_jobs"] = total_cores
-            print(var_cfg["analysis"]["parallelize"]["shap_ia_values_n_jobs"])
+        else:
+            var_cfg["analysis"]["parallelize"]["shap_ia_values_n_jobs"] = 1
+
         return var_cfg
 
     @staticmethod
