@@ -121,18 +121,18 @@ class SlurmHandler:
             cfg_updated: Dict, cpontaining the new YAML var_cfg with the parameters defined in the SLURM script
         """
         args_dict = vars(args)
+        print(args_dict)
         for arg_name, arg_value in args_dict.items():
-            print(f"Argument {arg_name}: {arg_value}")
-            if arg_name in var_cfg["analysis"]["params"]:
-                var_cfg["analysis"]["params"][arg_name] = arg_value
-            elif arg_name in var_cfg["analysis"]["parallelize"]:
-                var_cfg["analysis"]["parallelize"][arg_name] = arg_value
-            elif arg_name == "comp_shap_ia_values":
-                var_cfg["analysis"]["shap_ia_values"]["comp_shap_ia_values"] = arg_value
-            elif arg_name == "output_path":
-                var_cfg["analysis"]["output_path"] = arg_value
-            else:
-                raise ValueError(f"Argument {arg_name} not recognized.")
+            # Traverse the entire configuration to find the right key and update it.
+            updated = False
+            for section in ["params", "parallelize", "shap_ia_values", "output_path"]:
+                if arg_name in var_cfg["analysis"][section]:
+                    var_cfg["analysis"][section][arg_name] = arg_value
+                    updated = True
+                    break
+            if not updated:
+                print(f"Warning: Argument {arg_name} not recognized. Skipping update for this argument.")
+
         return var_cfg
 
     @staticmethod
@@ -153,14 +153,23 @@ class SlurmHandler:
         print("total_cores in func:", total_cores)
         if var_cfg["analysis"]["parallelize"]["parallelize_inner_cv"]:
             var_cfg["analysis"]["parallelize"]["inner_cv_n_jobs"] = total_cores
+            print(var_cfg["analysis"]["parallelize"]["inner_cv_n_jobs"])
+
         if var_cfg["analysis"]["parallelize"]["parallelize_imputation_runs"]:
             var_cfg["analysis"]["parallelize"]["imputation_runs_n_jobs"] = total_cores
-        if var_cfg["analysis"]["parallelize"]["parallelize_imputation_runs"]:
-            var_cfg["analysis"]["parallelize"]["parallelize_imputation_columns"] = total_cores
-        if var_cfg["analysis"]["parallelize"]["imputation_columns_n_jobs"]:
+            print(var_cfg["analysis"]["parallelize"]["imputation_runs_n_jobs"])
+
+        if var_cfg["analysis"]["parallelize"]["parallelize_imputation_columns"]:
+            var_cfg["analysis"]["parallelize"]["imputation_columns_n_jobs"] = total_cores
+            print(var_cfg["analysis"]["parallelize"]["imputation_columns_n_jobs"])
+
+        if var_cfg["analysis"]["parallelize"]["parallelize_shap"]:
             var_cfg["analysis"]["parallelize"]["shap_n_jobs"] = total_cores
+            print(var_cfg["analysis"]["parallelize"]["shap_n_jobs"])
+
         if var_cfg["analysis"]["parallelize"]["parallelize_shap_ia_values"]:
             var_cfg["analysis"]["parallelize"]["shap_ia_values_n_jobs"] = total_cores
+            print(var_cfg["analysis"]["parallelize"]["shap_ia_values_n_jobs"])
         return var_cfg
 
     @staticmethod
