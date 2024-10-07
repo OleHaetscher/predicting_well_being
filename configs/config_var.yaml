@@ -83,8 +83,8 @@ analysis:
   params: # adjusted by SLURM
     prediction_model: randomforestregressor  # elasticnet, randomforestregressor
     crit: state_wb  # state_wb, state_pa, state_na, trait_wb, trait_na, trait_pa
-    feature_combination: srmc  # pl, srmc, sens, mac, pl_srmc, pl_sens, pl_srmc_sens, pl_mac, pl_srmc_mac, all
-    samples_to_include: selected  # all, selected, control
+    feature_combination: pl  # pl, srmc, sens, mac, pl_srmc, pl_sens, pl_srmc_sens, pl_mac, pl_srmc_mac, all
+    samples_to_include: all  # all, selected, control
 
   cv:
     num_inner_cv: 2  # 10
@@ -103,7 +103,7 @@ analysis:
 
   imputation:
     num_imputations: 1  # 5
-    max_iter: 5  # 75
+    max_iter: 50  # 75
     conv_thresh: 0.05  # 0.01
 
   scoring_metric:
@@ -139,7 +139,6 @@ analysis:
     imputation_runs_n_jobs: 5
     parallelize_imputation_columns: true # either parallelize runs or columns
     imputation_columns_n_jobs: 5
-
 
   shap_ia_values:  # TODO Needs to be implemented based on our affordances
     comp_shap_ia_values: false

@@ -266,6 +266,7 @@ class BaseMLAnalyzer(ABC):
         self.logger.log(f"    N imputations: {self.num_imputations}")
         self.logger.log(f'    Model hyperparameters: {self.var_cfg["analysis"]["model_hyperparameters"][self.model_name]}')
         self.logger.log(f'    Optimization metric: {self.var_cfg["analysis"]["scoring_metric"]["inner_cv_loop"]["name"]}')
+        self.logger.log(f'    Max iter imputations: {self.var_cfg["analysis"]["imputation"]["max_iter"]}')
 
         self.logger.log("Parallelization params")
         self.logger.log(f'    N jobs inner_cv: {self.var_cfg["analysis"]["parallelize"]["inner_cv_n_jobs"]}')

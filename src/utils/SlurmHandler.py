@@ -186,7 +186,7 @@ class SlurmHandler:
         var_cfg["analysis"]["cv"]["num_outer_cv"] = 10
         var_cfg["analysis"]["cv"]["num_reps"] = 10
         var_cfg["analysis"]["imputation"]["num_imputations"] = 5
-        var_cfg["analysis"]["imputation"]["max_iter"] = 75
+        var_cfg["analysis"]["imputation"]["max_iter"] = 50
 
         # Imputation sanity checks -> set imputation_runs as default in case of conflict
         if var_cfg["analysis"]["parallelize"]["parallelize_imputation_runs"] and \
