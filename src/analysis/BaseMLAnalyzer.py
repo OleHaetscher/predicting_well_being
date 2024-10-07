@@ -1,23 +1,21 @@
+import gc
 import inspect
 import json
 import os
 import pickle
 import threading
-import warnings
 from abc import ABC, abstractmethod
 
 import numpy as np
 import pandas as pd
+import shap
 import sklearn
 from joblib import Parallel, delayed
 from scipy.stats import spearmanr
-from sklearn import set_config
 from sklearn.base import clone
 from sklearn.compose import TransformedTargetRegressor
-from sklearn.exceptions import ConvergenceWarning
 from sklearn.metrics import (
     make_scorer,
-    mean_squared_error,
     get_scorer,
 )
 from sklearn.model_selection import GridSearchCV
@@ -148,8 +146,11 @@ class BaseMLAnalyzer(ABC):
             model=self.model_name,
             fix_rs=self.var_cfg["analysis"]["random_state"],
             max_iter=self.var_cfg["analysis"]["imputation"]["max_iter"],
-            num_imputations=self.var_cfg["analysis"]["imputation"]["num_imputations"]
-                       )
+            num_imputations=self.var_cfg["analysis"]["imputation"]["num_imputations"],
+            n_jobs_imputation_columns=self.var_cfg["analysis"]["parallelize"]["imputation_columns_n_jobs"],
+            conv_thresh=self.var_cfg["analysis"]["imputation"]["conv_thresh"],
+            logger=self.logger,
+        )
 
     @property
     def hyperparameter_grid(self):
@@ -178,8 +179,15 @@ class BaseMLAnalyzer(ABC):
             self.datasets_included = datasets_included_filtered
             df_filtered = self.df[self.df.index.to_series().apply(
                 lambda x: any(x.startswith(sample) for sample in self.datasets_included))]
-            # df_filtered = df_filtered.sample(n=2000) just for testing
+
+            # for "sens" and "selected", remove samples without sensing data
+            if self.samples_to_include == "selected" and self.feature_combination == "sens":
+                sens_columns = [col for col in self.df.columns if col.startswith("sens_")]
+                df_filtered = self.df[self.df[sens_columns].notna().any(axis=1)]
+
+            # df_filtered = df_filtered.sample(n=300)  # just for testing
             self.df = df_filtered
+
         else:  # include all datasets
             self.datasets_included = self.var_cfg["analysis"]["feature_sample_combinations"]["all_in"]
 
@@ -214,7 +222,6 @@ class BaseMLAnalyzer(ABC):
         according to the specifications in the var_cfg.
         It gets the specific name of the file that contains the data, connect it to the feature path for the
         current analysis and sets the loaded features as a class attribute "y".
-        ADJUST!!!!
         """
         y = self.df[f'crit_{self.crit}']
         assert len(self.X) == len(
@@ -263,15 +270,36 @@ class BaseMLAnalyzer(ABC):
         self.logger.log("Parallelization params")
         self.logger.log(f'    N jobs inner_cv: {self.var_cfg["analysis"]["parallelize"]["inner_cv_n_jobs"]}')
         self.logger.log(f'    N jobs shap: {self.var_cfg["analysis"]["parallelize"]["shap_n_jobs"]}')
-        self.logger.log(f'    N jobs imputations: {self.var_cfg["analysis"]["parallelize"]["imputations_n_jobs"]}')
+        self.logger.log(f'    N jobs imputation runs: {self.var_cfg["analysis"]["parallelize"]["imputation_runs_n_jobs"]}')
+        self.logger.log(f'    N jobs imputation columns: {self.var_cfg["analysis"]["parallelize"]["imputation_columns_n_jobs"]}')
         if self.var_cfg["analysis"]["shap_ia_values"]["comp_shap_ia_values"]:
             self.logger.log(f'    N jobs shap_ia_values: {self.var_cfg["analysis"]["parallelize"]["shap_ia_values_n_jobs"]}')
 
         self.logger.log("Data params")
         self.logger.log(f"    Number of rows: {self.X.shape[0]}")
         self.logger.log(f"    Number of cols: {self.X.shape[1]}")
-
+        na_counts = self.X.isna().sum()
+        for column, count in na_counts[na_counts > 0].items():
+            self.logger.log(f"      Number of NaNs in column {column}: {count}")
         self.logger.log("----------------------------------------------")
+
+    def drop_zero_variance_cols(self):
+        """
+        This method checks if there are column in the features (self.X) that have no variance (i.e., only one value and np.nan),
+        removes the values from the features (because this would slow down the computation), and logs which features
+        were dropped
+        """
+        zero_variance_cols = []
+        for column in self.X.columns:
+            unique_values = self.X[column].nunique(dropna=True)
+            if unique_values == 1:
+                zero_variance_cols.append(column)
+                self.logger.log(f"      Dropping column '{column}' due to zero variance (only one unique value or NaNs).")
+        if zero_variance_cols:
+            self.X.drop(columns=zero_variance_cols, inplace=True)
+            self.logger.log(f"      {len(zero_variance_cols)} column(s) with zero variance dropped: {zero_variance_cols}")
+        else:
+            self.logger.log("      No columns with zero variance found.")
 
     def fit(self, X, y):
         """Scikit-Learns "Fit" method of the machine learning model, model dependent, implemented in the subclasses."""
@@ -390,7 +418,7 @@ class BaseMLAnalyzer(ABC):
 
         # Containers to hold the results
         ml_pipelines = []
-        ml_models = []
+        ml_model_params = []
         nested_scores_rep = {}
         X_test_imputed_lst = []
 
@@ -398,7 +426,7 @@ class BaseMLAnalyzer(ABC):
         for cv_idx, (train_index, test_index) in enumerate(outer_cv.split(X, y, groups=X[self.id_grouping_col])):
 
             ml_pipelines_sublst = []
-            ml_models_sublst = []
+            ml_model_params_sublst = []
             nested_scores_rep[f"outer_fold_{cv_idx}"] = {}
 
             # Convert indices and select data
@@ -447,8 +475,11 @@ class BaseMLAnalyzer(ABC):
                 # Fit grid search
                 grid_search.fit(X_train_current, y_train, groups=groups_numeric)
 
-                # append tuned models on an imputed dataset to sublst
-                ml_models_sublst.append(grid_search.best_estimator_.named_steps["model"].regressor_)
+                # Append model (elasticnet) or model params (RFR)
+                if self.model_name == "elasticnet":
+                    ml_model_params_sublst.append(grid_search.best_estimator_.named_steps["model"].regressor_)
+                else:
+                    ml_model_params_sublst.append(grid_search.best_estimator_.named_steps["model"].regressor_.get_params())
                 ml_pipelines_sublst.append(grid_search.best_estimator_)
 
                 # Evaluate the model on the imputed test set and store the metrics
@@ -456,8 +487,13 @@ class BaseMLAnalyzer(ABC):
                 for metric, score in scores.items():
                     nested_scores_rep[f"outer_fold_{cv_idx}"][f"imp_{imputed_idx}"][metric] = score
 
+                # Free up memory
+                del grid_search
+                del X_train_current, X_test_current
+                gc.collect()
+
             # Append sublists to list
-            ml_models.append(ml_models_sublst)
+            ml_model_params.append(ml_model_params_sublst)
             ml_pipelines.append(ml_pipelines_sublst)
 
         # Summarize SHAP values and return all results
@@ -474,9 +510,12 @@ class BaseMLAnalyzer(ABC):
             outer_cv=outer_cv
         )
 
+        del ml_pipelines
+        gc.collect()
+
         return (
             nested_scores_rep,
-            ml_models,
+            ml_model_params,
             rep_shap_values,
             rep_base_values,
             rep_data,
@@ -517,7 +556,7 @@ class BaseMLAnalyzer(ABC):
             return X_train_imputed, X_test_imputed
 
         # Run the imputation in parallel
-        results = Parallel(n_jobs=self.var_cfg["analysis"]["parallelize"]["imputations_n_jobs"])(
+        results = Parallel(n_jobs=self.var_cfg["analysis"]["parallelize"]["imputation_runs_n_jobs"])(
             delayed(impute_single_dataset)(i) for i in range(self.num_imputations)
         )
 
@@ -603,37 +642,23 @@ class BaseMLAnalyzer(ABC):
         (
             shap_values_test,
             base_values_test,
-            data_test,
+            # data_test,
             features_test,
-            shap_ia_values_test,
         ) = self.calculate_shap_values(X_test, pipeline)
-
 
         if (
             self.model_name == "randomforestregressor"
             and self.var_cfg["analysis"]["shap_ia_values"]["comp_shap_ia_values"]
         ):
+            shap_ia_values_test = self.calculate_shap_ia_values(X_test, pipeline)
 
-            # TODO: Store data and base values also for interactions? See SHAP-IQ... -> If so, we need a 4D array
-            test_ia_shap_template = np.zeros(
-                (len(X_test), X_test.shape[1], X_test.shape[1])
-            )
-
-            # Update the templates with actual SHAP interaction values for the selected features
-            for i, feature_i in enumerate(features_test):
-                for j, feature_j in enumerate(features_test):
-                    col_index_i = all_features.get_loc(feature_i)
-                    col_index_j = all_features.get_loc(feature_j)
-                    test_ia_shap_template[
-                        :, col_index_i, col_index_j
-                    ] = shap_ia_values_test[:, i, j]
         else:
             test_ia_shap_template = None
 
         return (
             shap_values_test,
             base_values_test,
-            data_test,
+            X_test,
             num_test_indices[num_cv_],
             num_cv_,
             test_ia_shap_template,
@@ -711,7 +736,8 @@ class BaseMLAnalyzer(ABC):
             for num_imputation, (
                     shap_values_template,
                     base_values_template,
-                    data_template,
+                    # data_template,
+                    X_test,
                     test_idx,
                     _,
                     _,
@@ -719,7 +745,8 @@ class BaseMLAnalyzer(ABC):
                 # Aggregate results for the current fold and imputation
                 rep_shap_values[test_idx, :, num_imputation] += shap_values_template
                 rep_base_values[test_idx, num_imputation] += base_values_template.flatten()
-                rep_data[test_idx, :, num_imputation] += data_template
+                # rep_data[test_idx, :, num_imputation] += data_template
+                rep_data[test_idx, :, num_imputation] += X_test
 
         # We need to divide the base values, because we get base_values in every outer fold
         # Test if the SHAP assumptions hold with this procedure and plotting is possible
@@ -957,15 +984,77 @@ class BaseMLAnalyzer(ABC):
         """Gets the coefficients of linear models of the predictions, implemented in the linear model subclass."""
         pass
 
-    @abstractmethod
-    def calculate_shap_values(self, X, best_model):
-        """Calculation of individual SHAP values, model-dependent, implemented in the subclasses."""
-        pass
+    def calculate_shap_values(self, X, pipeline):  # TODO Make common method and use explainer as
+        """
+        This function calculates tree-based SHAP values for a given analysis setting. This includes applying the
+        preprocessing steps that were applied in the pipeline (e.g., scaling, RFECV if specified).
+        It calculates the SHAP values using the explainers.TreeExplainer, the SHAP implementation that is
+        suitable for tree-based models. SHAP calculations can be parallelized.
+        Further, it calculates the SHAP interaction values based on the TreeExplainer, if specified
 
-    @abstractmethod
-    def calculate_shap_for_instance(self, n_instance, instance, explainer):
-        """Calculates shap values for a single instance for parallelization, implemented in the subclasses."""
-        pass
+        Args:
+            X: df, features for the machine learning analysis according to the current specification
+            pipeline: Sklearn Pipeline object containing the steps of the ml-based prediction (i.e., preprocessing
+                and estimation using the prediction model).
+
+        Returns:
+            shap_values_array: ndarray, obtained SHAP values, of shape (n_features x n_samples)
+            columns: pd.Index, contains the names of the features in X associated with the SHAP values
+            shap_interaction_values: SHAP interaction values, of shape (n_features x n_features x n_samples)
+        """
+        columns = X.columns
+        X_processed = pipeline.named_steps["preprocess"].transform(X)  # Still need this for scaling
+
+        print(self.var_cfg["analysis"]["parallelize"]["shap_n_jobs"])
+        if self.model_name == "elasticnet":
+            explainer = shap.LinearExplainer(pipeline.named_steps["model"].regressor_, X_processed)
+        elif self.model_name == "randomforestregressor":
+            explainer = shap.explainers.Tree(pipeline.named_steps["model"].regressor_)
+        else:
+            raise ValueError(f"Model {self.model_name} not implemented")
+
+        # Compute SHAP values for chunks of the data
+        n_jobs = self.var_cfg["analysis"]["parallelize"]["shap_n_jobs"]
+        chunk_size = X_processed.shape[0] // n_jobs + (X_processed.shape[0] % n_jobs > 0)
+        print("n_jobs shap ia _values")
+        print("chunk_size:", chunk_size)
+
+        # Compute SHAP values for chunks of the data in parallel
+        results = Parallel(n_jobs=n_jobs, verbose=0)(
+            delayed(self.calculate_shap_for_chunk)(
+                explainer, X_processed[i: i + chunk_size]
+            )
+            for i in range(0, X_processed.shape[0], chunk_size)
+        )
+
+        # Collect and combine results from all chunks
+        shap_values_lst, base_values_lst = zip(*results)
+        shap_values_array = np.vstack(shap_values_lst)
+        base_values_array = np.concatenate(base_values_lst)
+
+        return shap_values_array, base_values_array, columns
+
+    #@abstractmethod
+    #def calculate_shap_for_chunk(self, n_instance, instance, explainer):
+    #    """Calculates shap values for a single instance for parallelization, implemented in the subclasses."""
+    #    pass
+
+    def calculate_shap_for_chunk(self, explainer, X_subset):
+        """Calculates tree-based SHAP values for a chunk for parallelization.
+
+        Args:
+            explainer: shap.TreeExplainer
+            X_subset: df, subset of X for which interaction values are computed, can be parallelized
+
+        Returns:
+
+        """
+        self.logger.log(f"Calculating SHAP for subset of length {len(X_subset)} in process {os.getpid()}")
+        # Compute SHAP values for the chunk
+        explanation = explainer(X_subset)
+        shap_values = explanation.values
+        base_values = explanation.base_values
+        return shap_values, base_values
 
     @staticmethod
     def spearman_corr(y_true_raw, y_pred_raw):

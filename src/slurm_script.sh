@@ -13,7 +13,6 @@ Changeable variables/settings:
 - samples_to_include ("all", "selected", "control")
 '
 
-# TODO: Use only current time as log name -> change folders of slurm slogs
 # Variables
 PREDICTION_MODELS=("elasticnet")  # elasticnet, randomforestregressor
 CRITERIA=("state_wb")             # state_wb, state_pa, state_na, trait_wb, trait_na, trait_pa
@@ -25,7 +24,9 @@ COMP_SHAP_IA_VALUES="false"
 PARALLELIZE_INNER_CV="true"
 PARALLELIZE_SHAP="true"
 PARALLELIZE_SHAP_IA_VALUES="true"
-PARALLELIZE_IMPUTATIONS="true"
+# only one of the two should be true -> integrate in sanity_checks
+PARALLELIZE_IMPUTATION_RUNS="false"
+PARALLELIZE_IMPUTATION_COLUMNS="true"
 
 BASE_MINUTES=10
 BASE_CPUS=4
@@ -70,7 +71,7 @@ for crit in "${CRITERIA[@]}"; do
         TIMELIMIT=$(printf "%02d:%02d:00" $HOURS $MINUTES)
 
         RESULT_DIR="${BASE_DIR}/${feature_combination}/${samples_to_include}/${crit}/${prediction_model}"
-        mkdir -p "$RESULT_DIR"nano s
+        mkdir -p "$RESULT_DIR"
 
         # Create log directory
         LOG_BASE_DIR="../slurm_logs"
@@ -115,7 +116,8 @@ python main.py \\
     --parallelize_inner_cv "$PARALLELIZE_INNER_CV" \\
     --parallelize_shap_ia_values "$PARALLELIZE_SHAP_IA_VALUES" \\
     --parallelize_shap "$PARALLELIZE_SHAP" \\
-    --parallelize_imputations "$PARALLELIZE_IMPUTATIONS" \\
+    --parallelize_imputation_runs "$PARALLELIZE_IMPUTATION_RUNS" \\
+    --parallelize_imputation_columns "$PARALLELIZE_IMPUTATION_COLUMNS" \\
     --output_path "$RESULT_DIR/"
 EOF
 

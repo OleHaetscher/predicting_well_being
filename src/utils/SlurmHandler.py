@@ -57,7 +57,12 @@ class SlurmHandler:
             help="if for rfr ia_values are calculated, Bool",
         )
         parser.add_argument(
-            "--parallelize_imputations",
+            "--parallelize_imputation_runs",
+            type=self.str2bool,
+            help="if we parallelize the creation of the imputed datasets, Bool",
+        )
+        parser.add_argument(
+            "--parallelize_imputation_columns",
             type=self.str2bool,
             help="if we parallelize the creation of the imputed datasets, Bool",
         )
@@ -148,16 +153,18 @@ class SlurmHandler:
         print("total_cores in func:", total_cores)
         if var_cfg["analysis"]["parallelize"]["parallelize_inner_cv"]:
             var_cfg["analysis"]["parallelize"]["inner_cv_n_jobs"] = total_cores
-        if var_cfg["analysis"]["parallelize"]["parallelize_imputations"]:
-            var_cfg["analysis"]["parallelize"]["imputations_n_jobs"] = total_cores
-        if var_cfg["analysis"]["parallelize"]["parallelize_shap"]:
+        if var_cfg["analysis"]["parallelize"]["parallelize_imputation_runs"]:
+            var_cfg["analysis"]["parallelize"]["imputation_runs_n_jobs"] = total_cores
+        if var_cfg["analysis"]["parallelize"]["parallelize_imputation_runs"]:
+            var_cfg["analysis"]["parallelize"]["parallelize_imputation_columns"] = total_cores
+        if var_cfg["analysis"]["parallelize"]["imputation_columns_n_jobs"]:
             var_cfg["analysis"]["parallelize"]["shap_n_jobs"] = total_cores
         if var_cfg["analysis"]["parallelize"]["parallelize_shap_ia_values"]:
             var_cfg["analysis"]["parallelize"]["shap_ia_values_n_jobs"] = total_cores
         return var_cfg
 
     @staticmethod
-    def sanity_checks_cfg_cluster(var_cfg):  # TODO This does not work yet
+    def sanity_checks_cfg_cluster(var_cfg):  # TODO Test
         """
         This function sets certain variables automatically when using the cluster which I probably change
         locally during testing. For example, for testing certain analysis settings, I might run the CV
@@ -175,15 +182,22 @@ class SlurmHandler:
             var_cfg["analysis"]["methods_to_apply"].append("store_analysis_results")
 
         # for safety, adjust number of reps and outer cvs
-        #var_cfg["analysis"]["cv"]["num_inner_cv"] = 10
-        #var_cfg["analysis"]["cv"]["num_outer_cv"] = 10
-        #var_cfg["analysis"]["cv"]["num_reps"] = 10
-        #var_cfg["analysis"]["imputation"]["num_imputations"] = 5
+        var_cfg["analysis"]["cv"]["num_inner_cv"] = 10
+        var_cfg["analysis"]["cv"]["num_outer_cv"] = 10
+        var_cfg["analysis"]["cv"]["num_reps"] = 10
+        var_cfg["analysis"]["imputation"]["num_imputations"] = 5
+        var_cfg["analysis"]["imputation"]["max_iter"] = 75
+
+        # Imputation sanity checks -> set imputation_runs as default in case of conflict
+        if var_cfg["analysis"]["parallelize"]["parallelize_imputation_runs"] and \
+            var_cfg["analysis"]["parallelize"]["parallelize_imputation_columns"]:
+            var_cfg["analysis"]["parallelize"]["parallelize_imputation_columns"] = False
 
         # for safety, adjust the method -> only machine learning is done on the cluster
         var_cfg["general"]["steps"]["preprocessing"] = False
         var_cfg["general"]["analysis"] = True
         var_cfg["general"]["steps"]["postprocessing"] = False
+
         return var_cfg
 
     @staticmethod

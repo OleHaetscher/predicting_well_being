@@ -1,7 +1,7 @@
 general:
   datasets_to_be_included: [cocoesm, cocout, cocoms, emotions, pia, zpid] # , cocout, cocoms, emotions, pia, zpid]  # cocoesm, cocoms, cocout, emotions, pia, zpid
-  log_dir: "../logs/test_cpu_efficiency"
-  log_name: xxx
+  log_dir: "../logs/improve_memory_usage"
+  log_name: TEST
 
   steps:
     preprocessing: false
@@ -16,6 +16,9 @@ preprocessing:
   nrows: 30000
   need_inverse_coding: ["cocout", "emotions", "pia", "zpid", "cocoms"]  # all except cocoesm, do not change
   # joint id col -> ID is the index in every dataset
+
+  sensing_cut_offs: TBA
+
   sanity_checking:
     nan_thresh: 0.3 # 30% NaNs -> warn
     cron_alpha_thresh: 0.6
@@ -53,6 +56,7 @@ analysis:
     - select_criterion
     - separate_binary_continuous_cols
     - initial_info_log
+    - drop_zero_variance_cols
     - create_pipeline
     - repeated_nested_cv
     - get_average_coefficients
@@ -77,16 +81,16 @@ analysis:
     all_in: [cocoesm, cocout, cocoms, emotions, pia, zpid]
 
   params: # adjusted by SLURM
-    prediction_model: elasticnet  # elasticnet, randomforestregressor
+    prediction_model: randomforestregressor  # elasticnet, randomforestregressor
     crit: state_wb  # state_wb, state_pa, state_na, trait_wb, trait_na, trait_pa
     feature_combination: srmc  # pl, srmc, sens, mac, pl_srmc, pl_sens, pl_srmc_sens, pl_mac, pl_srmc_mac, all
     samples_to_include: selected  # all, selected, control
 
   cv:
-    num_inner_cv: 10  # 10
-    verbose_inner_cv: 0 # 10
-    num_outer_cv: 10  # 10
-    num_reps: 10  # 10
+    num_inner_cv: 2  # 10
+    verbose_inner_cv: 0
+    num_outer_cv: 2  # 10
+    num_reps: 1  # 10
     id_grouping_col: other_unique_id
 
   crit_available: # not all criteria are available for all samples
@@ -98,8 +102,9 @@ analysis:
     trait_na: [cocoesm, cocout, cocoms, pia, zpid]
 
   imputation:
-    num_imputations: 5  # 5
-    max_iter: 100  # 100
+    num_imputations: 1  # 5
+    max_iter: 5  # 75
+    conv_thresh: 0.05  # 0.01
 
   scoring_metric:
     inner_cv_loop:
@@ -111,29 +116,30 @@ analysis:
 
   model_hyperparameters:
     elasticnet:  # verify
-      model__regressor__alpha: [0.1, 1]
-      model__regressor__l1_ratio: [0, 1]
-      # model__regressor__alpha: [0.00001, 0.0001, 0.001, 0.01, 0.1, 1, 10, 100, 1000, 10000, 100000]
-      # model__regressor__l1_ratio: [0, 0.1, 0.2, 0.3, 0.4, 0.4, 0.6, 0.7, 0.8, 0.9, 1]
-      # model__regressor__max_iter: [ 1000, 10000 ]
-      # model__regressor__tol: [0.1, 0.01, 0.001, 0.0001]
+      # model__regressor__alpha: [0.1, 1]
+      # model__regressor__l1_ratio: [0, 1]
+      model__regressor__alpha: [0.00001, 0.0001, 0.001, 0.01, 0.1, 1, 10, 100, 1000, 10000, 100000]
+      model__regressor__l1_ratio: [0, 0.1, 0.2, 0.3, 0.4, 0.4, 0.6, 0.7, 0.8, 0.9, 1]
+      model__regressor__max_iter: [ 1000, 10000 ]
+      model__regressor__tol: [0.1, 0.01, 0.001, 0.0001]
     randomforestregressor:
-      # model__regressor__n_estimators: [ 10 ]
-      # model__regressor__max_depth: [2, 5]
       model__regressor__n_estimators: [ 100, 1000 ]
-      model__regressor__max_features: [ 'sqrt', 0.25, 0.5, 0.75 ]
-      model__regressor__max_depth: [2, 4, 6, 8, 10, 15, 20, 25]
-      model__regressor__min_samples_split: [2, 4, 6, 8, 10, 15, 20, 25]
+      model__regressor__max_features: [ 0.2, 0.4, 0.6, 0.8]
+      model__regressor__max_depth: [4, 6, 8, 10, 12]
+      model__regressor__min_samples_split: [5, 10, 15, 20]
 
   parallelize:
     parallelize_shap: true
-    shap_n_jobs: 3
+    shap_n_jobs: 5
     parallelize_inner_cv: true
-    inner_cv_n_jobs: 3
+    inner_cv_n_jobs: 5
     parallelize_shap_ia_values: true
-    shap_ia_values_n_jobs: 3
-    parallelize_imputations: true
-    imputations_n_jobs: 3
+    shap_ia_values_n_jobs: 5
+    parallelize_imputation_runs: false # either parallelize runs or columns
+    imputation_runs_n_jobs: 5
+    parallelize_imputation_columns: true # either parallelize runs or columns
+    imputation_columns_n_jobs: 5
+
 
   shap_ia_values:  # TODO Needs to be implemented based on our affordances
     comp_shap_ia_values: false

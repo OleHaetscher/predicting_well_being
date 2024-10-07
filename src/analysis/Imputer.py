@@ -1,10 +1,17 @@
+import gc
+import os
+import threading
+
 import numpy as np
+from joblib import Parallel, delayed
 from sklearn.base import BaseEstimator, TransformerMixin
 from sklearn.experimental import enable_iterative_imputer  # Required to use IterativeImputer
 from sklearn.impute import IterativeImputer
 import pandas as pd
 from sklearn.linear_model import BayesianRidge
 from sklearn.tree import DecisionTreeRegressor, DecisionTreeClassifier
+
+from src.utils.Logger import Logger
 
 pd.options.mode.chained_assignment = None  # default='warn'
 
@@ -15,11 +22,14 @@ class Imputer(BaseEstimator, TransformerMixin):
     Can be used in an sklearn pipeline.
     """
 
-    def __init__(self, model, fix_rs, num_imputations, max_iter):
+    def __init__(self, model, fix_rs, num_imputations, max_iter, n_jobs_imputation_columns, conv_thresh, logger):
         self.model = model
         self.fix_rs = fix_rs
+        self.num_imputations = num_imputations
         self.max_iter = max_iter
-        self.num_imputations = num_imputations  # total num imputations
+        self.n_jobs_imputation_columns = n_jobs_imputation_columns
+        self.conv_thresh = conv_thresh
+        self.logger = logger
 
     def fit(self, X, y=None):
         """
@@ -54,77 +64,166 @@ class Imputer(BaseEstimator, TransformerMixin):
         df_imputed = imputer.transform(df)
         return df_imputed
 
-    def apply_nonlinear_imputations(self, df: pd.DataFrame, num_imputation: int) -> pd.DataFrame:
+    def apply_nonlinear_imputations(self, df: pd.DataFrame, num_imputation: int, n_jobs: int = -1) -> pd.DataFrame:
         """
         Applies recursive partitioning (using CART) to impute missing values in the dataframe.
         It handles both continuous and binary variables.
         See "Recursive partitioning for missing data imputation in the presence of interaction effects"
-        from Doove et al (2014) for details
-
+        from Doove et al (2014) for details.
+        # TODO: Maybe use other max_iter as in linear imputations?
         """
         np.random.seed(self.fix_rs + num_imputation)
         df_imputed = df.copy()
+
+        # Convert data types to save memory (e.g., float64 to float32)
+        for col in df_imputed.select_dtypes(include=['float64']).columns:
+            df_imputed[col] = df_imputed[col].astype('float32')
+        for col in df_imputed.select_dtypes(include=['int64']).columns:
+            df_imputed[col] = df_imputed[col].astype('int32')
 
         # Columns with missing values ordered by the number of missing values
         columns_with_na = df.isna().sum().sort_values(ascending=True)
         columns_with_na = columns_with_na[columns_with_na > 0].index  # Only columns with missing values
 
         # Initial imputation by random sampling from observed values
+        missing_indices_dict = {}  # To store indices of missing values per column
+        prev_imputed_values = {}  # To store previous imputed values for convergence check
+
         for col in columns_with_na:
-            obs_values = df_imputed[col].dropna()
-            missing_indices = df_imputed.index[df_imputed[col].isna()]
+            obs_values = df_imputed[col].dropna().values
+            missing_indices = df.index[df[col].isna()]  # Indices where original data is missing
             df_imputed.loc[missing_indices, col] = np.random.choice(
                 obs_values, size=len(missing_indices)
             )
+            # Store indices and initial imputed values
+            missing_indices_dict[col] = missing_indices
+            prev_imputed_values[col] = df_imputed.loc[missing_indices, col].copy()
 
-        # Iterative process to refine imputations
-        for iteration in range(self.max_iter):
-            for col in columns_with_na:
-                # Separate observed and missing data for the current column
-                observed_mask = df[col].notna()
-                missing_mask = df[col].isna()
+        # Function to process one column
+        def process_column(col):
+            # Remove, just for testing parallelism
+            process_id = os.getpid()
+            thread_name = threading.current_thread().name
+            self.logger.log(f"        Executing process_column using Process ID: {process_id}, Thread: {thread_name}")
+            # TODO test once on cluster, then remove
 
-                Y_obs = df_imputed.loc[observed_mask, col]
-                X_obs = df_imputed.loc[observed_mask, df.columns != col]
-                X_mis = df_imputed.loc[missing_mask, df.columns != col]
+            # Read from df_imputed at the start of the iteration
+            observed_mask = df[col].notna().values
+            missing_mask = df[col].isna().values
 
-                if len(X_obs) == 0 or len(X_mis) == 0:
-                    continue
+            y_obs = df_imputed.loc[observed_mask, col].values
+            X_obs = df_imputed.loc[observed_mask, df.columns != col].values
+            X_mis = df_imputed.loc[missing_mask, df.columns != col].values
 
-                # Check if the column is continuous or binary/categorical
-                if pd.api.types.is_numeric_dtype(Y_obs) and len(Y_obs.unique()) > 2:
-                    # Continuous variable: Use DecisionTreeRegressor
-                    tree_model = DecisionTreeRegressor(random_state=self.fix_rs)
+            if X_obs.shape[0] == 0 or X_mis.shape[0] == 0:
+                return col, None  # No update
+
+            # Check if the column is continuous or binary/categorical
+            if pd.api.types.is_numeric_dtype(y_obs) and len(np.unique(y_obs)) > 2:
+                tree_model = DecisionTreeRegressor(
+                    random_state=self.fix_rs,
+                    max_depth=10,  # Limit depth to speed up
+                )
+            else:
+                tree_model = DecisionTreeClassifier(
+                    random_state=self.fix_rs,
+                    max_depth=10,  # Limit depth to speed up
+                )
+
+                # Ensure y_obs is correctly encoded
+                unique_values = np.unique(y_obs)
+                if len(unique_values) > 2 or not np.array_equal(unique_values, [0, 1]):
+                    # Map to 0 and 1
+                    value_map = {val: idx for idx, val in enumerate(unique_values)}
+                    y_obs = np.array([value_map[val] for val in y_obs])
+
+            # Fit the model on observed data
+            tree_model.fit(X_obs, y_obs)
+
+            # Predict leaves for missing data
+            leaves_for_missing = tree_model.apply(X_mis)
+            leaves_for_observed = tree_model.apply(X_obs)
+
+            # Get the indices of missing rows
+            missing_indices = df_imputed.index[missing_mask].to_numpy()
+
+            # Assign missing values by randomly sampling from observed values within the same leaf
+            imputed_values = np.empty(len(missing_indices), dtype=df_imputed[col].dtype)
+            leaves_unique = np.unique(leaves_for_missing)
+
+            for leaf in leaves_unique:
+                # Get the donors (observed values) from the same leaf
+                donor_mask = leaves_for_observed == leaf
+                donors = y_obs[donor_mask]
+
+                # Get the positions of the missing values that fall in the same leaf
+                indices_in_leaf = np.where(leaves_for_missing == leaf)[0]
+
+                # For each missing value, randomly choose a donor from the same leaf
+                if donors.size > 0:
+                    imputed_values[indices_in_leaf] = np.random.choice(donors, size=len(indices_in_leaf))
                 else:
-                    # Binary or categorical variable: Use DecisionTreeClassifier
-                    tree_model = DecisionTreeClassifier(random_state=self.fix_rs)
+                    # If no donors are available, impute with the overall mean or mode
+                    if np.issubdtype(df_imputed[col].dtype, np.number):
+                        imputed_values[indices_in_leaf] = np.mean(y_obs)
+                    else:
+                        imputed_values[indices_in_leaf] = pd.Series(y_obs).mode()[0]
 
-                # Fit the model on observed data
-                tree_model.fit(X_obs, Y_obs)
+            # Update the DataFrame with imputed values
+            imputed_series = pd.Series(imputed_values, index=missing_indices)
 
-                # Predict leaves for missing data
-                leaves_for_missing = tree_model.apply(X_mis)
-                leaves_for_observed = tree_model.apply(X_obs)
+            # Clean up to save memory
+            del X_obs, X_mis, y_obs, tree_model, leaves_for_missing, leaves_for_observed
+            gc.collect()
 
-                # Get the indices of missing rows
-                missing_indices = df_imputed.index[missing_mask].to_numpy()
+            return col, imputed_series
 
-                # Assign missing values by randomly sampling from observed values within the same leaf
-                for leaf in np.unique(leaves_for_missing):
-                    # Get the donors (observed values) from the same leaf
-                    donors = Y_obs[leaves_for_observed == leaf]
+        # Iterative process to refine imputations with convergence check
+        # TODO: Test values for convergence
+        for iteration in range(self.max_iter):
+            # For each column, process in parallel
+            results = Parallel(n_jobs=n_jobs)(
+                delayed(process_column)(col) for col in columns_with_na
+            )
 
-                    # Get the positions of the missing values that fall in the same leaf
-                    indices_in_leaf = np.where(leaves_for_missing == leaf)[0]
+            # Collect the updates and check for convergence
+            converged = True  # Assume converged unless proven otherwise
+            for col, imputed_series in results:
+                if imputed_series is not None:
+                    missing_indices = missing_indices_dict[col]
+                    prev_values = prev_imputed_values[col].values
+                    new_values = imputed_series.values
 
-                    # Get the DataFrame indices of the missing values in this leaf
-                    leaf_missing_indices = missing_indices[indices_in_leaf]
+                    # Update df_imputed
+                    df_imputed.loc[missing_indices, col] = new_values
 
-                    # For each missing value, randomly choose a donor from the same leaf
-                    if len(donors) > 0:
-                        imputed_values = np.random.choice(donors, size=len(indices_in_leaf))
-                        df_imputed.loc[leaf_missing_indices, col] = imputed_values
+                    # Compare the new imputed values to previous
+                    if pd.api.types.is_numeric_dtype(df_imputed[col]):
+                        # For numeric data
+                        diff = np.abs(new_values - prev_values)
+                        max_diff = np.nanmax(diff)
+                        if max_diff > self.conv_thresh:
+                            converged = False
+                    else:
+                        # For categorical or object data
+                        changed = prev_values != new_values
+                        num_changed = np.sum(changed)
+                        if num_changed > 0:
+                            converged = False
 
+                    # Update previous imputed values
+                    prev_imputed_values[col] = imputed_series.copy()
+
+            if converged:
+                print(f"Converged at iteration {iteration}")
+                self.logger.log(f"Converged at iteration {iteration}")
+                break
+
+            # Optionally, clean up memory after each iteration
+            gc.collect()
+
+        print(f"Not converged based on convergence threshold {self.conv_thresh} before max_iter {self.max_iter}")
+        self.logger.log(f"Not converged based on convergence threshold {self.conv_thresh} before max_iter {self.max_iter}")
         return df_imputed
 
 
