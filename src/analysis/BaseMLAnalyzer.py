@@ -5,12 +5,13 @@ import os
 import pickle
 import threading
 from abc import ABC, abstractmethod
+from itertools import product
 
 import numpy as np
 import pandas as pd
 import shap
 import sklearn
-from joblib import Parallel, delayed
+from joblib import Parallel, delayed, Memory
 from scipy.stats import spearmanr
 from sklearn.base import clone
 from sklearn.compose import TransformedTargetRegressor
@@ -108,6 +109,7 @@ class BaseMLAnalyzer(ABC):
         self.nested_cv = self.timer._decorator(self.nested_cv)
         self.summarize_shap_values_outer_cv = self.timer._decorator(self.summarize_shap_values_outer_cv)
         self.impute_datasets_for_fold = self.timer._decorator(self.impute_datasets_for_fold)
+        self.clocked_grid_search_fit = self.timer._decorator(self.clocked_grid_search_fit)
 
         # Data
         self.df = df
@@ -264,9 +266,12 @@ class BaseMLAnalyzer(ABC):
         self.logger.log(f"    N outer_cv: {self.num_outer_cv}")
         self.logger.log(f"    N inner_cv: {self.num_inner_cv}")
         self.logger.log(f"    N imputations: {self.num_imputations}")
-        self.logger.log(f'    Model hyperparameters: {self.var_cfg["analysis"]["model_hyperparameters"][self.model_name]}')
+        self.logger.log(f'    Model hyperparameters: {self.hyperparameter_grid}')
+        self.logger.log(f'    N hyperparameter combinations: {len(list(product(*self.hyperparameter_grid.values())))}')
         self.logger.log(f'    Optimization metric: {self.var_cfg["analysis"]["scoring_metric"]["inner_cv_loop"]["name"]}')
         self.logger.log(f'    Max iter imputations: {self.var_cfg["analysis"]["imputation"]["max_iter"]}')
+        self.logger.log(f'    Number of hyperpar')
+
 
         self.logger.log("Parallelization params")
         self.logger.log(f'    N jobs inner_cv: {self.var_cfg["analysis"]["parallelize"]["inner_cv_n_jobs"]}')
@@ -323,12 +328,23 @@ class BaseMLAnalyzer(ABC):
             regressor=self.model,
             transformer=target_scaler
         )
+        if self.var_cfg["analysis"]["cv"]["warm_start"]:
+            model_wrapped.regressor.set_params(warm_start=True)
+
+        # cache preprocessing steps to save time
+        if self.var_cfg["analysis"]["cv"]["cache_pipe"]:
+            cache_folder = "./cache_directory"
+            memory = Memory(cache_folder, verbose=0)
+        else:
+            memory = None
+
         # create pipeline
         pipe = Pipeline(
             [
                 ("preprocess", preprocessor),
                 ("model", model_wrapped),
-            ]
+            ],
+            memory=memory
         )
         setattr(self, "pipeline", pipe)
 
@@ -344,7 +360,8 @@ class BaseMLAnalyzer(ABC):
 
         """
         continuous_cols = self.continuous_cols.copy()
-        continuous_cols.remove(self.id_grouping_col)
+        if self.id_grouping_col in continuous_cols:
+            continuous_cols.remove(self.id_grouping_col)
         preprocessor = CustomScaler(cols_to_scale=continuous_cols)
         return preprocessor
 
@@ -473,8 +490,11 @@ class BaseMLAnalyzer(ABC):
                 le = LabelEncoder()
                 groups_numeric = le.fit_transform(groups)
 
-                # Fit grid search
-                grid_search.fit(X_train_current, y_train, groups=groups_numeric)
+                # Fit grid search and clock execution
+                grid_search = self.clocked_grid_search_fit(grid_search=grid_search,
+                                                           X_train=X_train_current,
+                                                           y_train=y_train,
+                                                           groups=groups_numeric)
 
                 # Append model (elasticnet) or model params (RFR)
                 if self.model_name == "elasticnet":
@@ -491,7 +511,6 @@ class BaseMLAnalyzer(ABC):
                 # Free up memory
                 del grid_search
                 del X_train_current, X_test_current
-                gc.collect()
 
             # Append sublists to list
             ml_model_params.append(ml_model_params_sublst)
@@ -523,6 +542,22 @@ class BaseMLAnalyzer(ABC):
             ia_test_shap_values,
         )
 
+    def clocked_grid_search_fit(self, grid_search: GridSearchCV, X_train: pd.DataFrame, y_train: pd.Series, groups: pd.Series):
+        """
+        Clocked version of gridsearch.fit
+
+        Args:
+            grid_search:
+            X_train:
+            y_train:
+            groups:
+
+        Returns:
+            GridSearchCV: Fitted gridsearch object
+        """
+        grid_search.fit(X_train, y_train, groups=groups)
+        return grid_search
+
     def impute_datasets_for_fold(self, X_train: pd.DataFrame, X_test: pd.DataFrame):
         """
         This function creates num_imputations datasets in parallel using joblib.
@@ -541,7 +576,7 @@ class BaseMLAnalyzer(ABC):
 
         # Define the parallel imputation function
         def impute_single_dataset(i):
-            self.log_thread()
+            # self.log_thread()
             # Clone the imputer to avoid shared state
             imputer = clone(self.imputer)
 
@@ -1016,7 +1051,6 @@ class BaseMLAnalyzer(ABC):
         # Compute SHAP values for chunks of the data
         n_jobs = self.var_cfg["analysis"]["parallelize"]["shap_n_jobs"]
         chunk_size = X_processed.shape[0] // n_jobs + (X_processed.shape[0] % n_jobs > 0)
-        print("n_jobs shap ia _values")
         print("chunk_size:", chunk_size)
 
         # Compute SHAP values for chunks of the data in parallel
@@ -1033,11 +1067,6 @@ class BaseMLAnalyzer(ABC):
         base_values_array = np.concatenate(base_values_lst)
 
         return shap_values_array, base_values_array, columns
-
-    #@abstractmethod
-    #def calculate_shap_for_chunk(self, n_instance, instance, explainer):
-    #    """Calculates shap values for a single instance for parallelization, implemented in the subclasses."""
-    #    pass
 
     def calculate_shap_for_chunk(self, explainer, X_subset):
         """Calculates tree-based SHAP values for a chunk for parallelization.

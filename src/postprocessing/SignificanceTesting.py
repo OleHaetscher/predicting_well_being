@@ -15,7 +15,6 @@ from scipy.stats import t
 from statsmodels.stats.multitest import fdrcorrection
 
 
-
 class SignificanceTesting:
     """
     This class computes test of significance to compare the prediction results for different models

@@ -175,7 +175,6 @@ class Imputer(BaseEstimator, TransformerMixin):
             return col, imputed_series
 
         # Iterative process to refine imputations with convergence check
-        # TODO: Test values for convergence
         for iteration in range(self.max_iter):
             # For each column, process in parallel
             results = Parallel(n_jobs=n_jobs)(
@@ -211,15 +210,14 @@ class Imputer(BaseEstimator, TransformerMixin):
                     prev_imputed_values[col] = imputed_series.copy()
 
             if converged:
-                print(f"Converged at iteration {iteration}")
                 self.logger.log(f"Converged at iteration {iteration}")
                 break
 
-            # Optionally, clean up memory after each iteration
-            gc.collect()
+        # Optionally, clean up memory after each iteration
+        gc.collect()
 
-        print(f"Not converged based on convergence threshold {self.conv_thresh} before max_iter {self.max_iter}")
-        self.logger.log(f"Not converged based on convergence threshold {self.conv_thresh} before max_iter {self.max_iter}")
+        self.logger.log(f"      Imputation {num_imputation} not converged based on convergence threshold "
+                        f"{self.conv_thresh} before max_iter {self.max_iter}")
         return df_imputed
 
 

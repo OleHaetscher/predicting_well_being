@@ -25,8 +25,8 @@ PARALLELIZE_INNER_CV="true"
 PARALLELIZE_SHAP="true"
 PARALLELIZE_SHAP_IA_VALUES="true"
 # only one of the two should be true -> integrate in sanity_checks
-PARALLELIZE_IMPUTATION_RUNS="false"
-PARALLELIZE_IMPUTATION_COLUMNS="true"
+PARALLELIZE_IMPUTATION_RUNS="false"  # either parallelize runs or columns, for n_cores < 10
+PARALLELIZE_IMPUTATION_COLUMNS="true"  # either parallelize runs or columns, for n_cores > 10
 
 BASE_MINUTES=10
 BASE_CPUS=4

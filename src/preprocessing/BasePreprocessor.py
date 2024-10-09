@@ -1,3 +1,4 @@
+import pickle
 import re
 from abc import ABC, abstractmethod
 from copy import deepcopy
@@ -139,8 +140,9 @@ class BasePreprocessor(ABC):
                 'df_type': "esm_based",
                 'cat_list': ['self_reported_micro_context', 'criterion'],  # sensed microcontext?
             }),
+            (self.filter_min_num_esm_measures, {'df_states': None}),  # TODO Check if this changes sample sizes
+            (self.store_wb_items, {'df_states': None}),
             (self.create_person_level_vars_from_esm, {'df_states': None}),
-            (self.filter_min_num_esm_measures, {'df_states': None}),
             # >>> may store the ESM data at this point or directly compute the descriptive where we need the ESM data <<<
             (self.collapse_df, {'df': None, 'df_type': "esm_based"}),
         ]
@@ -1015,14 +1017,7 @@ class BasePreprocessor(ABC):
         Returns:
             pd.DataFrame
         """
-        # Extract the esm_based criterion variables from the config
-        affect_var_entries = self.config_parser(self.fix_cfg["esm_based"]["criterion"],
-                                                "continuous",
-                                                "pa_state",
-                                                "na_state")
-        # Extract the relevant variables for both positive and negative affect states
-        affect_states_dct = {val["name"]: val["item_names"][self.dataset] for val in affect_var_entries
-                             if self.dataset in val["item_names"]}
+        affect_states_dct = self.get_state_affect_dct()
 
         # Iterate over affect traits (positive and negative)
         for affect_state, affect_cols in affect_states_dct.items():
@@ -1033,6 +1028,24 @@ class BasePreprocessor(ABC):
                 df_states[affect_cols] = person_avg
 
         return df_states
+
+    def get_state_affect_dct(self) -> dict[str, list]:
+        """
+        Because this is used multiple times, this helper function returns a dict that contains the type of affect as keys
+        (pa, na) and the items in the specific dataset as values.
+
+        Returns:
+            dict[str, list]
+        """
+        # Extract the esm_based criterion variables from the config
+        affect_var_entries = self.config_parser(self.fix_cfg["esm_based"]["criterion"],
+                                                "continuous",
+                                                "pa_state",
+                                                "na_state")
+        # Extract the relevant variables for both positive and negative affect states
+        affect_states_dct = {val["name"]: val["item_names"][self.dataset] for val in affect_var_entries
+                             if self.dataset in val["item_names"]}
+        return affect_states_dct
 
     def filter_min_num_esm_measures(self, df_states: pd.DataFrame) -> pd.DataFrame:
         """
@@ -1045,13 +1058,7 @@ class BasePreprocessor(ABC):
         Returns:
             filtered_df: Filtered state df
         """
-        affect_var_entries = self.config_parser(self.fix_cfg["esm_based"]["criterion"],
-                                                "continuous",
-                                                "pa_state",
-                                                "na_state")
-        # Extract the relevant variables for both positive and negative affect states
-        affect_states_dct = {val["name"]: val["item_names"][self.dataset] for val in affect_var_entries
-                             if self.dataset in val["item_names"]}
+        affect_states_dct = self.get_state_affect_dct()
         min_num_esm = self.var_cfg["preprocessing"]["min_num_esm_measures"]
         pos_affect_cols = affect_states_dct.get('pa_state', [])
         neg_affect_cols = affect_states_dct.get('na_state', [])
@@ -1094,6 +1101,50 @@ class BasePreprocessor(ABC):
                 self.logger.log(f"          N persons for wave {wave} after filtering: {df_filtered_tmp[self.raw_esm_id_col].nunique()}")
                 self.logger.log(f"          N measurements for wave {wave} after filtering: {len(df_filtered_tmp)}")
         return filtered_df
+
+    def store_wb_items(self, df_states: pd.DataFrame) -> pd.DataFrame:
+        """
+        With this method, we store the wb-items from the state df for each sample before joining and collapsing the
+        dfs, so that we can compute descriptivies statistics for these items in the Postprocessing class.
+        It returns df_states though, so that it fits in the preprocessing logic
+
+        Args:
+            df_states:
+
+        Returns:
+            pd.DataFrame
+        """
+        cols = [self.raw_esm_id_col]
+        affect_states_dct = self.get_state_affect_dct()
+        cols.extend([item for sublist in affect_states_dct.values() for item in sublist])
+        df_wb_items = df_states[cols]
+
+        pa_items = affect_states_dct["pa_state"]
+
+        if self.dataset == "zpid":
+            df_wb_items["state_wb"] = df_wb_items[pa_items[0]]  # valence
+        else:
+            # create pa / na / wb score
+            na_items = affect_states_dct["na_state"]
+            df_wb_items[f'state_pa'] = df_wb_items[pa_items].mean(axis=1)
+            df_wb_items[f'state_na'] = df_wb_items[na_items].mean(axis=1)
+
+            # Create wb score
+            df_wb_items[f'state_na_inv'] = self.inverse_code(df_wb_items[na_items],
+                                                             min_scale=1,
+                                                             max_scale=6).mean(axis=1)
+            new_columns = pd.DataFrame({
+                f'state_wb': df_wb_items[[f'state_pa', f'state_na_inv']].mean(axis=1)
+            })
+            df_wb_items = pd.concat([df_wb_items, new_columns], axis=1)
+            df_wb_items = df_wb_items.drop(['state_na_inv'], axis=1)
+
+        filename = os.path.join(self.var_cfg["preprocessing"]["path_to_preprocessed_data"],
+                                f"wb_items_{self.dataset}")
+        with open(filename, "wb") as f:
+            pickle.dump(df_wb_items, f)
+
+        return df_states
 
     def set_full_col_df_as_attr(self, df: pd.DataFrame) -> pd.DataFrame:
         """

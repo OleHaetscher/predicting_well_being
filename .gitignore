@@ -168,6 +168,8 @@ data/raw
 # results
 results/
 
+# cache
+src/cache_directory
 
 
 

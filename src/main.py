@@ -5,6 +5,7 @@ import yaml
 
 from src.analysis.ENRAnalyzer import ENRAnalyzer
 from src.analysis.RFRAnalyzer import RFRAnalyzer
+from src.postprocessing.Postprocessor import Postprocessor
 from src.postprocessing.SignificanceTesting import SignificanceTesting
 from src.preprocessing.CocoesmPreprocessor import CocoesmPreprocessor
 from src.preprocessing.CocomsPreprocessor import CocomsPreprocessor
@@ -23,6 +24,9 @@ if __name__ == "__main__":
     fix_config_path = "../configs/config_fix.yaml"
     with open(fix_config_path, "r") as f:
         fix_cfg = yaml.safe_load(f)
+    name_mapping_path = "../configs/name_mapping.yaml"
+    with open(name_mapping_path, "r") as f:
+        name_mapping = yaml.safe_load(f)
 
     if var_cfg["general"]["steps"]["preprocessing"]:
         datasets_included = var_cfg["general"]["datasets_to_be_included"]
@@ -79,8 +83,8 @@ if __name__ == "__main__":
             raise ValueError(f"Model {prediction_model} not implemented")
 
     if var_cfg["general"]["steps"]["postprocessing"]:
-        significance_testing = SignificanceTesting(var_cfg=var_cfg)
-        significance_testing.apply_methods()
+        postprocessor = Postprocessor(fix_cfg=fix_cfg, var_cfg=var_cfg, name_mapping=name_mapping)
+        postprocessor.postprocess()
 
 
 
