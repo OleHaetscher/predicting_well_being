@@ -1,7 +1,7 @@
 general:
   datasets_to_be_included: [cocoesm, cocoms, cocout, emotions, pia, zpid] # , cocout, cocoms, emotions, pia, zpid]  # cocoesm, cocoms, cocout, emotions, pia, zpid
   log_dir: "../logs/speed_test"  # only for preprocessing
-  log_name: Clock_Gridsearch
+  log_name: Gridsearch_tests
 
   steps:
     preprocessing: false
@@ -125,12 +125,12 @@ analysis:
       model__regressor__max_iter: [ 1000, 10000 ]
       model__regressor__tol: [0.1, 0.01, 0.001, 0.0001]
     randomforestregressor:
-      model__regressor__n_estimators: [ 100 ]
-      model__regressor__max_features: [ 0.2, 0.4 ]
-      # model__regressor__n_estimators: [ 100, 500 ]
-      # model__regressor__max_features: [ 0.2, 0.4, 0.6, 0.8]
-      # model__regressor__max_depth: [4, 6, 8, 10, 12]
-      # model__regressor__min_samples_split: [5, 10, 15, 20]
+      # model__regressor__n_estimators: [ 100 ]
+      # model__regressor__max_features: [ 0.2, 0.4 ]
+      model__regressor__n_estimators: [ 100, 500 ]
+      model__regressor__max_features: [ 0.2, 0.4, 0.6, 0.8]
+      model__regressor__max_depth: [4, 6, 8, 10, 12]
+      model__regressor__min_samples_split: [5, 10, 15, 20]
 
   parallelize:
     parallelize_shap: true

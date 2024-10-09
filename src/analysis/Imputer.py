@@ -1,5 +1,6 @@
 import gc
 import os
+import pickle
 import threading
 
 import numpy as np
@@ -218,6 +219,11 @@ class Imputer(BaseEstimator, TransformerMixin):
 
         self.logger.log(f"      Imputation {num_imputation} not converged based on convergence threshold "
                         f"{self.conv_thresh} before max_iter {self.max_iter}")
+
+        ### Just for testing
+        with open("test_imputed_dataset", 'wb') as f:
+            pickle.dump(df_imputed, f)
+
         return df_imputed
 
 
