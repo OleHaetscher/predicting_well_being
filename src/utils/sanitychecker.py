@@ -5,7 +5,6 @@ import pandas as pd
 import pingouin as pg
 
 
-# TODO: Apply this once to the full_df, and once to the partial_dfs
 class SanityChecker:
     """
     A class that performs data sanity checks on a pandas DataFrame.
@@ -31,7 +30,7 @@ class SanityChecker:
             nan_threshold (float): The threshold of NaN percentage to log a warning.
         """
         self.logger = logger
-        self.cfg_fix = fix_cfg
+        self.fix_cfg = fix_cfg
         self.cfg_sanity_checks = cfg_sanity_checks
         self.config_parser_class = config_parser_class
         self.apply_to_full_df = apply_to_full_df  # bool
@@ -60,7 +59,6 @@ class SanityChecker:
             (self.check_zero_variance, {'df': None}),
             (self.check_scale_endpoints, {'df': None}),
             (self.calc_correlations, {'df': None}),
-            (self.sanity_check_sensing_data, {'df_sensing': None}),
         ]
         for method, kwargs in sanity_checks:
             kwargs = {k: v if v is not None else df for k, v in kwargs.items()}
@@ -147,11 +145,24 @@ class SanityChecker:
 
         """
         self.logger.log(f"    Num rows of df for {dataset}: {len(df)}")
+
+        sens_columns = [col for col in df.columns if col.startswith("sens_")]
+        if dataset == "zpid":
+            df_sensing_filtered = df[df[sens_columns].notna().any(axis=1)]
+            self.logger.log(f"    Num rows of df for {dataset} with sensing data: {len(df)}")
+            self.logger.log(f"    Percentage of samples that contain sensing data: "
+                            f"{np.round(len(df_sensing_filtered) / len(df), 3)}")
+
         if dataset in ["cocout", "cocoms"]:
             for wave in df["other_studyWave"].unique():
                 df_tmp = df[df["other_studyWave"] == wave]
                 self.logger.log(f"      Num rows of df for {wave}: {len(df_tmp)}")
 
+                if dataset == "cocoms":
+                    df_sensing_filtered = df_tmp[df_tmp[sens_columns].notna().any(axis=1)]
+                    self.logger.log(f"    Num rows of df for {wave} with sensing data: {len(df_sensing_filtered)}")
+                    self.logger.log(f"    Percentage of samples of df for {wave} that contain sensing data: "
+                                    f"{np.round(len(df_sensing_filtered) / len(df_tmp), 3)}")
 
     def log_num_features_per_cat(self, df: pd.DataFrame, dataset: str) -> None:
         """
@@ -171,7 +182,7 @@ class SanityChecker:
             features_cats.append("sens")
         for cat in features_cats:
             self.logger.log(".")
-            col_lst_per_cat = [f"{cat}_{col}" for col in self.cfg_fix["var_assignments"][cat]]
+            col_lst_per_cat = [f"{cat}_{col}" for col in self.fix_cfg["var_assignments"][cat]]
             cols_in_df = [col for col in df.columns if col in col_lst_per_cat]
             self.logger.log(f"        Number of columns for feature category {cat}: {len(cols_in_df)}")
             for i in cols_in_df:
@@ -191,7 +202,7 @@ class SanityChecker:
         errors = []  # To collect any errors found
 
         for meta_cat in ["person_level", "esm_based"]:
-            for cat, cat_entries in self.cfg_fix[meta_cat].items():
+            for cat, cat_entries in self.fix_cfg[meta_cat].items():
                 for var in cat_entries:
                     if 'scale_endpoints' in var:
                         col_names_org = [col.split('_', 1)[1] if '_' in col else col for col in df.columns]
@@ -254,7 +265,7 @@ class SanityChecker:
             None
         """
         # Get all scale entries with the 'scale_endpoints' key
-        scale_entries = self.config_parser_class.find_key_in_config(cfg=self.cfg_fix, key="scale_endpoints")
+        scale_entries = self.config_parser_class.find_key_in_config(cfg=self.fix_cfg, key="scale_endpoints")
 
         for scale in scale_entries:
             scale_name = scale['name']
@@ -311,31 +322,28 @@ class SanityChecker:
             for col1, col2, corr in negative_correlations:
                 self.logger.log(f"    WARNING: Negative correlation detected between '{col1}' and '{col2}': {corr:.3f}")
 
-    def sanity_check_sensing_data(self, df_sensing: pd.DataFrame) -> None:
+    def sanity_check_sensing_data(self, df_sensing: pd.DataFrame, dataset: str) -> pd.DataFrame:
         """
+        This method does some sanity checks for the sensing data. It makes more sens to do these checks before
+        calculating the summary statistics, as some things would be unnoticed otherwise (e.g., large amount of
+        0s or NaNs that may bias the statistics). Therefore, this function is applied before the general
+        sanity checking before computing the summary statistics.
 
         Returns:
 
         """
-        self.check_time_max(df_sensing)
-        # potentially check the state_df / weather alignment
+        vars_phone_sensing = self.config_parser_class.cfg_parser(self.fix_cfg["sensing_based"]["phone"],
+                                                                 "continuous")
+        vars_gps_weather = self.config_parser_class.cfg_parser(self.fix_cfg["sensing_based"]["gps_weather"],
+                                                               "continuous")
+        total_vars = vars_phone_sensing + vars_gps_weather
+        for sens_var in total_vars:
+            col = sens_var["item_names"][dataset]
+            nan_percentage = df_sensing[col].isna().sum() / len(df_sensing)
+            if nan_percentage > self.cfg_sanity_checks["sensing"]["nan_col_thresh"]:
+                self.logger.log(f"        WARNING: {np.round(nan_percentage*100, 1)}% NaNs in {col}")
+            zero_percentage = (df_sensing[col] == 0).mean()
+            if zero_percentage > self.cfg_sanity_checks["sensing"]["zero_col_thresh"]:
+                self.logger.log(f"        WARNING: {np.round(zero_percentage*100, 1)}% 0s in {col}")
 
-    def check_time_max(self, df_sensing: pd.DataFrame) -> None:
-        """
-        This function checks that no sensing feature that operates on the lvl of "minutes per day" exceeds 1440 (minutes per day)
-
-        Args:
-            df_sensing:
-
-        Returns:
-
-        """
-        app_cols = [col for col in df_sensing.columns if "_apps" in col]
-        time_cols = [col for col in df_sensing.columns if "_time" in col]
-        # TODO: add more?
-        relevant_cols = app_cols + time_cols
-        for i, v in df_sensing[relevant_cols].items():
-            if v.max() > 1440:
-                self.logger.log(f"    WARNING: Max more than 1 day in col: '{i}' -> {v.max()}")
-
-
+        return df_sensing

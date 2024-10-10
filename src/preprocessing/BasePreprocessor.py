@@ -1487,7 +1487,6 @@ class BasePreprocessor(ABC):
         test = df.unique_id.isna().sum()
         return df
 
-
     def process_and_merge_sensing_data(self, sensing_dct: dict[str, pd.DataFrame], df: pd.DataFrame) -> pd.DataFrame:
         """
         This method
@@ -1516,9 +1515,11 @@ class BasePreprocessor(ABC):
             (self.merge_sensing_dfs, {'sensing_dct': sensing_dct}),
             (self.select_columns, {'df': None, 'df_type': "sensing_based"}),
             (self.dataset_specific_sensing_processing, {'df_sensing': None, }),
-            (self.change_datetime_to_minutes, {'df': None, "col1": "daily_sunset", "col2": "daily_sunrise"}),
-            # TODO: Fix time issues with firstScreen / lastScreen time alignment -> see jupyter
+            (self.change_datetime_to_minutes, {'df': None, "var1": "daily_sunset", "var2": "daily_sunrise"}),
+            (self.filter_first_last_screen, {'df': None, "var1": "first_usage", "var2": "last_usage"}),
             (self.apply_cut_offs, {'df': None}),
+            # add set 0 to np.nan as general method? -> lets see
+            (self.sanity_checker.sanity_check_sensing_data, {'df_sensing': None, "dataset": self.dataset}),
             (self.create_person_level_desc_stats, {'df': None, 'feature_category': "sensing_based"}),
             (self.collapse_df, {'df': None, "df_type": "sensing_based"}),
         ]
@@ -1534,7 +1535,7 @@ class BasePreprocessor(ABC):
 
     def dataset_specific_sensing_processing(self, df_sensing: pd.DataFrame) -> pd.DataFrame:
         """
-        Overridden in the subclasses
+        May be overridden in the subclasses.
 
         Args:
             df_sensing:
@@ -1561,6 +1562,8 @@ class BasePreprocessor(ABC):
         # Access the respective DataFrames from the dictionary
         phone_df = sensing_dct['phone_sensing']
         gps_weather_df = sensing_dct['gps_weather']
+        phone_df["user_id"] = pd.to_numeric(phone_df.user_id)
+        gps_weather_df["user_id"] = pd.to_numeric(gps_weather_df.user_id)
 
         phone_df[date_col_phone] = pd.to_datetime(phone_df[date_col_phone], format="mixed", errors="coerce")
         gps_weather_df[date_col_gps_weather] = pd.to_datetime(gps_weather_df[date_col_gps_weather], format="mixed", errors="coerce")
@@ -1571,7 +1574,7 @@ class BasePreprocessor(ABC):
             gps_weather_df,
             left_on=[self.raw_sensing_id_col, date_col_phone],  # columns from phone DataFrame
             right_on=[self.raw_sensing_id_col, date_col_gps_weather],  # columns from GPS/weather DataFrame
-            how='outer'  # TODO which join makes sense here?
+            how='outer'
         )
 
         return merged_df
@@ -1583,7 +1586,7 @@ class BasePreprocessor(ABC):
 
         Args:
             df:
-            *cols: columns that contain date values
+            **kwargs: columns that contain date values
 
         Returns:
             pd.DataFrame
@@ -1600,10 +1603,32 @@ class BasePreprocessor(ABC):
 
         return df
 
+    def filter_first_last_screen(self, df: pd.DataFrame, **kwargs: str) -> pd.DataFrame:
+        """
+        This method filters the columns provided via kwargs: All values between 0 and 10 and
+        1430 and 1440 are set to np.nan
+
+        Args:
+            df:
+            **kwargs: columns that contain date values
+
+        Returns:
+            pd.DataFrame
+        """
+
+        for var_name in kwargs.values():
+            col_name = self.config_parser(self.fix_cfg["sensing_based"]["phone"],
+                                          "continuous",
+                                          var_name)[0]["item_names"][self.dataset]
+            df[col_name] = df[col_name].where(~((df[col_name] >= 0) & (df[col_name] <= 10) |
+                                                (df[col_name] >= 1430) & (df[col_name] <= 1440)), np.nan)
+        return df
+
     def apply_cut_offs(self, df: pd.DataFrame) -> pd.DataFrame:
         """
-        This method filters the sensing variables and excludes values that exceed a certain threshold we define.
-        These values are set to np.nan. The variable-specific threshold are stored in the config.
+        This method filters the sensing variables according to a given threshold (defined in the config).
+        If a threshold for a variable is given, values are capped according to this threshold. For example,
+        the threshold for the duration of a certain activity per day is 1440, values above are set to 1440.
 
         Args:
             df:
@@ -1611,7 +1636,16 @@ class BasePreprocessor(ABC):
         Returns:
             pd.DataFrame
         """
-        return df  # TODO Implement
+        vars_phone_sensing = self.config_parser(self.fix_cfg["sensing_based"]["phone"],
+                                                     "continuous")
+        vars_gps_weather = self.config_parser(self.fix_cfg["sensing_based"]["gps_weather"],
+                                                     "continuous")
+        total_vars = vars_phone_sensing + vars_gps_weather
+        for sens_var in total_vars:
+            if "cut_off" in sens_var:
+                col = sens_var["item_names"][self.dataset]
+                df[col] = df[col].clip(upper=sens_var["cut_off"])
+        return df
 
     def merge_state_df_sensing(self, df: pd.DataFrame, df_sensing: pd.DataFrame) -> pd.DataFrame:
         """

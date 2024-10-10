@@ -1555,27 +1555,29 @@ sensing_based:
         cocoms: day
         zpid: agg_id
 
-    - name: smartphone_usage # M, SD, Min, Max
+    - name: smartphone_usage
       var_type: continuous
       item_names:
-        zpid: screen_sum_dur_session     #
+        zpid: screen_sum_dur_session
         cocoms: Screen_totalDur_unlocked
-    - name: smartphone_activation # M, SD, Min, Max  # TODO verify var_names
+      cut_off: 1440
+    - name: smartphone_activation
       var_type: continuous
       item_names:
-        zpid: screen_total_num_session
+        zpid: screen_total_num_session_locked
         cocoms: Screen_totalNum_locked
     - name: phone_talking
       var_type: continuous
       item_names:
         zpid: phone_sum_dur_calls
-        # cocoms: x  # TODO fehlt
-    - name: first_usage
+        cocoms: Call_totalDur
+      cut_off: 1440
+    - name: first_usage  # custom cut-off processing
       var_type: continuous
       item_names:
         zpid: screen_time_first_session
         cocoms: Screen_firstEvent
-    - name: last_usage
+    - name: last_usage # custom cut-off processing
       var_type: continuous
       item_names:
         zpid: screen_time_last_session
@@ -1584,142 +1586,164 @@ sensing_based:
       var_type: continuous
       item_names:
         zpid: flightmode_sum_dur_on
-        # cocoms: x  # TODO fehlt
+        cocoms: Flightmode_totalDur
+      cut_off: 1440
     - name: number_notifications
       var_type: continuous
       item_names:
         zpid: notification_sum
-        # cocoms: x  # TODO fehlt
+        cocoms: Notifications_totalNum
+      cut_off: 2400
     - name: audio_entertainment_apps
       var_type: continuous
       item_names:
         zpid: app_total_dur_usage_audio_entertainment
         cocoms: App_totalDur_Audio_Entertainment
+      cut_off: 1440
     - name: career_apps
       var_type: continuous
       item_names:
         zpid: app_total_dur_usage_career
         cocoms: App_totalDur_Career
+      cut_off: 1440
     - name: communication_apps
       var_type: continuous
       item_names:
         zpid: app_total_dur_usage_communication
         cocoms: App_totalDur_Communication
+      cut_off: 1440
     - name: creativity_apps
       var_type: continuous
       item_names:
         zpid: app_total_dur_usage_creativity
         cocoms: App_totalDur_Creativity
+      cut_off: 1440
     - name: dating_apps
       var_type: continuous
       item_names:
         zpid: app_total_dur_usage_dating
         cocoms: App_totalDur_Dating
+      cut_off: 1440
     - name: finance_apps
       var_type: continuous
       item_names:
         zpid: app_total_dur_usage_finance
         cocoms: App_totalDur_Finance
+      cut_off: 1440
     - name: food_apps
       var_type: continuous
       item_names:
         zpid: app_total_dur_usage_food
         cocoms: App_totalDur_Food
+      cut_off: 1440
     - name: gaming_apps
       var_type: continuous
       item_names:
         zpid: app_total_dur_usage_gaming
         cocoms: App_totalDur_Gaming
+      cut_off: 1440
     - name: health_apps
       var_type: continuous
       item_names:
         zpid: app_total_dur_usage_health
         cocoms: App_totalDur_Health
+      cut_off: 1440
     - name: internet_apps
       var_type: continuous
       item_names:
         zpid: app_total_dur_usage_internet
         cocoms: App_totalDur_Internet
+      cut_off: 1440
     - name: knowledge_apps
       var_type: continuous
       item_names:
         zpid: app_total_dur_usage_knowledge
         cocoms: App_totalDur_Knowledge
+      cut_off: 1440
     - name: news_apps
       var_type: continuous
       item_names:
         zpid: app_total_dur_usage_news
         cocoms: App_totalDur_News
+      cut_off: 1440
     - name: orientation_apps
       var_type: continuous
       item_names:
         zpid: app_total_dur_usage_orientation
         cocoms: App_totalDur_Orientation
+      cut_off: 1440
     - name: photo_apps
       var_type: continuous
       item_names:
         zpid: app_total_dur_usage_photo
         cocoms: App_totalDur_Photo
+      cut_off: 1440
     - name: reading_apps
       var_type: continuous
       item_names:
         zpid: app_total_dur_usage_reading
         cocoms: App_totalDur_Reading
+      cut_off: 1440
     - name: security_apps
       var_type: continuous
       item_names:
         zpid: app_total_dur_usage_security
         cocoms: App_totalDur_Security
+      cut_off: 1440
     - name: settings_apps
       var_type: continuous
       item_names:
         zpid: app_total_dur_usage_settings
         cocoms: App_totalDur_Settings
+      cut_off: 1440
     - name: shopping_apps
       var_type: continuous
       item_names:
         zpid: app_total_dur_usage_shopping
         cocoms: App_totalDur_Shopping
+      cut_off: 1440
     - name: social_media_apps
       var_type: continuous
       item_names:
         zpid: app_total_dur_usage_social_media
         cocoms: App_totalDur_Social_Media
+      cut_off: 1440
     - name: spirituality_apps
       var_type: continuous
       item_names:
         zpid: app_total_dur_usage_spirituality
         cocoms: App_totalDur_Spirituality
-    #- name: system_apps
-    #  var_type: continuous
-    #  item_names:
-    #    zpid: x
-    #    cocoms: x
+      cut_off: 1440
     - name: time_apps
       var_type: continuous
       item_names:
         zpid: app_total_dur_usage_time
         cocoms: App_totalDur_Time
+      cut_off: 1440
     - name: tools_apps
       var_type: continuous
       item_names:
         zpid: app_total_dur_usage_tools
         cocoms: App_totalDur_Tools
+      cut_off: 1440
     - name: transportation_apps
       var_type: continuous
       item_names:
         zpid: app_total_dur_usage_transportation
         cocoms: App_totalDur_Transportation
+      cut_off: 1440
     - name: visual_entertainment
       var_type: continuous
       item_names:
         zpid: app_total_dur_usage_visual_entertainment
         cocoms: App_totalDur_Visual_Entertainment
+      cut_off: 1440
     - name: weather_apps
       var_type: continuous
       item_names:
         zpid: app_total_dur_usage_weather
         cocoms: App_totalDur_Weather
+      cut_off: 1440
 
   gps_weather:
     - name: id_col
@@ -1731,90 +1755,90 @@ sensing_based:
         cocoms: day
         zpid: day
 
-    - name: time_home  # M, SD, Min, Max
+    - name: time_home
       var_type: continuous
       item_names:
         cocoms: GPS_totalDur_home
         zpid: GPS_totalDur_home
-    - name: time_work  # M, SD, Min, Max
+      cut_off: 1440
+    - name: time_work
       var_type: continuous
       item_names:
         cocoms: GPS_totalDur_work
         zpid: GPS_totalDur_work
-    - name: daily_temperature  # M, SD, Min, Max
+      cut_off: 1440
+    - name: daily_temperature
       var_type: continuous
       item_names:
         cocoms: temp_home
         zpid: temp_home
-    - name: daily_cloudcover  # M, SD, Min, Max
+    - name: daily_cloudcover
       var_type: continuous
       item_names:
         cocoms: cloudcover_home
         zpid: cloudcover_home
-    - name: daily_precipation  # M, SD, Min, Max
+    - name: daily_precipation
       var_type: continuous
       item_names:
         cocoms: precip_home
         zpid: precip_home
-    - name: daily_humidity  # M, SD, Min, Max
+    - name: daily_humidity
       var_type: continuous
       item_names:
         cocoms: humidity_home
         zpid: humidity_home
-    - name: daily_uv_index  # M, SD, Min, Max
+    - name: daily_uv_index
       var_type: continuous
       item_names:
         cocoms: uvindex_home
         zpid: uvindex_home
-    - name: daily_sunrise  # M, SD, Min, Max, TODO: include all?
+    - name: daily_sunrise
       var_type: continuous
       item_names:
-        cocoms: sunrise_home  # convert to minutes
-        zpid: sunrise_home  # convert to minutes
-    - name: daily_sunset  # M, SD, Min, Max,  TODO: include all?
+        cocoms: sunrise_home
+        zpid: sunrise_home
+    - name: daily_sunset
       var_type: continuous
       item_names:
-        cocoms: sunset_home # convert to minutes
-        zpid: sunset_home # convert to minutes
-    #- name: air_quality  # M, SD, Min, Max  #TODO Do we get this?
-    #  var_type: continuous
-      # item_names:
-        # cocoms: x # probably aqius
-        # zpid: x # probably aqius
-    - name: total_distance  # M, SD, Min, Max
+        cocoms: sunset_home
+        zpid: sunset_home
+    - name: total_distance
       var_type: continuous
       item_names:
         cocoms: GPS_total_distanceCovered
         zpid: GPS_total_distanceCovered
-    - name: altitude_movement  # M, SD, Min, Max
+      cut_off: 500000
+    - name: altitude_movement
       var_type: continuous
       item_names:
         cocoms: GPS_total_altitude
         zpid: GPS_total_altitude
-    - name: time_foot  # M, SD, Min, Max
+      cut_off: 5000
+    - name: time_foot
       var_type: continuous
       item_names:
         cocoms: dur_on_foot
         zpid: activity_total_duration_on_foot
-    - name: time_still  # M, SD, Min, Max
+      cut_off: 1440
+    - name: time_still
       var_type: continuous
       item_names:
         cocoms: dur_still
         zpid: activity_total_duration_still
-    - name: time_vehicle  # M, SD, Min, Max
+      cut_off: 1440
+    - name: time_vehicle
       var_type: continuous
       item_names:
         cocoms: dur_in_vehicle
         zpid: activity_total_duration_in_vehicle
-    - name: time_bicycle  # M, SD, Min, Max
+      cut_off: 1440
+    - name: time_bicycle
       var_type: continuous
       item_names:
         cocoms: dur_on_bicycle
         zpid: activity_total_duration_on_bicycle
+      cut_off: 1440
 
-# macro context -> nothing necessary
-
-# For easier filtering
 var_assignments:
   pl:
     - sociability
@@ -1902,7 +1926,6 @@ var_assignments:
     - sleep_quality_sd
     - sleep_quality_min
     - sleep_quality_max
-    # - days_infected -> removed
     - home_office
     - weekday_responses
     - early_day_responses
@@ -1963,7 +1986,7 @@ var_assignments:
     - covid_vaccination
     - daily_smokers
     - alcohol_consumption
-  sens:  # currently without "phone_talking", "flight_mode", "number_notifications" as they are not provided in cocoms yet
+  sens:
     - smartphone_usage_mean
     - smartphone_usage_sd
     - smartphone_usage_min
@@ -1972,6 +1995,10 @@ var_assignments:
     - smartphone_activation_sd
     - smartphone_activation_min
     - smartphone_activation_max
+    - phone_talking_mean
+    - phone_talking_sd
+    - phone_talking_min
+    - phone_talking_max
     - first_usage_mean
     - first_usage_sd
     - first_usage_min
@@ -1980,6 +2007,14 @@ var_assignments:
     - last_usage_sd
     - last_usage_min
     - last_usage_max
+    - flight_mode_mean
+    - flight_mode_sd
+    - flight_mode_min
+    - flight_mode_max
+    - number_notifications_mean
+    - number_notifications_sd
+    - number_notifications_min
+    - number_notifications_max
     - audio_entertainment_apps_mean
     - audio_entertainment_apps_sd
     - audio_entertainment_apps_min

@@ -1078,7 +1078,7 @@ class BaseMLAnalyzer(ABC):
         Returns:
 
         """
-        self.logger.log(f"Calculating SHAP for subset of length {len(X_subset)} in process {os.getpid()}")
+        # self.logger.log(f"Calculating SHAP for subset of length {len(X_subset)} in process {os.getpid()}")
         # Compute SHAP values for the chunk
         explanation = explainer(X_subset)
         shap_values = explanation.values

@@ -224,6 +224,7 @@ class ZpidPreprocessor(BasePreprocessor):
 
         """
         df_sensing = self.fill_nans_in_app_features(df_sensing=df_sensing)
+        # TODO: This may be adjusted to differ true nan from 0
         return df_sensing
 
     def fill_nans_in_app_features(self, df_sensing: pd.DataFrame) -> pd.DataFrame:

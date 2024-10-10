@@ -399,4 +399,39 @@ class CocomsPreprocessor(BasePreprocessor):
         df = df.merge(self.societal_conversations, on=self.raw_esm_id_col, how="left")
         return df
 
+    def dataset_specific_sensing_processing(self, df_sensing: pd.DataFrame) -> pd.DataFrame:
+        """
+        May be overridden in the subclasses.
+
+        Args:
+            df_sensing:
+
+        Returns:
+
+        """
+        df_sensing = self.adjust_day_cut_off(df_sensing=df_sensing)
+        return df_sensing
+
+    @staticmethod
+    def adjust_day_cut_off(df_sensing: pd.DataFrame) -> pd.DataFrame:
+        """
+        This method shifts the day cut-off we use for various sensed variables (e.g., identify first and
+        last smartphone usage) to 3am to have a more reasonable Cut-off regarding typical bed times.
+
+        Args:
+            df_sensing (pd.DataFrame): Input DataFrame containing 'Screen_firstEvent' and 'Screen_lastEvent'.
+
+        Returns:
+            pd.DataFrame: DataFrame with adjusted times for 'Screen_firstEvent' and 'Screen_lastEvent'.
+        """
+        # Adjust for events before 3:00 AM and shift the cut-off to 3:00 AM
+        df_sensing["Screen_firstEvent"] = df_sensing["Screen_firstEvent"].apply(lambda x: x + 24 if x < 3 else x)
+        df_sensing["Screen_lastEvent"] = df_sensing["Screen_lastEvent"].apply(lambda x: x + 24 if x < 3 else x)
+
+        # Subtract 3 hours from both events to set the cut-off to 3 AM
+        df_sensing["Screen_firstEvent"] = (df_sensing["Screen_firstEvent"] - 3) * 60
+        df_sensing["Screen_lastEvent"] = (df_sensing["Screen_lastEvent"] - 3) * 60
+
+        return df_sensing
+
 
