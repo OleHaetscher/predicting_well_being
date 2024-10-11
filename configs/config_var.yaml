@@ -85,14 +85,14 @@ analysis:
   params: # adjusted by SLURM
     prediction_model: randomforestregressor  # elasticnet, randomforestregressor
     crit: state_wb  # state_wb, state_pa, state_na, trait_wb, trait_na, trait_pa
-    feature_combination: pl  # pl, srmc, sens, mac, pl_srmc, pl_sens, pl_srmc_sens, pl_mac, pl_srmc_mac, all
-    samples_to_include: all  # all, selected, control
+    feature_combination: srmc  # pl, srmc, sens, mac, pl_srmc, pl_sens, pl_srmc_sens, pl_mac, pl_srmc_mac, all
+    samples_to_include: selected  # all, selected, control
 
   cv:
-    num_inner_cv: 2  # 10
-    verbose_inner_cv: 0
-    num_outer_cv: 2  # 10
-    num_reps: 1  # 10
+    num_inner_cv: 3  # 10
+    verbose_inner_cv: 2
+    num_outer_cv: 3  # 10
+    num_reps: 3  # 10
     id_grouping_col: other_unique_id
     cache_pipe: false  # not improving performance
     warm_start: false  # not improving performance
@@ -136,15 +136,15 @@ analysis:
 
   parallelize:
     parallelize_shap: true
-    shap_n_jobs: 8
+    shap_n_jobs: 1
     parallelize_inner_cv: true
-    inner_cv_n_jobs: 8
+    inner_cv_n_jobs: 1
     parallelize_shap_ia_values: true
-    shap_ia_values_n_jobs: 8
+    shap_ia_values_n_jobs: 1
     parallelize_imputation_runs: false # either parallelize runs or columns, for n_cores < 10
-    imputation_runs_n_jobs: 8
+    imputation_runs_n_jobs: 1
     parallelize_imputation_columns: true # either parallelize runs or columns, for n_cores > 10
-    imputation_columns_n_jobs: 8
+    imputation_columns_n_jobs: 1
 
   shap_ia_values:  # TODO Needs to be implemented based on our affordances
     comp_shap_ia_values: false
@@ -155,8 +155,8 @@ analysis:
 
   output_path: "../results/ml_analysis"
   output_filenames:
-    performance: 'cv_results.json'
-    shap_values: 'shap_values.pkl'  # contains shap_values, base_values, and data
+    performance: 'cv_results_tests.json'
+    shap_values: 'shap_values_tests.pkl'  # contains shap_values, base_values, and data
     shap_ia_values: 'shap_ia_values.pkl'
     lin_model_coefs: 'lin_model_coefficients.json'
 
