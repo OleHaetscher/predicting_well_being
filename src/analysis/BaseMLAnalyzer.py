@@ -1,4 +1,5 @@
 import gc
+import hashlib
 import inspect
 import json
 import os
@@ -29,6 +30,7 @@ from src.analysis.ShuffledGroupKFold import ShuffledGroupKFold
 from src.utils.DataLoader import DataLoader
 from src.utils.Logger import Logger
 from src.utils.Timer import Timer
+from mpi4py import MPI
 
 pd.options.mode.chained_assignment = None  # default='warn'
 
@@ -85,6 +87,8 @@ class BaseMLAnalyzer(ABC):
         var_cfg,
         spec_output_path,
         df,
+        comm=None,
+        rank=None
     ):
         """
         Constructor method of the BaseMLAnalyzer Class.
@@ -96,11 +100,15 @@ class BaseMLAnalyzer(ABC):
         self.var_cfg = var_cfg
         self.spec_output_path = spec_output_path
 
+        # Multi-node parallelism
+        self.comm = comm
+        self.rank = rank
+
         self.crit = self.var_cfg["analysis"]["params"]["crit"]
         self.feature_combination = self.var_cfg["analysis"]["params"]["feature_combination"]
         self.samples_to_include = self.var_cfg["analysis"]["params"]["samples_to_include"]
 
-        self.logger = Logger(log_dir=self.spec_output_path, log_file=self.var_cfg["general"]["log_name"])
+        self.logger = Logger(log_dir=self.spec_output_path, log_file=self.var_cfg["general"]["log_name"], rank=self.rank)
         self.timer = Timer(self.logger)
         self.data_loader = DataLoader()
 
@@ -165,7 +173,7 @@ class BaseMLAnalyzer(ABC):
             if method not in dir(BaseMLAnalyzer):
                 raise ValueError(f"Method '{method}' is not implemented yet.")
             log_message = f"  Executing {getattr(self, method).__name__}"
-            # self.logger.log(log_message)
+            self.logger.log(log_message)
             print(log_message)
             getattr(self, method)()
 
@@ -187,7 +195,7 @@ class BaseMLAnalyzer(ABC):
                 sens_columns = [col for col in self.df.columns if col.startswith("sens_")]
                 df_filtered = self.df[self.df[sens_columns].notna().any(axis=1)]
 
-            # df_filtered = df_filtered.sample(n=300)  # just for testing
+            # df_filtered = df_filtered.sample(n=200)  # just for testing
             self.df = df_filtered
 
         else:  # include all datasets
@@ -270,8 +278,6 @@ class BaseMLAnalyzer(ABC):
         self.logger.log(f'    N hyperparameter combinations: {len(list(product(*self.hyperparameter_grid.values())))}')
         self.logger.log(f'    Optimization metric: {self.var_cfg["analysis"]["scoring_metric"]["inner_cv_loop"]["name"]}')
         self.logger.log(f'    Max iter imputations: {self.var_cfg["analysis"]["imputation"]["max_iter"]}')
-        self.logger.log(f'    Number of hyperpar')
-
 
         self.logger.log("Parallelization params")
         self.logger.log(f'    N jobs inner_cv: {self.var_cfg["analysis"]["parallelize"]["inner_cv_n_jobs"]}')
@@ -280,6 +286,8 @@ class BaseMLAnalyzer(ABC):
         self.logger.log(f'    N jobs imputation columns: {self.var_cfg["analysis"]["parallelize"]["imputation_columns_n_jobs"]}')
         if self.var_cfg["analysis"]["shap_ia_values"]["comp_shap_ia_values"]:
             self.logger.log(f'    N jobs shap_ia_values: {self.var_cfg["analysis"]["parallelize"]["shap_ia_values_n_jobs"]}')
+
+        self.logger.log(f'    Current rank: {self.rank}')
 
         self.logger.log("Data params")
         self.logger.log(f"    Number of rows: {self.X.shape[0]}")
@@ -461,6 +469,8 @@ class BaseMLAnalyzer(ABC):
 
             # TODO Remove, just for testing
             y_test = np.random.randn(len(y_test))
+
+            print("now imputing dataset")
 
             # Create imputed datasets and save the test datasets for SHAP computations
             X_train_imputed_sublst, X_test_imputed_sublst = self.impute_datasets_for_fold(X_train=X_train, X_test=X_test)
@@ -814,54 +824,83 @@ class BaseMLAnalyzer(ABC):
         )
 
     def repeated_nested_cv(self):
-        """
-        This function performs the nested cross-validation repeatedly using different data partitions into train
-        and test sets. It does so by repeatedly executing the nested cv function using different
-        dynamic random states that control the train-test partitioning. It also updates the class attributes
-        with the corresponding analysis results.
-        It further summarizes the SHAP values across repetitions and the SHAP interaction values (if specified)
-        into meaningful aggregates (both steps are done on the cluster to save resources and memory).
-        """
+        # Initialize MPI
+        comm = MPI.COMM_WORLD
+        rank = comm.Get_rank()
+        size = comm.Get_size()
+        print(f"Process {rank} of {size} is running")
+        self.logger.log(f"Process {rank} of {size} is running")
+
         X = self.X.copy()
         y = self.y.copy()
         fix_random_state = self.var_cfg["analysis"]["random_state"]
 
-        # Execute the nested cross-validation procedure
-        results = (
-            self.nested_cv(
+        # Distribute repetitions among processes
+        all_reps = list(range(self.num_reps))
+        my_reps = all_reps[rank::size]
+
+        print(f"Rank {rank}: Handling repetitions {my_reps}")
+        self.logger.log(f"[Rank {rank}] Handling repetitions {my_reps}")
+
+        results = []
+        for rep in my_reps:
+            print(f"Rank {rank}: Starting repetition {rep}")
+            self.logger.log(f"[Rank {rank}] Starting repetition {rep}")
+
+            # Check if data is equal
+            data_hash = hashlib.md5(self.X.to_csv().encode()).hexdigest()
+            print(f"Rank {rank} data hash: {data_hash}")
+            self.logger.log(f"Rank {rank} data hash: {data_hash}")
+
+            dynamic_rs = fix_random_state + rep
+            result = self.nested_cv(
                 rep=rep,
                 X=X,
                 y=y,
                 fix_rs=fix_random_state,
-                dynamic_rs=fix_random_state + rep,
+                dynamic_rs=dynamic_rs,
             )
-            for rep in range(self.num_reps)  # 0 - 9
-        )
-        for rep, (
-            nested_scores_rep,
-            best_models,
-            rep_shap_values,
-            rep_base_values,
-            rep_data,
-            shap_ia_values_test,
-        ) in enumerate(results):
-            self.best_models[f"rep_{rep}"] = best_models
-            self.shap_results["shap_values"][f"rep_{rep}"] = rep_shap_values
-            self.shap_results["base_values"][f"rep_{rep}"] = rep_base_values
-            self.shap_results["data"][f"rep_{rep}"] = rep_data
-            self.repeated_nested_scores[f"rep_{rep}"] = nested_scores_rep
-            print()
+            results.append(result)
+            print(f"[Rank {rank}] Finished repetition {rep}")
+            self.logger.log(f"Rank {rank}: Finished repetition {rep}")
 
-            if (
-                self.model_name == "randomforestregressor"
-                and self.var_cfg["analysis"]["shap_ia_values"]["comp_shap_ia_values"]
-            ):  # TODO Adjust after main analysis
-                self.summarize_shap_interaction_values(
-                    shap_ia_values=shap_ia_values_test, columns=X.columns, dataset="test"
-                )
+        # Gather results at the root process
+        all_results = comm.gather(results, root=0)
 
-        for rep in range(len(self.repeated_nested_scores)):
-            print(f"scores for rep {rep}: ", self.repeated_nested_scores[f"rep_{rep}"])
+        if rank == 0:
+            # Flatten results
+            final_results = [item for sublist in all_results for item in sublist]
+            print(f"[Rank {rank}] Collected all results")
+            self.logger.log(f"[Rank {rank}] Collected all results")
+
+            # Process the final results
+            for rep, (
+                    nested_scores_rep,
+                    best_models,
+                    rep_shap_values,
+                    rep_base_values,
+                    rep_data,
+                    shap_ia_values_test,
+            ) in enumerate(final_results):
+                self.best_models[f"rep_{rep}"] = best_models
+                self.shap_results["shap_values"][f"rep_{rep}"] = rep_shap_values
+                self.shap_results["base_values"][f"rep_{rep}"] = rep_base_values
+                self.shap_results["data"][f"rep_{rep}"] = rep_data
+                self.repeated_nested_scores[f"rep_{rep}"] = nested_scores_rep
+                print()
+
+                if (
+                        self.model_name == "randomforestregressor"
+                        and self.var_cfg["analysis"]["shap_ia_values"]["comp_shap_ia_values"]
+                ):
+                    self.summarize_shap_interaction_values(
+                        shap_ia_values=shap_ia_values_test, columns=X.columns, dataset="test"
+                    )
+
+            for rep in range(len(self.repeated_nested_scores)):
+                print(f"scores for rep {rep}: ", self.repeated_nested_scores[f"rep_{rep}"])
+        else:
+            pass  # Other ranks do nothing further
 
     def summarize_shap_interaction_values(self, shap_ia_values, columns, dataset):
         """

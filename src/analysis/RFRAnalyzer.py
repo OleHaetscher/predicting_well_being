@@ -15,7 +15,7 @@ class RFRAnalyzer(BaseMLAnalyzer):
     BaseMLAnalyzer. For class attributes, see BaseMLAnalyzer. Hyperparameters to tune are defined in the config.
     """
 
-    def __init__(self, var_cfg, output_dir, df):
+    def __init__(self, var_cfg, output_dir, df, comm, rank):
         """
         Constructor method of the RFRAnalyzer class.
 
@@ -23,7 +23,7 @@ class RFRAnalyzer(BaseMLAnalyzer):
             config: YAML config determining specifics of the analysis
             output_dir: Specific directory where the results are stored
         """
-        super().__init__(var_cfg, output_dir, df)
+        super().__init__(var_cfg, output_dir, df, comm, rank)
         self.model = RandomForestRegressor(
             random_state=self.var_cfg["analysis"]["random_state"]
         )
