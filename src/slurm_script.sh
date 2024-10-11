@@ -131,7 +131,7 @@ EOF
           # Add MPI-specific code
           cat >> $SLURM_SCRIPT << EOF
 # Load MPI module
-module load mpi4py/3.1.4-gompi-2023a
+module load mpi4py
 
 # Activate your Python environment if needed
 # source activate your_python_environment
