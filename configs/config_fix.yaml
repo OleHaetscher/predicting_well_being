@@ -1582,18 +1582,18 @@ sensing_based:
       item_names:
         zpid: screen_time_last_session
         cocoms: Screen_lastEvent
-    - name: flight_mode
-      var_type: continuous
-      item_names:
-        zpid: flightmode_sum_dur_on
-        cocoms: Flightmode_totalDur
-      cut_off: 1440
-    - name: number_notifications
-      var_type: continuous
-      item_names:
-        zpid: notification_sum
-        cocoms: Notifications_totalNum
-      cut_off: 2400
+    #- name: flight_mode
+    #  var_type: continuous
+    #  item_names:
+    #    zpid: flightmode_sum_dur_on
+    #    cocoms: Flightmode_totalDur
+    #  cut_off: 1440
+    #- name: number_notifications
+    #  var_type: continuous
+    #  item_names:
+    #    zpid: notification_sum
+    #    cocoms: Notifications_totalNum
+    #  cut_off: 2400
     - name: audio_entertainment_apps
       var_type: continuous
       item_names:
@@ -2007,14 +2007,14 @@ var_assignments:
     - last_usage_sd
     - last_usage_min
     - last_usage_max
-    - flight_mode_mean
-    - flight_mode_sd
-    - flight_mode_min
-    - flight_mode_max
-    - number_notifications_mean
-    - number_notifications_sd
-    - number_notifications_min
-    - number_notifications_max
+    #- flight_mode_mean
+    #- flight_mode_sd
+    #- flight_mode_min
+    #- flight_mode_max
+    #- number_notifications_mean
+    #- number_notifications_sd
+    #- number_notifications_min
+    #- number_notifications_max
     - audio_entertainment_apps_mean
     - audio_entertainment_apps_sd
     - audio_entertainment_apps_min

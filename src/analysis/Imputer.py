@@ -23,13 +23,14 @@ class Imputer(BaseEstimator, TransformerMixin):
     Can be used in an sklearn pipeline.
     """
 
-    def __init__(self, model, fix_rs, num_imputations, max_iter, n_jobs_imputation_columns, conv_thresh, logger):
+    def __init__(self, model, fix_rs, num_imputations, max_iter, n_jobs_imputation_columns, conv_thresh, percentage_of_features, logger):
         self.model = model
         self.fix_rs = fix_rs
         self.num_imputations = num_imputations
         self.max_iter = max_iter
         self.n_jobs_imputation_columns = n_jobs_imputation_columns
-        self.conv_thresh = conv_thresh
+        self.conv_thresh = conv_thresh # only for RFR
+        self.percentage_of_features = percentage_of_features  # only for ENR
         self.logger = logger
 
     def fit(self, X, y=None):
@@ -54,13 +55,22 @@ class Imputer(BaseEstimator, TransformerMixin):
     def apply_linear_imputations(self, df: pd.DataFrame, num_imputation: int) -> pd.DataFrame:
         """
         Applies linear imputations using the IterativeImputer from sklearn.
+        To reduce computational complexity (which can be crazy in the analysis including all datasets and sensing features), we
+            - reduce the number of features used for imputation dynamically
+            - skip complete features
         """
+        n_features = len(df.columns) // (1 / self.percentage_of_features)
+
         imputer = IterativeImputer(
             estimator=BayesianRidge(),
             max_iter=self.max_iter,
             random_state=self.fix_rs + num_imputation,  # Different seed for each imputation
-            sample_posterior=True
+            sample_posterior=True,
+            skip_complete=False,
+            n_nearest_features=n_features,
+            verbose=0,
         )
+
         imputer.fit(df)
         df_imputed = imputer.transform(df)
         return df_imputed
@@ -71,7 +81,6 @@ class Imputer(BaseEstimator, TransformerMixin):
         It handles both continuous and binary variables.
         See "Recursive partitioning for missing data imputation in the presence of interaction effects"
         from Doove et al (2014) for details.
-        # TODO: Maybe use other max_iter as in linear imputations?
         """
         np.random.seed(self.fix_rs + num_imputation)
         df_imputed = df.copy()

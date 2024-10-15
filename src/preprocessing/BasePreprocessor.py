@@ -140,19 +140,23 @@ class BasePreprocessor(ABC):
                 'df_type': "esm_based",
                 'cat_list': ['self_reported_micro_context', 'criterion'],  # sensed microcontext?
             }),
-            (self.filter_min_num_esm_measures, {'df_states': None}),  # TODO Check if this changes sample sizes
+            (self.filter_min_num_esm_measures, {'df_states': None}),
             (self.store_wb_items, {'df_states': None}),
             (self.create_person_level_vars_from_esm, {'df_states': None}),
             # >>> may store the ESM data at this point or directly compute the descriptive where we need the ESM data <<<
+            # (self.filter_min_num_esm_measures, {'df_states': None}),
             (self.collapse_df, {'df': None, 'df_type': "esm_based"}),
         ]
         for method, kwargs in preprocess_steps_esm:
             # Ensure df_traits is passed as needed
             kwargs = {k: v if v is not None else df_states for k, v in kwargs.items()}
             df_states = self._log_and_execute(method, **kwargs)
+            print(df_states[self.raw_esm_id_col].nunique())
 
         # Step 4: Merge state and trait data
+        print(len(df_states[self.raw_esm_id_col].unique()))
         df_joint = self._log_and_execute(self.merge_dfs_on_id, **{"df_states": df_states, "df_traits": df_traits})
+        print(len(df_joint))
 
         # Step 4 (optional): Specific sensed data processing
         if self.dataset in ["cocoms", "zpid"]:
@@ -187,6 +191,7 @@ class BasePreprocessor(ABC):
             # Ensure df_traits is passed as needed
             kwargs = {k: v if v is not None else df_joint for k, v in kwargs.items()}
             df_joint = self._log_and_execute(method, **kwargs)
+            print(len(df_joint))
 
         self.logger.log(".")
         self.logger.log(f"Finished preprocessing pipeline for >>>{self.dataset}<<<")
@@ -1255,27 +1260,39 @@ class BasePreprocessor(ABC):
         Returns:
             pd.DataFrame: Merged DataFrame with country-level variables merged into participant data.
         """
+        print("Initial length of df:", len(df))
+
         # Step 1: Merge the country-level DataFrames
         df_country_level = reduce(
             lambda left, right: pd.merge(left, right, on=["country", "year"], how="outer"),
             country_var_dct.values()
         )
 
-        df_country_level["democracy_index"] = pd.to_numeric(df_country_level["democracy_index"].str.replace(',', '.', regex=False), errors='coerce')
+        df_country_level["democracy_index"] = pd.to_numeric(df_country_level["democracy_index"].str.replace(',', '.', regex=False),
+                                                            errors='coerce')
         country_level_cols_to_agg = df_country_level.columns.drop(["country", "year"])
 
         # Step 2: Handle multiple years of participation by exploding and merging on the "year" column
-        df = df.explode("years_of_participation").rename(columns={"years_of_participation": "year"})
+        # Keep the original index to merge back later
+        df = df.reset_index()
+        df['original_index'] = df.index
+
+        # Explode the years of participation
+        df_exploded = df.explode("years_of_participation").rename(columns={"years_of_participation": "year"})
 
         # Merge participant data with country-level data
-        df = pd.merge(df, df_country_level, on=["country", "year"], how="left")
+        df_merged = pd.merge(df_exploded, df_country_level, on=["country", "year"], how="left")
 
-        # Group by participant and country, and apply mean to country-level columns, keeping other columns unchanged
-        df = df.groupby([self.raw_esm_id_col, "country"], as_index=False).agg(
-            {**{col: 'mean' for col in country_level_cols_to_agg},
-             **{col: 'first' for col in df.columns.difference(country_level_cols_to_agg)}}
-        )
+        # Group by participant to compute mean of country-level variables
+        mean_country_vars = df_merged.groupby(self.raw_esm_id_col)[country_level_cols_to_agg].mean().reset_index()
 
+        # Merge the mean country-level variables back into the original df
+        df = pd.merge(df, mean_country_vars, on=self.raw_esm_id_col, how="left")
+
+        # Drop the temporary columns
+        df = df.drop(columns=['original_index'])
+
+        print("Final length of df:", len(df))
         return df
 
     def merge_dfs_on_id(self, df_states: pd.DataFrame, df_traits: pd.DataFrame) -> pd.DataFrame:
@@ -1518,6 +1535,8 @@ class BasePreprocessor(ABC):
             (self.change_datetime_to_minutes, {'df': None, "var1": "daily_sunset", "var2": "daily_sunrise"}),
             (self.filter_first_last_screen, {'df': None, "var1": "first_usage", "var2": "last_usage"}),
             (self.apply_cut_offs, {'df': None}),
+            (self.set_nan_to_zero, {'df': None, "col_part": ["app_"]}),
+            (self.set_nan_to_zero, {'df': None, "col_part": ["phone"]}),
             # add set 0 to np.nan as general method? -> lets see
             (self.sanity_checker.sanity_check_sensing_data, {'df_sensing': None, "dataset": self.dataset}),
             (self.create_person_level_desc_stats, {'df': None, 'feature_category': "sensing_based"}),
@@ -1529,8 +1548,9 @@ class BasePreprocessor(ABC):
             df_sensing = self._log_and_execute(method, indent=6, **kwargs)
 
         # merge traits
+        print(len(df))
         df = self.merge_state_df_sensing(df=df, df_sensing=df_sensing)
-
+        print(len(df))
         return df
 
     def dataset_specific_sensing_processing(self, df_sensing: pd.DataFrame) -> pd.DataFrame:

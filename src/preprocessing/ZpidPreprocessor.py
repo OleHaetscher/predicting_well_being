@@ -210,7 +210,9 @@ class ZpidPreprocessor(BasePreprocessor):
         Returns:
             pd.DataFrame
         """
+        print(len(df))
         df = df.merge(self.home_office, on=self.raw_trait_id_col, how="left")
+        print(len(df))
         return df
 
     def dataset_specific_sensing_processing(self, df_sensing: pd.DataFrame) -> pd.DataFrame:

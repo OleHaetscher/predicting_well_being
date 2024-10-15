@@ -125,6 +125,7 @@ class BaseMLAnalyzer(ABC):
         self.y = None
         self.binary_cols = None
         self.continuous_cols = None
+        self.rows_dropped_crit_na = None
 
         # Results
         self.best_models = {}
@@ -159,6 +160,7 @@ class BaseMLAnalyzer(ABC):
             num_imputations=self.var_cfg["analysis"]["imputation"]["num_imputations"],
             n_jobs_imputation_columns=self.var_cfg["analysis"]["parallelize"]["imputation_columns_n_jobs"],
             conv_thresh=self.var_cfg["analysis"]["imputation"]["conv_thresh"],
+            percentage_of_features=self.var_cfg["analysis"]["imputation"]["percentage_of_features"],
             logger=self.logger,
         )
 
@@ -180,7 +182,10 @@ class BaseMLAnalyzer(ABC):
     def select_samples(self):
         """
         This method selects the samples based on the given combination using the indices that correspond
-        to the samples (e.g., cocoesm_1)
+        to the samples (e.g., cocoesm_1). It applies the following logic:
+            - for the analysis "selected" and "control", only selected datasets are used to reduce NaNs
+            - for the analysis "all", all datasets are used, independent of the features used for the analysis
+            - For the supplementary analyses: If a dataset does not contain the criterion, it is excluded
         """
         if self.samples_to_include in ["selected", "control"]:
             datasets_included = self.var_cfg["analysis"]["feature_sample_combinations"][self.feature_combination]
@@ -195,11 +200,20 @@ class BaseMLAnalyzer(ABC):
                 sens_columns = [col for col in self.df.columns if col.startswith("sens_")]
                 df_filtered = self.df[self.df[sens_columns].notna().any(axis=1)]
 
-            # df_filtered = df_filtered.sample(n=200)  # just for testing
-            self.df = df_filtered
+        else:  # include all datasets with available criterion
+            datasets_included_filtered = [dataset for dataset in self.var_cfg["analysis"]["feature_sample_combinations"]["all_in"]
+                                          if dataset in self.var_cfg["analysis"]["crit_available"][self.crit]]
+            self.datasets_included = datasets_included_filtered
+            df_filtered = self.df[self.df.index.to_series().apply(
+                lambda x: any(x.startswith(sample) for sample in self.datasets_included))]
 
-        else:  # include all datasets
-            self.datasets_included = self.var_cfg["analysis"]["feature_sample_combinations"]["all_in"]
+        # It may also be possible, that some people have NaNs on the trait wb measures, exclude them
+        crit_col = f"crit_{self.crit}"
+        df_filtered_crit_na = df_filtered.dropna(subset=[crit_col])
+        self.rows_dropped_crit_na = len(df_filtered) - len(df_filtered_crit_na)
+
+        df_filtered_crit_na = df_filtered_crit_na.sample(n=300)  # just for testing
+        self.df = df_filtered_crit_na
 
     def select_features(self):
         """
@@ -280,6 +294,7 @@ class BaseMLAnalyzer(ABC):
         self.logger.log(f'    Max iter imputations: {self.var_cfg["analysis"]["imputation"]["max_iter"]}')
 
         self.logger.log("Parallelization params")
+        self.logger.log(f'    Current rank: {self.rank}')
         self.logger.log(f'    N jobs inner_cv: {self.var_cfg["analysis"]["parallelize"]["inner_cv_n_jobs"]}')
         self.logger.log(f'    N jobs shap: {self.var_cfg["analysis"]["parallelize"]["shap_n_jobs"]}')
         self.logger.log(f'    N jobs imputation runs: {self.var_cfg["analysis"]["parallelize"]["imputation_runs_n_jobs"]}')
@@ -287,11 +302,10 @@ class BaseMLAnalyzer(ABC):
         if self.var_cfg["analysis"]["shap_ia_values"]["comp_shap_ia_values"]:
             self.logger.log(f'    N jobs shap_ia_values: {self.var_cfg["analysis"]["parallelize"]["shap_ia_values_n_jobs"]}')
 
-        self.logger.log(f'    Current rank: {self.rank}')
-
         self.logger.log("Data params")
         self.logger.log(f"    Number of rows: {self.X.shape[0]}")
         self.logger.log(f"    Number of cols: {self.X.shape[1]}")
+        self.logger.log(f"    Number of rows dropped due to missing criterion {self.crit}: {self.rows_dropped_crit_na}")
         na_counts = self.X.isna().sum()
         for column, count in na_counts[na_counts > 0].items():
             self.logger.log(f"      Number of NaNs in column {column}: {count}")
@@ -647,12 +661,12 @@ class BaseMLAnalyzer(ABC):
     def compute_shap_for_fold(
         self,
         num_cv_,
-        num_imputation,
+        # num_imputation,
         pipeline,
-        index_mapping,
+        # index_mapping,
         num_test_indices,
         X_test,
-        all_features,
+        # all_features,
     ):
         """
         Parallelization implementation of the method "summarize_shap_values_outer_cv". This enables parallel SHAP
@@ -685,29 +699,29 @@ class BaseMLAnalyzer(ABC):
                 represent samples that were in the train set in the current outer fold are all zero.
                 Only defined if calc_ia_values is specific in the var_cfg and model == 'rfr', None otherwise
         """
+        X_test_scaled = pipeline.named_steps["preprocess"].transform(X_test)
         (
             shap_values_test,
             base_values_test,
-            # data_test,
-            features_test,
-        ) = self.calculate_shap_values(X_test, pipeline)
+        ) = self.calculate_shap_values(X_scaled=X_test_scaled, pipeline=pipeline)
 
         if (
             self.model_name == "randomforestregressor"
             and self.var_cfg["analysis"]["shap_ia_values"]["comp_shap_ia_values"]
         ):
-            shap_ia_values_test = self.calculate_shap_ia_values(X_test, pipeline)
+            shap_ia_values_test = self.calculate_shap_ia_values(X_test_scaled, pipeline)
 
         else:
-            test_ia_shap_template = None
+            shap_ia_values_test = None
 
         return (
             shap_values_test,
             base_values_test,
-            X_test,
+            X_test_scaled,
+            # X_test,
             num_test_indices[num_cv_],
-            num_cv_,
-            test_ia_shap_template,
+            # num_cv_,
+            shap_ia_values_test,
         )
 
     def summarize_shap_values_outer_cv(self,
@@ -766,11 +780,11 @@ class BaseMLAnalyzer(ABC):
                 self.compute_shap_for_fold(
                     num_cv_=num_cv_,
                     pipeline=pipelines[num_cv_][num_imputation],
-                    index_mapping=index_mapping,
+                    # index_mapping=index_mapping,
                     num_test_indices=num_test_indices,
                     X_test=X_test_imputed_lst[num_cv_][num_imputation],
-                    num_imputation=num_imputation,
-                    all_features=all_features,
+                    # num_imputation=num_imputation,
+                    # all_features=all_features,
                 )
                 for num_imputation in range(self.num_imputations)
             ]
@@ -782,16 +796,15 @@ class BaseMLAnalyzer(ABC):
             for num_imputation, (
                     shap_values_template,
                     base_values_template,
-                    # data_template,
-                    X_test,
+                    X_test_scaled,
                     test_idx,
-                    _,
+                    # _,
                     _,
             ) in enumerate(fold_results):
                 # Aggregate results for the current fold and imputation
                 rep_shap_values[test_idx, :, num_imputation] += shap_values_template.astype(np.float32)
                 rep_base_values[test_idx, num_imputation] += base_values_template.flatten().astype(np.float32)
-                rep_data[test_idx, :, num_imputation] += X_test.astype(np.float32)
+                rep_data[test_idx, :, num_imputation] += X_test_scaled.astype(np.float32)
 
         # We need to divide the base values, because we get base_values in every outer fold
         # Test if the SHAP assumptions hold with this procedure and plotting is possible
@@ -805,11 +818,11 @@ class BaseMLAnalyzer(ABC):
             ia_test_shap_values = np.zeros((X.shape[0], X.shape[1], X.shape[1]))
             # Aggregate results from all folds
             for (
-                _,
-                _,
-                _,
-                test_idx,
-                _,
+                #_,
+                #_,
+                #_,
+                #test_idx,
+                #_,
                 test_ia_shap_template,
             ) in results:
                 ia_test_shap_values[test_idx, :, :] += test_ia_shap_template
@@ -839,18 +852,18 @@ class BaseMLAnalyzer(ABC):
         all_reps = list(range(self.num_reps))
         my_reps = all_reps[rank::size]
 
-        print(f"Rank {rank}: Handling repetitions {my_reps}")
-        self.logger.log(f"[Rank {rank}] Handling repetitions {my_reps}")
+        print(f"    Rank {rank}: Handling repetitions {my_reps}")
+        self.logger.log(f"    [Rank {rank}] Handling repetitions {my_reps}")
 
         results = []
         for rep in my_reps:
-            print(f"Rank {rank}: Starting repetition {rep}")
-            self.logger.log(f"[Rank {rank}] Starting repetition {rep}")
+            print(f"    Rank {rank}: Starting repetition {rep}")
+            self.logger.log(f"    [Rank {rank}] Starting repetition {rep}")
 
             # Check if data is equal
             data_hash = hashlib.md5(self.X.to_csv().encode()).hexdigest()
-            print(f"Rank {rank} data hash: {data_hash}")
-            self.logger.log(f"Rank {rank} data hash: {data_hash}")
+            print(f"    Rank {rank} data hash: {data_hash}")
+            self.logger.log(f"    Rank {rank} data hash: {data_hash}")
 
             dynamic_rs = fix_random_state + rep
             result = self.nested_cv(
@@ -861,8 +874,8 @@ class BaseMLAnalyzer(ABC):
                 dynamic_rs=dynamic_rs,
             )
             results.append(result)
-            print(f"[Rank {rank}] Finished repetition {rep}")
-            self.logger.log(f"Rank {rank}: Finished repetition {rep}")
+            print(f"    [Rank {rank}] Finished repetition {rep}")
+            self.logger.log(f"    Rank {rank}: Finished repetition {rep}")
 
         # Gather results at the root process
         all_results = comm.gather(results, root=0)
@@ -870,8 +883,8 @@ class BaseMLAnalyzer(ABC):
         if rank == 0:
             # Flatten results
             final_results = [item for sublist in all_results for item in sublist]
-            print(f"[Rank {rank}] Collected all results")
-            self.logger.log(f"[Rank {rank}] Collected all results")
+            print(f"  [Rank {rank}] Collected all results")
+            self.logger.log(f"  [Rank {rank}] Collected all results")
 
             # Process the final results
             for rep, (
@@ -1058,7 +1071,7 @@ class BaseMLAnalyzer(ABC):
         """Gets the coefficients of linear models of the predictions, implemented in the linear model subclass."""
         pass
 
-    def calculate_shap_values(self, X, pipeline):  # TODO Make common method and use explainer as
+    def calculate_shap_values(self, X_scaled, pipeline):
         """
         This function calculates tree-based SHAP values for a given analysis setting. This includes applying the
         preprocessing steps that were applied in the pipeline (e.g., scaling, RFECV if specified).
@@ -1076,12 +1089,12 @@ class BaseMLAnalyzer(ABC):
             columns: pd.Index, contains the names of the features in X associated with the SHAP values
             shap_interaction_values: SHAP interaction values, of shape (n_features x n_features x n_samples)
         """
-        columns = X.columns
-        X_processed = pipeline.named_steps["preprocess"].transform(X)  # Still need this for scaling
+        # columns = X.columns
+        # X_processed = pipeline.named_steps["preprocess"].transform(X)  # Still need this for scaling
 
         print(self.var_cfg["analysis"]["parallelize"]["shap_n_jobs"])
         if self.model_name == "elasticnet":
-            explainer = shap.LinearExplainer(pipeline.named_steps["model"].regressor_, X_processed)
+            explainer = shap.LinearExplainer(pipeline.named_steps["model"].regressor_, X_scaled)
         elif self.model_name == "randomforestregressor":
             explainer = shap.explainers.Tree(pipeline.named_steps["model"].regressor_)
         else:
@@ -1089,15 +1102,15 @@ class BaseMLAnalyzer(ABC):
 
         # Compute SHAP values for chunks of the data
         n_jobs = self.var_cfg["analysis"]["parallelize"]["shap_n_jobs"]
-        chunk_size = X_processed.shape[0] // n_jobs + (X_processed.shape[0] % n_jobs > 0)
+        chunk_size = X_scaled.shape[0] // n_jobs + (X_scaled.shape[0] % n_jobs > 0)
         print("chunk_size:", chunk_size)
 
         # Compute SHAP values for chunks of the data in parallel
         results = Parallel(n_jobs=n_jobs, verbose=0)(
             delayed(self.calculate_shap_for_chunk)(
-                explainer, X_processed[i: i + chunk_size]
+                explainer, X_scaled[i: i + chunk_size]
             )
-            for i in range(0, X_processed.shape[0], chunk_size)
+            for i in range(0, X_scaled.shape[0], chunk_size)
         )
 
         # Collect and combine results from all chunks
@@ -1105,7 +1118,7 @@ class BaseMLAnalyzer(ABC):
         shap_values_array = np.vstack(shap_values_lst)
         base_values_array = np.concatenate(base_values_lst)
 
-        return shap_values_array, base_values_array, columns
+        return shap_values_array, base_values_array
 
     def calculate_shap_for_chunk(self, explainer, X_subset):
         """Calculates tree-based SHAP values for a chunk for parallelization.

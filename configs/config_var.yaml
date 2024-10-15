@@ -1,6 +1,6 @@
 general:
-  datasets_to_be_included: [cocoesm, cocout, cocoms, emotions, pia, zpid] # , cocout, cocoms, emotions, pia, zpid]  # cocoesm, cocoms, cocout, emotions, pia, zpid
-  log_dir: "../logs/YY_test_full_data"  # only for preprocessing
+  datasets_to_be_included: [cocoesm, cocout, cocoms, emotions, pia, zpid] # cocoesm, cocoms, cocout, emotions, pia, zpid
+  log_dir: "../logs/12102024"  # only for preprocessing
   log_name: x
 
   steps:
@@ -13,7 +13,7 @@ preprocessing:
   store_data: true  # only final data
   path_to_preprocessed_data: "../data/preprocessed"
   min_num_esm_measures: 5  # 5
-  nrows: 999999 # only for descriptives
+  nrows: 9999999 # only for descriptives
   need_inverse_coding: ["cocout", "emotions", "pia", "zpid", "cocoms"]  # all except cocoesm, do not change
   # joint id col -> ID is the index in every dataset
 
@@ -84,13 +84,13 @@ analysis:
 
   params: # adjusted by SLURM
     prediction_model: randomforestregressor  # elasticnet, randomforestregressor
-    crit: state_wb  # state_wb, state_pa, state_na, trait_wb, trait_na, trait_pa
-    feature_combination: srmc  # pl, srmc, sens, mac, pl_srmc, pl_sens, pl_srmc_sens, pl_mac, pl_srmc_mac, all
+    crit: trait_pa  # state_wb, state_pa, state_na, trait_wb, trait_na, trait_pa
+    feature_combination: pl  # pl, srmc, sens, mac, pl_srmc, pl_sens, pl_srmc_sens, pl_mac, pl_srmc_mac, all
     samples_to_include: selected  # all, selected, control
 
   cv:
     num_inner_cv: 3  # 10
-    verbose_inner_cv: 2
+    verbose_inner_cv: 0
     num_outer_cv: 3  # 10
     num_reps: 3  # 10
     id_grouping_col: other_unique_id
@@ -106,9 +106,10 @@ analysis:
     trait_na: [cocoesm, cocout, cocoms, pia, zpid]
 
   imputation:
-    num_imputations: 1  # 5
-    max_iter: 2  # 50
-    conv_thresh: 0.05  # 0.05
+    num_imputations: 2  # 5
+    max_iter: 2 # 50
+    conv_thresh: 0.05  # 0.05  only RFR
+    percentage_of_features: 0.5  # only ENR
 
   scoring_metric:
     inner_cv_loop:
@@ -120,19 +121,19 @@ analysis:
 
   model_hyperparameters:
     elasticnet:  # verify
-      # model__regressor__alpha: [0.1, 1]
-      # model__regressor__l1_ratio: [0, 1]
-      model__regressor__alpha: [0.00001, 0.0001, 0.001, 0.01, 0.1, 1, 10, 100, 1000, 10000, 100000]
-      model__regressor__l1_ratio: [0, 0.1, 0.2, 0.3, 0.4, 0.4, 0.6, 0.7, 0.8, 0.9, 1]
-      model__regressor__max_iter: [ 1000, 10000 ]
-      model__regressor__tol: [0.1, 0.01, 0.001, 0.0001]
+      model__regressor__alpha: [0.1, 1]
+      model__regressor__l1_ratio: [0, 1]
+      #model__regressor__alpha: [0.00001, 0.0001, 0.001, 0.01, 0.1, 1, 10, 100, 1000, 10000, 100000]
+      #model__regressor__l1_ratio: [0, 0.1, 0.2, 0.3, 0.4, 0.4, 0.6, 0.7, 0.8, 0.9, 1]
+      #model__regressor__max_iter: [ 1000, 10000 ]
+      #model__regressor__tol: [0.1, 0.01, 0.001, 0.0001]
     randomforestregressor:
-      # model__regressor__n_estimators: [ 100 ]
-      # model__regressor__max_features: [ 0.2, 0.4 ]
-      model__regressor__n_estimators: [ 100, 500 ]
-      model__regressor__max_features: [ 0.25, 0.5, 0.75]
-      model__regressor__max_depth: [4, 6, 8, 10, 12]
-      model__regressor__min_samples_split: [5, 10, 15, 20]
+      model__regressor__n_estimators: [ 100 ]
+      model__regressor__max_features: [ 0.2, 0.4 ]
+      #model__regressor__n_estimators: [ 100, 500 ]
+      #model__regressor__max_features: [ 0.25, 0.5, 0.75]
+      #model__regressor__max_depth: [4, 6, 8, 10, 12]
+      #model__regressor__min_samples_split: [5, 10, 15, 20]
 
   parallelize:
     parallelize_shap: true
@@ -155,8 +156,8 @@ analysis:
 
   output_path: "../results/ml_analysis"
   output_filenames:
-    performance: 'cv_results_tests.json'
-    shap_values: 'shap_values_tests.pkl'  # contains shap_values, base_values, and data
+    performance: 'cv_results.json'
+    shap_values: 'shap_values.pkl'  # contains shap_values, base_values, and data
     shap_ia_values: 'shap_ia_values.pkl'
     lin_model_coefs: 'lin_model_coefficients.json'
 
