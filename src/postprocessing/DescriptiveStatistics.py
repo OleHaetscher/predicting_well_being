@@ -29,7 +29,7 @@ class DescriptiveStatistics:
         Returns:
             final_table: pd.DataFrame containing the formatted table in APA style.
         """
-        # TODO: Per Sample or in total? Current
+        # TODO: Per Sample or in total? Currently total
         path_to_full_data = os.path.join(self.var_cfg['analysis']["path_to_preprocessed_data"], "full_data")
         full_df = self.data_loader.read_pkl(path_to_full_data)
         results = []

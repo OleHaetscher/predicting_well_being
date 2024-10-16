@@ -180,7 +180,7 @@ class SlurmHandler:
         return var_cfg
 
     @staticmethod
-    def sanity_checks_cfg_cluster(var_cfg):  # TODO Test
+    def sanity_checks_cfg_cluster(var_cfg):
         """
         This function sets certain variables automatically when using the cluster which I probably change
         locally during testing. For example, for testing certain analysis settings, I might run the CV

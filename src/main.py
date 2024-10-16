@@ -97,7 +97,7 @@ if __name__ == "__main__":
             output_dir = slurm_handler.construct_local_output_path(var_cfg=var_cfg)
 
         # All ranks proceed with analysis
-        np.random.seed(var_cfg["analysis"]["random_state"])  # TODO is this sufficient?
+        np.random.seed(var_cfg["analysis"]["random_state"])
 
         prediction_model = var_cfg_updated["analysis"]["params"]["prediction_model"]
         if prediction_model == "elasticnet":

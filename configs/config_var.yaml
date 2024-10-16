@@ -1,7 +1,7 @@
 general:
-  datasets_to_be_included: [ cocoesm, cocoms, cocout, emotions, pia, zpid ] # cocoesm, cocoms, cocout, emotions, pia, zpid
-  log_dir: "../logs/final_preprocessing"  # only for preprocessing
-  log_name: Run_16102024
+  datasets_to_be_included: [ pia ] # cocoesm, cocoms, cocout, emotions, pia, zpid
+  log_dir: "../logs/111_FINAL_DATA"  # only for preprocessing
+  log_name: fix_imputation_mac
 
   steps:
     preprocessing: true
@@ -13,8 +13,19 @@ preprocessing:
   store_data: true  # only final data
   path_to_preprocessed_data: "../data/preprocessed"
   min_num_esm_measures: 5  # 5
-  nrows: 9999999 # only for descriptives
+  nrows: 9999 # only for descriptives
   need_inverse_coding: ["cocout", "emotions", "pia", "zpid", "cocoms"]  # all except cocoesm, do not change
+
+  sensing:
+    app_substring:
+      cocoms: "App_"
+      zpid: "app_"
+    call_substring:
+      cocoms: "Call_totalDur"
+      zpid: "phone_sum_dur_calls"
+    call_reference:
+      cocoms: "Screen_totalDur_unlocked"
+      zpid: "screen_sum_dur_session"
 
   sanity_checking:
     sensing:
@@ -38,13 +49,13 @@ preprocessing:
     - productiveness
     - responsibility
 
-    number_of_features:  # as in PreReg Table, without sensing ye
-      cocoesm: 149 # inklusive 6x wb, davon MAC 54
-      cocoms: 96 # inklusive 6x wb, number_interactions / percentage_interactions + unique_id / studyWave
-      cocout: 73 # inklusive 6x wb, studyWave
-      emotions: 56 # inklusive 3x wb + "living_alone"
-      pia: 42  # inklusive 6x wb
-      zpid: 67 # inklusive 4x wb
+    number_of_features:  # TODO This does currently not match (but all categories were checked) Ignore for now
+      cocoesm: 149
+      cocoms: 96
+      cocout: 73
+      emotions: 56
+      pia: 42
+      zpid: 67
 
 analysis:
   load_data: true
@@ -83,15 +94,15 @@ analysis:
 
   params: # adjusted by SLURM
     prediction_model: randomforestregressor  # elasticnet, randomforestregressor
-    crit: trait_pa  # state_wb, state_pa, state_na, trait_wb, trait_na, trait_pa
+    crit: state_wb  # state_wb, state_pa, state_na, trait_wb, trait_na, trait_pa
     feature_combination: pl  # pl, srmc, sens, mac, pl_srmc, pl_sens, pl_srmc_sens, pl_mac, pl_srmc_mac, all
-    samples_to_include: selected  # all, selected, control
+    samples_to_include: all  # all, selected, control
 
   cv:
     num_inner_cv: 3  # 10
     verbose_inner_cv: 0
     num_outer_cv: 3  # 10
-    num_reps: 3  # 10
+    num_reps: 1  # 10
     id_grouping_col: other_unique_id
     cache_pipe: false  # not improving performance
     warm_start: false  # not improving performance
@@ -105,10 +116,12 @@ analysis:
     trait_na: [cocoesm, cocout, cocoms, pia, zpid]
 
   imputation:
-    num_imputations: 2  # 5
-    max_iter: 2 # 50
+    num_imputations: 1  # 5
+    max_iter: 20 # 50
     conv_thresh: 0.05  # 0.05  only RFR
     percentage_of_features: 0.5  # only ENR
+    n_features_thresh: 50  # only ENR
+    country_grouping_col: "other_country"
 
   scoring_metric:
     inner_cv_loop:

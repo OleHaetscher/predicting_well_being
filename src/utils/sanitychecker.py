@@ -152,7 +152,7 @@ class SanityChecker:
         sens_columns = [col for col in df.columns if col.startswith("sens_")]
         if dataset == "zpid":
             df_sensing_filtered = df[df[sens_columns].notna().any(axis=1)]
-            self.logger.log(f"    Num rows of df for {dataset} with sensing data: {len(df)}")
+            self.logger.log(f"    Num rows of df for {dataset} with sensing data: {len(df_sensing_filtered)}")
             self.logger.log(f"    Percentage of samples that contain sensing data: "
                             f"{np.round(len(df_sensing_filtered) / len(df), 3)}")
 
@@ -350,6 +350,7 @@ class SanityChecker:
                 self.logger.log(f"        WARNING: {np.round(zero_percentage*100, 1)}% 0s in {col}")
             mean = np.round(df_sensing[col].mean(), 3)
             sd = np.round(df_sensing[col].std(), 3)
-            self.logger.log(f"    {sens_var['name']} M: {mean}, SD: {sd}")
+            max_ = np.round(df_sensing[col].max(), 3)
+            self.logger.log(f"    {sens_var['name']} M: {mean}, SD: {sd}, Max: {max_}")
 
         return df_sensing

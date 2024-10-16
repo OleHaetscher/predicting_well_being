@@ -1,20 +1,14 @@
-import gc
-import os
 import pickle
-import threading
 
-import numpy as np
-from joblib import Parallel, delayed
-from sklearn.base import BaseEstimator, TransformerMixin
-from sklearn.experimental import enable_iterative_imputer  # Required to use IterativeImputer
-from sklearn.impute import IterativeImputer
 import pandas as pd
+import numpy as np
+import gc
+from sklearn.base import BaseEstimator, TransformerMixin
+from sklearn.experimental import enable_iterative_imputer  # noqa
+from sklearn.impute import IterativeImputer
 from sklearn.linear_model import BayesianRidge
 from sklearn.tree import DecisionTreeRegressor, DecisionTreeClassifier
-
-from src.utils.Logger import Logger
-
-pd.options.mode.chained_assignment = None  # default='warn'
+from joblib import Parallel, delayed
 
 
 class Imputer(BaseEstimator, TransformerMixin):
@@ -23,14 +17,28 @@ class Imputer(BaseEstimator, TransformerMixin):
     Can be used in an sklearn pipeline.
     """
 
-    def __init__(self, model, fix_rs, num_imputations, max_iter, n_jobs_imputation_columns, conv_thresh, percentage_of_features, logger):
+    def __init__(
+        self,
+        model,
+        fix_rs,
+        num_imputations,
+        max_iter,
+        n_jobs_imputation_columns,
+        conv_thresh,
+        percentage_of_features,
+        n_features_thresh,
+        country_group_by,
+        logger
+    ):
         self.model = model
         self.fix_rs = fix_rs
         self.num_imputations = num_imputations
         self.max_iter = max_iter
         self.n_jobs_imputation_columns = n_jobs_imputation_columns
-        self.conv_thresh = conv_thresh # only for RFR
+        self.conv_thresh = conv_thresh  # only for RFR
         self.percentage_of_features = percentage_of_features  # only for ENR
+        self.n_features_thresh = n_features_thresh
+        self.country_group_by = country_group_by
         self.logger = logger
 
     def fit(self, X, y=None):
@@ -44,22 +52,95 @@ class Imputer(BaseEstimator, TransformerMixin):
         Applies the appropriate imputation method based on the model type.
         """
         df = X.copy()
+
+        # Identify country-level variables
+        country_var_cols = [col for col in df.columns if col.startswith('mac_')]
+
+        if country_var_cols:
+            df = self.impute_country_level(df=df, country_var_cols=country_var_cols, num_imputation=num_imputation)
+
+        # Drop "other" columns as they should not be used for individual level imputations, identify individual columns
+        other_var_cols = pd.DataFrame({col: df.pop(col) for col in df.columns if col.startswith('other_')})
+        individual_var_cols = [col for col in df.columns if not col.startswith('mac_')]
+
+        # Proceed with individual-level variables (also use if condition, in mac, we do not have any individual columns)
+        if individual_var_cols:
+            df = self.impute_individual_level(df=df, individual_var_cols=individual_var_cols, num_imputation=num_imputation)
+
+        # Created df, merge other columns back to df
+        df_imputed = pd.DataFrame(df, columns=df.columns, index=df.index)
+        df_imputed = pd.concat([df_imputed, other_var_cols], axis=1)
+        # Remove the country column (I do not need it anymore)
+        df_imputed = df_imputed.drop(self.country_group_by, axis=1)
+        return df_imputed
+
+    def impute_country_level(self, df, country_var_cols, num_imputation):
+        """
+        Imputes missing values in country-level variables, ensuring that participants from the same country
+        receive the same imputed values.
+        """
+        # Create DataFrame with one row per country
+        # TODO: Group by year and tuple, when merging back take the mean if years are two different values
+        country_df = df.groupby(self.country_group_by)[country_var_cols].first()
+
+        # Apply the appropriate imputation method
         if self.model == 'elasticnet':
-            X_imputed = self.apply_linear_imputations(df=df, num_imputation=num_imputation)
+            country_array_imputed = self.apply_linear_imputations(
+                df=country_df,
+                num_imputation=num_imputation,
+            )
         elif self.model == 'randomforestregressor':
-            X_imputed = self.apply_nonlinear_imputations(df=df, num_imputation=num_imputation)
+            country_array_imputed = self.apply_nonlinear_imputations(
+                df=country_df,
+                num_imputation=num_imputation,
+                n_jobs=self.n_jobs_imputation_columns
+            )
         else:
             raise ValueError(f"Imputations for model {self.model} not implemented")
-        return pd.DataFrame(X_imputed, columns=X.columns, index=X.index)
+
+        # Merge back the imputed country-level data to the original DataFrame
+        country_df_imputed = pd.DataFrame(country_array_imputed, columns=country_df.columns, index=country_df.index).reset_index()
+        df = df.drop(columns=country_var_cols)
+        df_merged = df.merge(country_df_imputed, on=self.country_group_by, how='left')
+        df_merged.index = df.index
+
+        return df_merged
+
+    def impute_individual_level(self, df, individual_var_cols, num_imputation):
+        """
+        Imputes missing values on the individual level.
+        """
+        individual_df = df[individual_var_cols]
+
+        if self.model == 'elasticnet':
+            individual_array_imputed = self.apply_linear_imputations(
+                df=individual_df,
+                num_imputation=num_imputation
+            )
+        elif self.model == 'randomforestregressor':
+            individual_array_imputed = self.apply_nonlinear_imputations(
+                df=individual_df,
+                num_imputation=num_imputation
+            )
+        else:
+            raise ValueError(f"Imputations for model {self.model} not implemented")
+
+        # Merge
+        individual_df_imputed = pd.DataFrame(individual_array_imputed, columns=individual_df.columns, index=individual_df.index)
+        df = df.drop(columns=individual_var_cols)
+        df = pd.concat([df, individual_df_imputed], axis=1, join="outer")
+
+        return df
 
     def apply_linear_imputations(self, df: pd.DataFrame, num_imputation: int) -> pd.DataFrame:
         """
         Applies linear imputations using the IterativeImputer from sklearn.
-        To reduce computational complexity (which can be crazy in the analysis including all datasets and sensing features), we
-            - reduce the number of features used for imputation dynamically
-            - skip complete features
+        In analysis with many features, we reduce the number of features used for imputation.
         """
-        n_features = len(df.columns) // (1 / self.percentage_of_features)
+
+        n_features = int(len(df.columns) * self.percentage_of_features)
+        if n_features < self.n_features_thresh:
+            n_features = None  # Use all features
 
         imputer = IterativeImputer(
             estimator=BayesianRidge(),
@@ -191,48 +272,13 @@ class Imputer(BaseEstimator, TransformerMixin):
                 delayed(process_column)(col) for col in columns_with_na
             )
 
-            # Collect the updates and check for convergence
-            converged = True  # Assume converged unless proven otherwise
             for col, imputed_series in results:
                 if imputed_series is not None:
                     missing_indices = missing_indices_dict[col]
-                    prev_values = prev_imputed_values[col].values
                     new_values = imputed_series.values
 
                     # Update df_imputed
                     df_imputed.loc[missing_indices, col] = new_values
-
-                    # Compare the new imputed values to previous
-                    if pd.api.types.is_numeric_dtype(df_imputed[col]):
-                        # For numeric data
-                        diff = np.abs(new_values - prev_values)
-                        max_diff = np.nanmax(diff)
-                        if max_diff > self.conv_thresh:
-                            converged = False
-                    else:
-                        # For categorical or object data
-                        changed = prev_values != new_values
-                        num_changed = np.sum(changed)
-                        if num_changed > 0:
-                            converged = False
-
-                    # Update previous imputed values
-                    prev_imputed_values[col] = imputed_series.copy()
-
-            if converged:
-                self.logger.log(f"Converged at iteration {iteration}")
-                break
-
-        # Optionally, clean up memory after each iteration
         gc.collect()
 
-        self.logger.log(f"      Imputation {num_imputation} not converged based on convergence threshold "
-                        f"{self.conv_thresh} before max_iter {self.max_iter}")
-
-        ### Just for testing
-        with open("test_imputed_dataset", 'wb') as f:
-            pickle.dump(df_imputed, f)
-
         return df_imputed
-
-

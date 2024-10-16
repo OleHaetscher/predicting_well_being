@@ -225,25 +225,6 @@ class ZpidPreprocessor(BasePreprocessor):
         Returns:
 
         """
-        df_sensing = self.fill_nans_in_app_features(df_sensing=df_sensing)
-        # TODO: This may be adjusted to differ true nan from 0
-        return df_sensing
-
-    def fill_nans_in_app_features(self, df_sensing: pd.DataFrame) -> pd.DataFrame:
-        """
-        In the features that contain durations of App usage, there are a lot of np.nan values in the sensing df
-        (which means that persons have not installed an app of that category at all, e.g., "spirituality_apps")
-        In this method, we set these values to zero (i.e., because they did not use the app, if they do not have the
-        app on the phone at all)
-
-        Args:
-            df_sensing:
-
-        Returns:
-            pd.DataFrame
-        """
-        app_cols = [col for col in df_sensing.columns if "app_" in col]
-        df_sensing[app_cols] = df_sensing[app_cols].fillna(0)
         return df_sensing
 
 

@@ -413,7 +413,6 @@ class BasePreprocessor(ABC):
         Returns:
             pd.DataFrame: The DataFrame with the aligned scales.
         """
-        # TODO: Does this exclude values that are out of the range (e.g. -77, 0)?
         specific_cfg = self.fix_cfg[df_type]
         for cat in cat_list:
             for entry in specific_cfg[cat]:
@@ -1166,7 +1165,6 @@ class BasePreprocessor(ABC):
         return df
 
     def dataset_specific_post_processing(self, df: pd.DataFrame) -> pd.DataFrame:
-        # TODO: Could use this too handle the np.nan / 0 issue more elegant
         """
         Logic depends on the subclass
         Args:
@@ -1277,6 +1275,8 @@ class BasePreprocessor(ABC):
         df = df.reset_index()
         df['original_index'] = df.index
 
+        # TODO: Preserve the year column, as tuple
+
         # Explode the years of participation
         df_exploded = df.explode("years_of_participation").rename(columns={"years_of_participation": "year"})
 
@@ -1326,7 +1326,6 @@ class BasePreprocessor(ABC):
         """
         cont_pers_entries = self.config_parser(self.fix_cfg["person_level"]["personality"],
                                                "continuous")
-        # if self.dataset != "cocoesm":  # TODO Change again already recoded
         for entry in cont_pers_entries:
             # Check if the entry has "items_to_recode" and if there are items to recode for the given dataset
             if "items_to_recode" in entry and entry["items_to_recode"].get(self.dataset):
@@ -1392,7 +1391,6 @@ class BasePreprocessor(ABC):
         Returns:
             pd.DataFrame: DataFrame with additional columns for the calculated criteria.
         """
-        # TODO: A bit messy, may be improved, but handles all edgecases (emotions, zpid)
         criteria_types = {'trait': "person_level", 'state': "esm_based"}
         # Loop over trait and state criteria
         for criterion_type, config_lvl in criteria_types.items():
@@ -1535,9 +1533,15 @@ class BasePreprocessor(ABC):
             (self.change_datetime_to_minutes, {'df': None, "var1": "daily_sunset", "var2": "daily_sunrise"}),
             (self.filter_first_last_screen, {'df': None, "var1": "first_usage", "var2": "last_usage"}),
             (self.apply_cut_offs, {'df': None}),
-            (self.set_nan_to_zero, {'df': None, "selected_cols_part": "app_", "reference": "dummy"}),
-            (self.set_nan_to_zero, {'df': None, "selected_cols_part": "phone_", "reference": "screen_sum_dur_session"}),
-            # add set 0 to np.nan as general method? -> lets see
+            (self.set_nan_to_zero, {
+                'df': None,
+                "selected_cols_part": self.var_cfg["preprocessing"]["sensing"]["app_substring"][self.dataset],
+                "reference": "dummy"
+            }),
+            (self.set_nan_to_zero, {
+                'df': None,
+                "selected_cols_part": self.var_cfg["preprocessing"]["sensing"]["call_substring"][self.dataset],
+                "reference": self.var_cfg["preprocessing"]["sensing"]["call_reference"][self.dataset]}),
             (self.sanity_checker.sanity_check_sensing_data, {'df_sensing': None, "dataset": self.dataset}),
             (self.create_person_level_desc_stats, {'df': None, 'feature_category': "sensing_based"}),
             (self.collapse_df, {'df': None, "df_type": "sensing_based"}),

@@ -145,6 +145,7 @@ class BaseMLAnalyzer(ABC):
         self.num_reps = self.var_cfg["analysis"]["cv"]["num_reps"]
         self.num_imputations = self.var_cfg["analysis"]["imputation"]["num_imputations"]
         self.id_grouping_col = self.var_cfg["analysis"]["cv"]["id_grouping_col"]
+        self.country_grouping_col = self.var_cfg["analysis"]["imputation"]["country_grouping_col"]
 
     @property
     def model_name(self):
@@ -161,6 +162,8 @@ class BaseMLAnalyzer(ABC):
             n_jobs_imputation_columns=self.var_cfg["analysis"]["parallelize"]["imputation_columns_n_jobs"],
             conv_thresh=self.var_cfg["analysis"]["imputation"]["conv_thresh"],
             percentage_of_features=self.var_cfg["analysis"]["imputation"]["percentage_of_features"],
+            n_features_thresh=self.var_cfg["analysis"]["imputation"]["n_features_thresh"],
+            country_group_by=self.country_grouping_col,
             logger=self.logger,
         )
 
@@ -212,7 +215,7 @@ class BaseMLAnalyzer(ABC):
         df_filtered_crit_na = df_filtered.dropna(subset=[crit_col])
         self.rows_dropped_crit_na = len(df_filtered) - len(df_filtered_crit_na)
 
-        df_filtered_crit_na = df_filtered_crit_na.sample(n=300)  # just for testing
+        df_filtered_crit_na = df_filtered_crit_na.sample(n=500)  # just for testing
         self.df = df_filtered_crit_na
 
     def select_features(self):
@@ -222,7 +225,7 @@ class BaseMLAnalyzer(ABC):
         current analysis and sets the loaded features as a class attribute "X".
         ADJUST!!!!
         """
-        selected_columns = [self.id_grouping_col]
+        selected_columns = [self.id_grouping_col, self.country_grouping_col]
         if self.samples_to_include in ["all", "selected"]:
             feature_prefix_lst = self.feature_combination.split("_")
         elif self.samples_to_include == "control":
@@ -264,6 +267,7 @@ class BaseMLAnalyzer(ABC):
 
         """
         data = self.X.copy()
+        data = data.drop([col for col in data.columns if col.startswith("other_")], axis=1)
         binary_cols = data.columns[(data.isin([0, 1]) | data.isna()).all(axis=0)]
         continuous_cols = [col for col in data.columns if col not in binary_cols]  # ordered as in df
         setattr(self, "binary_cols", binary_cols)
@@ -342,7 +346,7 @@ class BaseMLAnalyzer(ABC):
         This function creates a pipeline with preprocessing steps (e.g., scaling X, scaling y) and
         the estimator used in the repeated nested CV procedure. It sets the pipeline as a class attribute.
         """
-        preprocessor = self.get_custom_scaler(data=self.X)
+        preprocessor = self.get_custom_scaler()
         target_scaler = StandardScaler()
 
         # Wrap your model (preprocessors are only applied to X, not to)
@@ -370,7 +374,7 @@ class BaseMLAnalyzer(ABC):
         )
         setattr(self, "pipeline", pipe)
 
-    def get_custom_scaler(self, data):
+    def get_custom_scaler(self):
         """
         This function creates a custom scaler that scales only continuous columns. Feature order is preserved.
 
@@ -482,7 +486,7 @@ class BaseMLAnalyzer(ABC):
                 "Grouping did not work as expected"
 
             # TODO Remove, just for testing
-            y_test = np.random.randn(len(y_test))
+            # y_test = np.random.randn(len(y_test))
 
             print("now imputing dataset")
 
@@ -594,9 +598,19 @@ class BaseMLAnalyzer(ABC):
             tuple(list[pd.DataFrame], list[pd.DataFrame]): tuple containing a list of imputed train and test datasets
                 that both have lengths of self.num_imputations
         """
-        # Ensure that the grouping column is not in the numeric data
-        X_train_numeric = X_train.select_dtypes(include="number")
-        X_test_numeric = X_test.select_dtypes(include="number")
+        # Drop grouping column, but keep country column
+        X_train_copy = X_train.copy()
+        if self.id_grouping_col in X_train.columns:
+            X_train = X_train.drop(self.id_grouping_col, axis=1)
+        if self.id_grouping_col in X_test.columns:
+            X_test = X_test.drop(self.id_grouping_col, axis=1)
+
+        # Scale the features
+        scaler = self.get_custom_scaler()
+        scaler.fit(X_train)
+        # Scale the training and test data
+        X_train_scaled = scaler.transform(X_train)
+        X_test_scaled = scaler.transform(X_test)
 
         # Define the parallel imputation function
         def impute_single_dataset(i):
@@ -605,13 +619,18 @@ class BaseMLAnalyzer(ABC):
             imputer = clone(self.imputer)
 
             # Fit the imputer on the training data
-            imputer.fit(X_train_numeric)
+            imputer.fit(X_train_scaled)
             # Transform both training and test data
-            X_train_imputed = imputer.transform(X_train_numeric, num_imputation=i)
-            X_test_imputed = imputer.transform(X_test_numeric, num_imputation=i)
+            X_train_imputed = imputer.transform(X_train_scaled, num_imputation=i)
+            X_test_imputed = imputer.transform(X_test_scaled, num_imputation=i)
+
+            # Inverse transform to revert scaling after imputation
+            X_train_imputed = scaler.inverse_transform(X_train_imputed)
+            X_test_imputed = scaler.inverse_transform(X_test_imputed)
 
             # Concatenate non-numeric columns if necessary
-            X_train_imputed = pd.concat([X_train_imputed, X_train[self.id_grouping_col]], axis=1)
+            if self.id_grouping_col not in X_train_imputed.columns:
+                X_train_imputed = pd.concat([X_train_imputed, X_train_copy[self.id_grouping_col]], axis=1)
 
             return X_train_imputed, X_test_imputed
 
@@ -765,7 +784,7 @@ class BaseMLAnalyzer(ABC):
         index_mapping = dict(enumerate(X.index))
         # Get numerical indices of the samples in the outer cv
         num_test_indices = [test for train, test in outer_cv.split(X, y, groups=X.other_unique_id)]
-        X = X.drop(columns=[self.id_grouping_col], axis=1)
+        X = X.drop(columns=[self.id_grouping_col, self.country_grouping_col], axis=1)
         all_features = X.columns
 
         # Set up the array to store the results -> 3D arrays (rows x features x imputations)

@@ -57,7 +57,6 @@ class EmotionsPreprocessor(BasePreprocessor):
         Returns:
             pd.DataFrame: A pandas DataFrame with updated column names and values, ensuring no duplicates.
         """
-        # TODO: This is elegant -> use as general method?
         trait_suffixes = ["_t2", "_t3", "_t4"]  # Reversed order for filling NaNs from higher to lower
         suffix_pattern = re.compile(r"_t\d$")
 

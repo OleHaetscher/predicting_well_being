@@ -24,7 +24,6 @@ person_level:
       item_names:
         cocoms: unique_id
 
-    # TODO Change this
     - name: time_col  # only for cocoesm to merge the country-level vars
       item_names:
         cocoesm: created_demographics
@@ -1507,7 +1506,7 @@ esm_based:
       ques:
       item_names:
         emotions: [occup_relaxed, int_relaxed, occup_enthusiastic, int_enthusiastic]
-        zpid: [valence]  # TODO: Use only as wb analysis, not state_pa (would be equivalent)
+        zpid: [valence]
         cocout: [momentary_wellbeing_happy_ema]
         pia: [happy, relaxed, enthusiastic]
         cocoesm: [state_pa1, state_pa2, state_pa3]
@@ -2185,5 +2184,7 @@ var_assignments:
   other:
     - unique_id
     - studyWave
+    - country
+    - year
 
 

@@ -58,4 +58,30 @@ class CustomScaler(BaseEstimator, TransformerMixin):
         # Ensure the final dataframe preserves the original column order
         X_processed_df = X_processed_df[X.columns]
 
-        return X_processed_df.to_numpy()
+        return X_processed_df
+
+    def inverse_transform(self, X, y=None):
+        """
+        This method inverse-transforms the scaled features back to their original values.
+
+        Args:
+            X: DataFrame, containing the scaled features.
+
+        Returns:
+            X_original_df: DataFrame, containing the features in their original scale and order.
+        """
+        # Separate scaled and unscaled data
+        X_scaled = X[self.cols_to_scale]
+        X_unscaled = X.drop(self.cols_to_scale, axis=1)
+
+        # Apply inverse scaling to the scaled columns
+        X_scaled_original = self.scaler.inverse_transform(X_scaled)
+        X_scaled_original_df = pd.DataFrame(X_scaled_original, columns=self.cols_to_scale, index=X.index)
+
+        # Combine the data
+        X_original_df = pd.concat([X_scaled_original_df, X_unscaled], axis=1)
+
+        # Ensure the columns are in the same order as original
+        X_original_df = X_original_df[X.columns]
+
+        return X_original_df
