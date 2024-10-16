@@ -88,13 +88,16 @@ class SanityChecker:
         nan_per_col_summary = df.isna().mean()
         for col, nan_ratio_col in nan_per_col_summary.items():
             if nan_ratio_col > nan_thresh:
-                self.logger.log(f"    WARNING: Column '{col}' has {np.round(nan_ratio_col,3) * 100}% NaNs.")
+                self.logger.log(f"    WARNING: Column '{col}' has {np.round(nan_ratio_col * 100,3)}% NaNs.")
 
         self.logger.log(".")
+        nan_row_count = 0
         nan_per_row_summary = df.isna().mean(axis=1)
         for row, nan_ratio_row in nan_per_row_summary.items():
             if nan_ratio_row > nan_thresh:
-                self.logger.log(f"    WARNING: Row '{row}' has {np.round(nan_ratio_row,3) * 100}% NaNs.")
+                nan_row_count += 1
+                # self.logger.log(f"    WARNING: Row '{row}' has {np.round(nan_ratio_row,3) * 100}% NaNs.")
+        self.logger.log(f"    WARNING: {nan_row_count} rows have more then {nan_thresh*100}% NaNs.")
 
     def check_dtypes(self, df: pd.DataFrame) -> None:
         """
@@ -175,7 +178,7 @@ class SanityChecker:
 
         Returns:
         """
-        features_cats = ["pl", "srmc", "crit", "other"]
+        features_cats = ["pl", "srmc", "crit", "sens", "other"]
         if dataset == "cocoesm":
             features_cats.append("mac")
         if dataset in ["coco_ms", "zpid"]:
@@ -345,5 +348,8 @@ class SanityChecker:
             zero_percentage = (df_sensing[col] == 0).mean()
             if zero_percentage > self.cfg_sanity_checks["sensing"]["zero_col_thresh"]:
                 self.logger.log(f"        WARNING: {np.round(zero_percentage*100, 1)}% 0s in {col}")
+            mean = np.round(df_sensing[col].mean(), 3)
+            sd = np.round(df_sensing[col].std(), 3)
+            self.logger.log(f"    {sens_var['name']} M: {mean}, SD: {sd}")
 
         return df_sensing

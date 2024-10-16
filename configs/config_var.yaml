@@ -1,11 +1,11 @@
 general:
-  datasets_to_be_included: [cocoesm, cocout, cocoms, emotions, pia, zpid] # cocoesm, cocoms, cocout, emotions, pia, zpid
-  log_dir: "../logs/12102024"  # only for preprocessing
-  log_name: x
+  datasets_to_be_included: [ cocoesm, cocoms, cocout, emotions, pia, zpid ] # cocoesm, cocoms, cocout, emotions, pia, zpid
+  log_dir: "../logs/final_preprocessing"  # only for preprocessing
+  log_name: Run_16102024
 
   steps:
-    preprocessing: false
-    analysis: true
+    preprocessing: true
+    analysis: false
     postprocessing: false
 
 preprocessing:
@@ -15,12 +15,11 @@ preprocessing:
   min_num_esm_measures: 5  # 5
   nrows: 9999999 # only for descriptives
   need_inverse_coding: ["cocout", "emotions", "pia", "zpid", "cocoms"]  # all except cocoesm, do not change
-  # joint id col -> ID is the index in every dataset
 
   sanity_checking:
     sensing:
-      nan_col_thresh: 0.1
-      zero_col_thresh: 0.1
+      nan_col_thresh: 0.15
+      zero_col_thresh: 0.30
 
     nan_thresh: 0.3 # 30% NaNs -> warn
     cron_alpha_thresh: 0.6

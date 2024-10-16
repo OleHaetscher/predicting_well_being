@@ -1535,8 +1535,8 @@ class BasePreprocessor(ABC):
             (self.change_datetime_to_minutes, {'df': None, "var1": "daily_sunset", "var2": "daily_sunrise"}),
             (self.filter_first_last_screen, {'df': None, "var1": "first_usage", "var2": "last_usage"}),
             (self.apply_cut_offs, {'df': None}),
-            (self.set_nan_to_zero, {'df': None, "col_part": ["app_"]}),
-            (self.set_nan_to_zero, {'df': None, "col_part": ["phone"]}),
+            (self.set_nan_to_zero, {'df': None, "selected_cols_part": "app_", "reference": "dummy"}),
+            (self.set_nan_to_zero, {'df': None, "selected_cols_part": "phone_", "reference": "screen_sum_dur_session"}),
             # add set 0 to np.nan as general method? -> lets see
             (self.sanity_checker.sanity_check_sensing_data, {'df_sensing': None, "dataset": self.dataset}),
             (self.create_person_level_desc_stats, {'df': None, 'feature_category': "sensing_based"}),
@@ -1665,6 +1665,7 @@ class BasePreprocessor(ABC):
             if "cut_off" in sens_var:
                 col = sens_var["item_names"][self.dataset]
                 df[col] = df[col].clip(upper=sens_var["cut_off"])
+                self.logger.log(f"    Apply Cut-Off for var {sens_var['name']}")
         return df
 
     def merge_state_df_sensing(self, df: pd.DataFrame, df_sensing: pd.DataFrame) -> pd.DataFrame:
@@ -1687,4 +1688,46 @@ class BasePreprocessor(ABC):
                       left_on=[self.raw_esm_id_col],
                       right_on=[self.raw_sensing_id_col],
                       how="left")
+        return df
+
+    def set_nan_to_zero(self, df, selected_cols_part, reference: str = None):
+        """
+        For each row in the DataFrame, process the columns containing the specified substring:
+        - If all values in these selected columns for that row are NaN, leave NaNs as NaN.
+        - If at least one value in these selected columns (or in the reference column, if specified) is not NaN, replace NaNs with 0.
+
+        Args:
+            df: pd.DataFrame - The DataFrame to process.
+            selected_cols_part: str - A substring to identify the target columns where we want to fill the NaNs.
+            reference: str (optional) - A column used to check whether NaNs in the other columns should be filled with 0.
+                The reference column itself is not changed by this function.
+
+        Returns:
+            pd.DataFrame: The processed DataFrame.
+        """
+
+        # Get the list of columns that contain the selected substring in their names
+        selected_cols = [col for col in df.columns if selected_cols_part in col]
+        self.logger.log(f"    Fill NaN with zeros in: {selected_cols}")
+
+        def process_row(row):
+            # If a reference column is provided
+            if reference in df.columns:
+                # Check if all selected columns AND the reference column are NaN
+                if row[selected_cols + [reference]].isna().all():
+                    # Leave all NaNs unchanged in the selected columns
+                    return row[selected_cols]
+                else:
+                    # If reference column is non-NaN or one of the selected columns is non-NaN, replace NaNs in selected columns with 0
+                    return row[selected_cols].fillna(0)
+            else:
+                # If no reference column, behave as before: check only the selected columns for NaNs
+                if row[selected_cols].isna().all():
+                    return row[selected_cols]  # Leave NaNs unchanged
+                else:
+                    return row[selected_cols].fillna(0)  # Replace NaNs with 0
+
+        # Apply the processing function row by row for the selected columns
+        df[selected_cols] = df.apply(process_row, axis=1)
+
         return df
