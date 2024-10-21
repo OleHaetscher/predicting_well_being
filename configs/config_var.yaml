@@ -1,7 +1,7 @@
 general:
-  datasets_to_be_included: [ pia ] # cocoesm, cocoms, cocout, emotions, pia, zpid
-  log_dir: "../logs/111_FINAL_DATA"  # only for preprocessing
-  log_name: fix_imputation_mac
+  datasets_to_be_included: [ cocoesm, cocoms, cocout, emotions, pia, zpid ] # cocoesm, cocoms, cocout, emotions, pia, zpid
+  log_dir: "../logs/XXX"  # only for preprocessing
+  log_name: 18102024
 
   steps:
     preprocessing: true
@@ -13,7 +13,7 @@ preprocessing:
   store_data: true  # only final data
   path_to_preprocessed_data: "../data/preprocessed"
   min_num_esm_measures: 5  # 5
-  nrows: 9999 # only for descriptives
+  nrows: 999999 # only for descriptives
   need_inverse_coding: ["cocout", "emotions", "pia", "zpid", "cocoms"]  # all except cocoesm, do not change
 
   sensing:
@@ -66,7 +66,6 @@ analysis:
     - select_samples
     - select_features
     - select_criterion
-    - separate_binary_continuous_cols
     - initial_info_log
     - drop_zero_variance_cols
     - create_pipeline
@@ -93,16 +92,16 @@ analysis:
     all_in: [cocoesm, cocout, cocoms, emotions, pia, zpid]
 
   params: # adjusted by SLURM
-    prediction_model: randomforestregressor  # elasticnet, randomforestregressor
+    prediction_model: elasticnet  # elasticnet, randomforestregressor
     crit: state_wb  # state_wb, state_pa, state_na, trait_wb, trait_na, trait_pa
-    feature_combination: pl  # pl, srmc, sens, mac, pl_srmc, pl_sens, pl_srmc_sens, pl_mac, pl_srmc_mac, all
+    feature_combination: srmc  # pl, srmc, sens, mac, pl_srmc, pl_sens, pl_srmc_sens, pl_mac, pl_srmc_mac, all
     samples_to_include: all  # all, selected, control
 
   cv:
     num_inner_cv: 3  # 10
     verbose_inner_cv: 0
     num_outer_cv: 3  # 10
-    num_reps: 1  # 10
+    num_reps: 3  # 10
     id_grouping_col: other_unique_id
     cache_pipe: false  # not improving performance
     warm_start: false  # not improving performance
@@ -117,11 +116,15 @@ analysis:
 
   imputation:
     num_imputations: 1  # 5
-    max_iter: 20 # 50
+    max_iter: 4 # 50
     conv_thresh: 0.05  # 0.05  only RFR
+    tree_max_depth: 10  # only RFR
     percentage_of_features: 0.5  # only ENR
     n_features_thresh: 50  # only ENR
+    sample_posterior: False  # only ENR, use PMM instead
+    pmm_k: 5  # number of neighbors to consider for PMM
     country_grouping_col: "other_country"
+    years_col: "other_years_of_participation"
 
   scoring_metric:
     inner_cv_loop:
@@ -149,15 +152,13 @@ analysis:
 
   parallelize:
     parallelize_shap: true
-    shap_n_jobs: 1
+    shap_n_jobs: 3
     parallelize_inner_cv: true
-    inner_cv_n_jobs: 1
+    inner_cv_n_jobs: 3
     parallelize_shap_ia_values: true
-    shap_ia_values_n_jobs: 1
-    parallelize_imputation_runs: false # either parallelize runs or columns, for n_cores < 10
+    shap_ia_values_n_jobs: 3
+    parallelize_imputation_runs: true # either parallelize runs or columns, for n_cores < 10
     imputation_runs_n_jobs: 1
-    parallelize_imputation_columns: true # either parallelize runs or columns, for n_cores > 10
-    imputation_columns_n_jobs: 1
 
   shap_ia_values:  # TODO Needs to be implemented based on our affordances
     comp_shap_ia_values: false

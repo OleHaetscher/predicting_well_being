@@ -4,7 +4,8 @@
 This SLURM script is used to generate multiple jobs at a time for a given analysis setting.
 
 Key parameters:
-- BASE_MINUTES and BASE_CPUS are base values adjusted dynamically based on the analysis type.
+- BASE_MINUTES is adjusted dynamically based on the analysis type.
+- CPUS_PER_TASK is fixed for all analyses.
 
 Changeable variables/settings:
 - prediction_model ("elasticnet", "randomforestregressor")
@@ -24,12 +25,11 @@ COMP_SHAP_IA_VALUES="false"
 PARALLELIZE_INNER_CV="true"
 PARALLELIZE_SHAP="true"
 PARALLELIZE_SHAP_IA_VALUES="true"
-# only one of the two should be true -> integrate in sanity_checks
-PARALLELIZE_IMPUTATION_RUNS="true" #
+PARALLELIZE_IMPUTATION_RUNS="true"
 
 BASE_MINUTES=10
-BASE_CPUS=4
-NUM_NODES=10  # if specified
+CPUS_PER_TASK=40  # Fixed number of CPUs per analysis
+NUM_NODES=10      # If set to 1, no multi-node analysis happens
 
 # Base Directory for Results
 BASE_DIR="/scratch/hpc-prf-mldpr/tests_cocowb_012024/"
@@ -58,12 +58,6 @@ for crit in "${CRITERIA[@]}"; do
         esac
 
         TOTAL_MINUTES=$((BASE_MINUTES * PRED_MODEL_MULT * SAMPLE_MULT))
-        TOTAL_CPUS=$((BASE_CPUS * PRED_MODEL_MULT * SAMPLE_MULT))
-
-        # Cap TOTAL_CPUS at 40
-        if [ $TOTAL_CPUS -gt 40 ]; then
-          TOTAL_CPUS=40
-        fi
 
         # Convert the total minutes to HH:MM:SS format
         HOURS=$((TOTAL_MINUTES / 60))
@@ -86,23 +80,14 @@ for crit in "${CRITERIA[@]}"; do
         SLURM_SCRIPT="${LOG_DIR}/slurm_script_${JOB_LOG_NAME}.sh"  # Save SLURM script in the same directory
 
         # Determine if multi-node parallelism is needed
-        if [ "$samples_to_include" == "all" ]; then
-          # Use multi-node parallelism
-          NODES=$NUM_NODES  # Adjust to the number of nodes you want
-          NTASKS=$NODES
-          CPUS_PER_TASK=40  # Max cores per node
-          DISTRIBUTED=true
-        else
-          # Use single-node parallelism
-          NODES=1
-          NTASKS=1
-          CPUS_PER_TASK=$TOTAL_CPUS  # Use calculated cores
-          DISTRIBUTED=false
-        fi
+        NODES=$NUM_NODES
 
-        # Adjust TOTAL_CPUS for single-node jobs
-        if [ "$DISTRIBUTED" == "false" ] && [ $CPUS_PER_TASK -gt 40 ]; then
-          CPUS_PER_TASK=40
+        if [ "$NUM_NODES" -eq 1 ]; then
+          DISTRIBUTED=false
+          NTASKS=1
+        else
+          DISTRIBUTED=true
+          NTASKS=$NODES
         fi
 
         # Create a SLURM script
@@ -150,7 +135,7 @@ srun python main.py \\
 EOF
 
         else
-          # Single-node execution using srun (for consistency)
+          # Single-node execution using srun
           cat >> $SLURM_SCRIPT << EOF
 # Activate your Python environment if needed
 # source activate your_python_environment
@@ -178,7 +163,6 @@ EOF
     done
   done
 done
-
 
 
 

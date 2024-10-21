@@ -1300,6 +1300,10 @@ esm_based:
         zpid: studyWave
         emotions: wave
 
+    - name: country_esm
+      var_type: string
+      item_names:
+        cocoesm: country_esm
 
   self_reported_micro_context:
     - name: number_interactions
@@ -2185,6 +2189,6 @@ var_assignments:
     - unique_id
     - studyWave
     - country
-    - year
+    - years_of_participation
 
 
