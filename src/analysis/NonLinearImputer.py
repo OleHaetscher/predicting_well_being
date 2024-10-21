@@ -43,13 +43,17 @@ class NonLinearImputer:
 
         # Handle columns with no missing values in training (for potential missing in test)
         for col in df_imputed.columns:
-            if col not in columns_with_na:  # No missing values during training
-                if pd.api.types.is_numeric_dtype(df_imputed[col]):
-                    # Store the mean for continuous columns
-                    self.fallback_values_[col] = df_imputed[col].mean()
-                else:
-                    # Store the mode for categorical columns
-                    self.fallback_values_[col] = df_imputed[col].mode()[0]
+            # Get unique non-NaN values in the column
+            unique_values = df_imputed[col].dropna().unique()
+
+            if len(unique_values) == 2 and set(unique_values).issubset({0, 1}):  # Binary column (0/1)
+                # Store the mode for binary columns (0/1)
+                self.fallback_values_[col] = df_imputed[col].mode()[0]
+            else:
+                # Store the mean for continuous columns
+                self.fallback_values_[col] = df_imputed[col].mean()
+
+            print(f"Stored fallback for column '{col}': {self.fallback_values_[col]}")
 
         # Iterative imputation process
         for iteration in range(self.max_iter):
@@ -172,4 +176,12 @@ class NonLinearImputer:
 
             self._impute_values(df, col, model, y_obs, X_obs, X_mis, missing_mask)
 
+        # Check if there are any NaN values left and fill with fallback if needed
+        for col in df.columns:
+            if df[col].isna().any():
+                # Fill NaNs with the fallback value for this column
+                if col in self.fallback_values_:
+                    fallback_value = self.fallback_values_[col]
+                    print(f"Filling NaNs in column '{col}' with fallback value: {fallback_value}")
+                    df[col].fillna(fallback_value, inplace=True)
         return df

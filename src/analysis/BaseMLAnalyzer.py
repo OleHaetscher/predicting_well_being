@@ -589,7 +589,9 @@ class BaseMLAnalyzer(ABC):
             self.logger.log(f"    Starting to impute dataset number {i}")
             imputer.fit(X=X_train, num_imputation=i)
             # Transform both training and test data
+            self.logger.log(f"    Number of Cols with NaNs in X_train: {len(X_train.columns[X_train.isna().any()])}")
             X_train_imputed = imputer.transform(X=X_train, num_imputation=i)
+            self.logger.log(f"    Number of Cols with NaNs in X_test: {len(X_train.columns[X_test.isna().any()])}")
             X_test_imputed = imputer.transform(X=X_test, num_imputation=i)
 
             # Remove meta cols
