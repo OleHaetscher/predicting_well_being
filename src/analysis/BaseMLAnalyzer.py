@@ -220,9 +220,7 @@ class BaseMLAnalyzer(ABC):
         df_filtered_crit_na = df_filtered.dropna(subset=[crit_col])
         self.rows_dropped_crit_na = len(df_filtered) - len(df_filtered_crit_na)
 
-        # TODO Remove
-        if len(df_filtered_crit_na) <= 1000:
-            df_filtered_crit_na = df_filtered_crit_na.sample(n=1000)  # just for testing
+        df_filtered_crit_na = df_filtered_crit_na.sample(n=200)  # just for testing
         self.df = df_filtered_crit_na
 
     def select_features(self):
@@ -588,6 +586,7 @@ class BaseMLAnalyzer(ABC):
             imputer = clone(self.imputer)
 
             # Fit the imputer on the training data
+            self.logger.log(f"    Starting to impute dataset number {i}")
             imputer.fit(X=X_train, num_imputation=i)
             # Transform both training and test data
             X_train_imputed = imputer.transform(X=X_train, num_imputation=i)
