@@ -62,11 +62,6 @@ class SlurmHandler:
             help="if we parallelize the creation of the imputed datasets, Bool",
         )
         parser.add_argument(
-            "--parallelize_imputation_columns",
-            type=self.str2bool,
-            help="if we parallelize the creation of the imputed datasets, Bool",
-        )
-        parser.add_argument(
             "--parallelize_inner_cv",
             type=self.str2bool,
             help="if we parallelize the inner cv of the analysis, Bool",
@@ -162,10 +157,6 @@ class SlurmHandler:
         else:
             var_cfg["analysis"]["parallelize"]["imputation_runs_n_jobs"] = 1
 
-        if var_cfg["analysis"]["parallelize"]["parallelize_imputation_columns"]:
-            var_cfg["analysis"]["parallelize"]["imputation_columns_n_jobs"] = total_cores
-        else:
-            var_cfg["analysis"]["parallelize"]["imputation_columns_n_jobs"] = 1
 
         if var_cfg["analysis"]["parallelize"]["parallelize_shap"]:
             var_cfg["analysis"]["parallelize"]["shap_n_jobs"] = total_cores
@@ -203,11 +194,6 @@ class SlurmHandler:
         var_cfg["analysis"]["cv"]["num_reps"] = 10
         var_cfg["analysis"]["imputation"]["num_imputations"] = 5
         var_cfg["analysis"]["imputation"]["max_iter"] = 50
-
-        # Imputation sanity checks -> set imputation_runs as default in case of conflict
-        if var_cfg["analysis"]["parallelize"]["parallelize_imputation_runs"] and \
-            var_cfg["analysis"]["parallelize"]["parallelize_imputation_columns"]:
-            var_cfg["analysis"]["parallelize"]["parallelize_imputation_columns"] = False
 
         # for safety, adjust the method -> only machine learning is done on the cluster
         var_cfg["general"]["steps"]["preprocessing"] = False

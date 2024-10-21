@@ -1260,6 +1260,9 @@ class BasePreprocessor(ABC):
         """
         print("Initial length of df:", len(df))
 
+        test = df[df["country"].isna()]
+        print()
+
         # Step 1: Merge the country-level DataFrames
         df_country_level = reduce(
             lambda left, right: pd.merge(left, right, on=["country", "year"], how="outer"),
@@ -1274,8 +1277,6 @@ class BasePreprocessor(ABC):
         # Keep the original index to merge back later
         df = df.reset_index()
         df['original_index'] = df.index
-
-        # TODO: Preserve the year column, as tuple
 
         # Explode the years of participation
         df_exploded = df.explode("years_of_participation").rename(columns={"years_of_participation": "year"})
@@ -1723,13 +1724,13 @@ class BasePreprocessor(ABC):
                     return row[selected_cols]
                 else:
                     # If reference column is non-NaN or one of the selected columns is non-NaN, replace NaNs in selected columns with 0
-                    return row[selected_cols].fillna(0)
+                    return row[selected_cols].fillna(0).infer_objects(copy=False)
             else:
                 # If no reference column, behave as before: check only the selected columns for NaNs
                 if row[selected_cols].isna().all():
                     return row[selected_cols]  # Leave NaNs unchanged
                 else:
-                    return row[selected_cols].fillna(0)  # Replace NaNs with 0
+                    return row[selected_cols].fillna(0).infer_objects(copy=False)  # Replace NaNs with 0
 
         # Apply the processing function row by row for the selected columns
         df[selected_cols] = df.apply(process_row, axis=1)

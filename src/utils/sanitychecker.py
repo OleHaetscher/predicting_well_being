@@ -52,6 +52,7 @@ class SanityChecker:
         self.logger.log("  Conduct sanity checks")
         sanity_checks = [
             (self.check_nans, {'df': None}),
+            (self.check_country, {'df': None, 'dataset': dataset}),
             (self.check_dtypes, {'df': None}),
             (self.check_num_features, {'df': None, 'dataset': dataset}),
             (self.check_num_rows, {'df': None, 'dataset': dataset}),
@@ -99,6 +100,41 @@ class SanityChecker:
                 # self.logger.log(f"    WARNING: Row '{row}' has {np.round(nan_ratio_row,3) * 100}% NaNs.")
         self.logger.log(f"    WARNING: {nan_row_count} rows have more then {nan_thresh*100}% NaNs.")
 
+        self.logger.log(".")
+        cats_to_check = ["pl_", "srmc_", "sens_"]
+        columns_to_check = [col for col in df.columns if any(cat in col for cat in cats_to_check)]
+        zero_non_nan_count = (df[columns_to_check].notna().sum(axis=1) == 0).sum()
+        self.logger.log(f"    WARNING: {zero_non_nan_count} rows have 0 non-NaN values in {cats_to_check}.")
+
+    def check_country(self, df: pd.DataFrame, dataset) -> None:
+        """
+        This function verifies that there are no NaNs in the "country" column and fills otherwise
+
+        Args:
+            df:
+            dataset:
+
+        Returns:
+
+        """
+        country_mapping = {
+            "cocout": "usa",
+            "pia": "germany",
+            "emotions": "germany",
+            "zpid": "germany",
+            "cocoms": "germany"
+        }
+        zero_non_nan_count_country = df["other_country"].isna().sum()
+        if zero_non_nan_count_country > 0:
+            self.logger.log(f"    WARNING: {zero_non_nan_count_country} in country column")
+            if dataset != "cocoesm":  # here we can infer the country
+                country = country_mapping[dataset]
+                self.logger.log(f"    Infer country {country} in {dataset}")
+                df["other_country"] = df["other_country"].fillna(country)
+            else:
+                self.logger.log(f"    WARNING: Cannot infer country in dataset cocoesm")
+
+
     def check_dtypes(self, df: pd.DataFrame) -> None:
         """
         Requires that all columns must have numeric data types.
@@ -114,7 +150,7 @@ class SanityChecker:
                 self.logger.log(f"    WARNING: Column '{col}' has non-numeric dtype: {dtype}, try to convert")
                 df[col] = df[col].replace("not_a_number", np.nan)
                 try:
-                    df[col] = pd.to_numeric(df[col])
+                    df[col] = df[col].apply(lambda x: pd.to_numeric(x) if not isinstance(x, tuple) else x)
                     self.logger.log(f"      Conversion successful for column '{col}'")
                 except ValueError:
                     self.logger.log(f"      WARNING: Conversion was not successful. ML Models may fail ")

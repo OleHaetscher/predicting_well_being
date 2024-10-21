@@ -33,6 +33,7 @@ from src.utils.Timer import Timer
 from mpi4py import MPI
 
 pd.options.mode.chained_assignment = None  # default='warn'
+pd.set_option("future.no_silent_downcasting", True)
 
 
 class BaseMLAnalyzer(ABC):
@@ -123,8 +124,6 @@ class BaseMLAnalyzer(ABC):
         self.df = df
         self.X = None
         self.y = None
-        self.binary_cols = None
-        self.continuous_cols = None
         self.rows_dropped_crit_na = None
 
         # Results
@@ -146,6 +145,9 @@ class BaseMLAnalyzer(ABC):
         self.num_imputations = self.var_cfg["analysis"]["imputation"]["num_imputations"]
         self.id_grouping_col = self.var_cfg["analysis"]["cv"]["id_grouping_col"]
         self.country_grouping_col = self.var_cfg["analysis"]["imputation"]["country_grouping_col"]
+        self.years_col = self.var_cfg["analysis"]["imputation"]["years_col"]
+
+        self.meta_vars = [self.id_grouping_col, self.country_grouping_col, self.years_col]
 
     @property
     def model_name(self):
@@ -159,11 +161,14 @@ class BaseMLAnalyzer(ABC):
             fix_rs=self.var_cfg["analysis"]["random_state"],
             max_iter=self.var_cfg["analysis"]["imputation"]["max_iter"],
             num_imputations=self.var_cfg["analysis"]["imputation"]["num_imputations"],
-            n_jobs_imputation_columns=self.var_cfg["analysis"]["parallelize"]["imputation_columns_n_jobs"],
             conv_thresh=self.var_cfg["analysis"]["imputation"]["conv_thresh"],
+            tree_max_depth=self.var_cfg["analysis"]["imputation"]["tree_max_depth"],
             percentage_of_features=self.var_cfg["analysis"]["imputation"]["percentage_of_features"],
             n_features_thresh=self.var_cfg["analysis"]["imputation"]["n_features_thresh"],
+            sample_posterior=self.var_cfg["analysis"]["imputation"]["sample_posterior"],
+            pmm_k=self.var_cfg["analysis"]["imputation"]["pmm_k"],
             country_group_by=self.country_grouping_col,
+            years_col=self.years_col,
             logger=self.logger,
         )
 
@@ -215,23 +220,26 @@ class BaseMLAnalyzer(ABC):
         df_filtered_crit_na = df_filtered.dropna(subset=[crit_col])
         self.rows_dropped_crit_na = len(df_filtered) - len(df_filtered_crit_na)
 
-        df_filtered_crit_na = df_filtered_crit_na.sample(n=500)  # just for testing
+        # TODO Remove
+        if len(df_filtered_crit_na) <= 1000:
+            df_filtered_crit_na = df_filtered_crit_na.sample(n=1000)  # just for testing
         self.df = df_filtered_crit_na
 
     def select_features(self):
         """
         This method loads the machine learning features (traits) according to the specifications in the var_cfg.
+            - Some columns are always added that are used for the imputation process or data splitting
         It gets the specific name of the file that contains the data, connect it to the feature path for the
         current analysis and sets the loaded features as a class attribute "X".
         ADJUST!!!!
         """
-        selected_columns = [self.id_grouping_col, self.country_grouping_col]
+        selected_columns = [self.id_grouping_col, self.country_grouping_col, self.years_col]
         if self.samples_to_include in ["all", "selected"]:
             feature_prefix_lst = self.feature_combination.split("_")
         elif self.samples_to_include == "control":
             feature_prefix_lst = ["pl"]
         else:
-            raise ValueError
+            raise ValueError(f"Invalid value #{self.samples_to_include}# for attr samples_to_include")
 
         # always include grouping id
         for feature_cat in feature_prefix_lst:
@@ -256,22 +264,6 @@ class BaseMLAnalyzer(ABC):
         ), f"Features and criterion differ in length, len(X) == {len(self.X)}, len(y) == {len(y)}"
 
         setattr(self, "y", y)
-
-    def separate_binary_continuous_cols(self):
-        """
-        This function determines which features of the current data are continuous (i.e., containing not only 0/1 per column)
-        and which features are binary (i.e., only containing 0/1 per column). This may also includes NaNs.
-        It sets the resulting column lists as class attributes
-
-        Returns:
-
-        """
-        data = self.X.copy()
-        data = data.drop([col for col in data.columns if col.startswith("other_")], axis=1)
-        binary_cols = data.columns[(data.isin([0, 1]) | data.isna()).all(axis=0)]
-        continuous_cols = [col for col in data.columns if col not in binary_cols]  # ordered as in df
-        setattr(self, "binary_cols", binary_cols)
-        setattr(self, "continuous_cols", continuous_cols)
 
     def initial_info_log(self):
         """
@@ -302,7 +294,6 @@ class BaseMLAnalyzer(ABC):
         self.logger.log(f'    N jobs inner_cv: {self.var_cfg["analysis"]["parallelize"]["inner_cv_n_jobs"]}')
         self.logger.log(f'    N jobs shap: {self.var_cfg["analysis"]["parallelize"]["shap_n_jobs"]}')
         self.logger.log(f'    N jobs imputation runs: {self.var_cfg["analysis"]["parallelize"]["imputation_runs_n_jobs"]}')
-        self.logger.log(f'    N jobs imputation columns: {self.var_cfg["analysis"]["parallelize"]["imputation_columns_n_jobs"]}')
         if self.var_cfg["analysis"]["shap_ia_values"]["comp_shap_ia_values"]:
             self.logger.log(f'    N jobs shap_ia_values: {self.var_cfg["analysis"]["parallelize"]["shap_ia_values_n_jobs"]}')
 
@@ -346,7 +337,7 @@ class BaseMLAnalyzer(ABC):
         This function creates a pipeline with preprocessing steps (e.g., scaling X, scaling y) and
         the estimator used in the repeated nested CV procedure. It sets the pipeline as a class attribute.
         """
-        preprocessor = self.get_custom_scaler()
+        preprocessor = CustomScaler()
         target_scaler = StandardScaler()
 
         # Wrap your model (preprocessors are only applied to X, not to)
@@ -373,23 +364,6 @@ class BaseMLAnalyzer(ABC):
             memory=memory
         )
         setattr(self, "pipeline", pipe)
-
-    def get_custom_scaler(self):
-        """
-        This function creates a custom scaler that scales only continuous columns. Feature order is preserved.
-
-        Args:
-            data: df, containing the features for a given analysis setting (binary and continuous)
-
-        Returns:
-            preprocessor: CustomScaler object that scales only continuous columns. Binary columns are still 0/1.
-
-        """
-        continuous_cols = self.continuous_cols.copy()
-        if self.id_grouping_col in continuous_cols:
-            continuous_cols.remove(self.id_grouping_col)
-        preprocessor = CustomScaler(cols_to_scale=continuous_cols)
-        return preprocessor
 
     def nested_cv(
         self,
@@ -512,11 +486,14 @@ class BaseMLAnalyzer(ABC):
                 nested_scores_rep[f"outer_fold_{cv_idx}"][f"imp_{imputed_idx}"] = {}
 
                 # This would be cleaner with metadata routing, but this works ATM
-                groups = X_train_imputed_sublst[imputed_idx].pop('other_unique_id')
+                groups = X_train_imputed_sublst[imputed_idx].pop(self.id_grouping_col)
                 X_train_current = X_train_imputed_sublst[imputed_idx]
                 X_test_current = X_test_imputed_sublst[imputed_idx]
                 le = LabelEncoder()
                 groups_numeric = le.fit_transform(groups)
+
+                # Check for meta-cols
+                X_train_current = X_train_current.drop(columns=[col for col in self.meta_vars if col in X_train_current.columns])
 
                 # Fit grid search and clock execution
                 grid_search = self.clocked_grid_search_fit(grid_search=grid_search,
@@ -540,7 +517,6 @@ class BaseMLAnalyzer(ABC):
                 del grid_search
                 del X_train_current, X_test_current
 
-            # Append sublists to list
             ml_model_params.append(ml_model_params_sublst)
             ml_pipelines.append(ml_pipelines_sublst)
 
@@ -552,8 +528,9 @@ class BaseMLAnalyzer(ABC):
             ia_test_shap_values,
         ) = self.summarize_shap_values_outer_cv(
             X_test_imputed_lst=X_test_imputed_lst,
-            X=X,
+            X=X.drop(columns=self.meta_vars),
             y=y,
+            groups=X[self.id_grouping_col],
             pipelines=ml_pipelines,
             outer_cv=outer_cv
         )
@@ -605,43 +582,52 @@ class BaseMLAnalyzer(ABC):
         if self.id_grouping_col in X_test.columns:
             X_test = X_test.drop(self.id_grouping_col, axis=1)
 
-        # Scale the features
-        scaler = self.get_custom_scaler()
-        scaler.fit(X_train)
-        # Scale the training and test data
-        X_train_scaled = scaler.transform(X_train)
-        X_test_scaled = scaler.transform(X_test)
-
         # Define the parallel imputation function
         def impute_single_dataset(i):
-            # self.log_thread()
-            # Clone the imputer to avoid shared state
+            # Clone the imputer and scaler to avoid shared state
             imputer = clone(self.imputer)
 
             # Fit the imputer on the training data
-            imputer.fit(X_train_scaled)
+            imputer.fit(X=X_train, num_imputation=i)
             # Transform both training and test data
-            X_train_imputed = imputer.transform(X_train_scaled, num_imputation=i)
-            X_test_imputed = imputer.transform(X_test_scaled, num_imputation=i)
+            X_train_imputed = imputer.transform(X=X_train, num_imputation=i)
+            X_test_imputed = imputer.transform(X=X_test, num_imputation=i)
 
-            # Inverse transform to revert scaling after imputation
-            X_train_imputed = scaler.inverse_transform(X_train_imputed)
-            X_test_imputed = scaler.inverse_transform(X_test_imputed)
+            # Remove meta cols
+            X_test_imputed = X_test_imputed.drop(columns=[col for col in self.meta_vars if col in X_test_imputed.columns])
 
             # Concatenate non-numeric columns if necessary
             if self.id_grouping_col not in X_train_imputed.columns:
                 X_train_imputed = pd.concat([X_train_imputed, X_train_copy[self.id_grouping_col]], axis=1)
 
+            assert self.check_for_nan(X_train_imputed, dataset_name="X_train_imputed"), "There are NaN values in X_train_imputed!"
+            assert self.check_for_nan(X_test_imputed, dataset_name="X_test_imputed"), "There are NaN values in X_test_imputed!"
+
             return X_train_imputed, X_test_imputed
 
         # Run the imputation in parallel
-        results = Parallel(n_jobs=self.var_cfg["analysis"]["parallelize"]["imputation_runs_n_jobs"])(
+        results = Parallel(
+            n_jobs=self.var_cfg["analysis"]["parallelize"]["imputation_runs_n_jobs"],
+            backend="threading")(
             delayed(impute_single_dataset)(i) for i in range(self.num_imputations)
         )
 
         # Unpack the results
         X_train_imputed_sublst, X_test_imputed_sublst = zip(*results)
         return list(X_train_imputed_sublst), list(X_test_imputed_sublst)
+
+    def check_for_nan(self, df, dataset_name=""):
+        """
+        Function to check for NaN values in the DataFrame.
+        Outputs the column name and the number of NaN values if any are found.
+        """
+        nan_columns = df.columns[df.isna().any()].tolist()
+        if nan_columns:
+            for col in nan_columns:
+                n_nans = df[col].isna().sum()
+                self.logger.log(f"{dataset_name} - Column '{col}' has {n_nans} NaN values.")
+                print(f"{dataset_name} - Column '{col}' has {n_nans} NaN values.")
+        return not bool(nan_columns)
 
     def get_scores(self, grid_search, X_test, y_test):
         """
@@ -747,6 +733,7 @@ class BaseMLAnalyzer(ABC):
                                        X_test_imputed_lst: list[list[pd.DataFrame]],
                                        X: pd.DataFrame,
                                        y: pd.Series,
+                                       groups: pd.Series,
                                        pipelines: list[list[sklearn.pipeline.Pipeline]],
                                        outer_cv):
         """
@@ -783,9 +770,8 @@ class BaseMLAnalyzer(ABC):
         # Create a mapping from numerical indices to variable indices
         index_mapping = dict(enumerate(X.index))
         # Get numerical indices of the samples in the outer cv
-        num_test_indices = [test for train, test in outer_cv.split(X, y, groups=X.other_unique_id)]
-        X = X.drop(columns=[self.id_grouping_col, self.country_grouping_col], axis=1)
-        all_features = X.columns
+        num_test_indices = [test for train, test in outer_cv.split(X, y, groups=groups)]
+        # all_features = X.columns
 
         # Set up the array to store the results -> 3D arrays (rows x features x imputations)
         # base values may vary across samples
@@ -1043,48 +1029,49 @@ class BaseMLAnalyzer(ABC):
 
     def store_analysis_results(self):
         """This function stores the prediction results and the SHAP values / Shap interaction values as .JSON files."""
-        os.makedirs(self.spec_output_path, exist_ok=True)
-        print(self.spec_output_path)
+        if self.rank == 0:
+            os.makedirs(self.spec_output_path, exist_ok=True)
+            print(self.spec_output_path)
 
-        # CV results
-        cv_results = self.repeated_nested_scores
-        cv_results_filename = os.path.join(
-            self.spec_output_path,
-            self.var_cfg["analysis"]["output_filenames"]["performance"]
-        )
-        with open(cv_results_filename, "w") as file:
-            json.dump(cv_results, file, indent=4)
-
-        # SHAP values
-        shap_values = self.shap_results
-        shap_values["feature_names"] = self.X.columns.tolist()
-        shap_values_filename = os.path.join(
-            self.spec_output_path,
-            self.var_cfg["analysis"]["output_filenames"]["shap_values"]
-        )
-        with open(shap_values_filename, 'wb') as f:
-            pickle.dump(shap_values, f)
-
-        # SHAP IA values
-        if self.shap_ia_values:
-            shap_ia_values = self.shap_ia_values
-            shap_ia_values["feature_names"] = self.X.columns
-            shap_ia_values_filename = os.path.join(
+            # CV results
+            cv_results = self.repeated_nested_scores
+            cv_results_filename = os.path.join(
                 self.spec_output_path,
-                self.var_cfg["analysis"]["output_filenames"]["shap_ia_values"]
+                self.var_cfg["analysis"]["output_filenames"]["performance"]
             )
-            with open(shap_ia_values_filename, "w") as file:
-                json.dump(shap_ia_values, file, indent=4)
+            with open(cv_results_filename, "w") as file:
+                json.dump(cv_results, file, indent=4)
 
-        # Lin model coefficients
-        if self.lin_model_coefs:
-            lin_model_coefs = self.lin_model_coefs
-            lin_model_coefs_filename = os.path.join(
+            # SHAP values
+            shap_values = self.shap_results
+            shap_values["feature_names"] = self.X.columns.tolist()
+            shap_values_filename = os.path.join(
                 self.spec_output_path,
-                self.var_cfg["analysis"]["output_filenames"]["lin_model_coefs"]
+                self.var_cfg["analysis"]["output_filenames"]["shap_values"]
             )
-            with open(lin_model_coefs_filename, "w") as file:
-                json.dump(lin_model_coefs, file, indent=4)
+            with open(shap_values_filename, 'wb') as f:
+                pickle.dump(shap_values, f)
+
+            # SHAP IA values
+            if self.shap_ia_values:
+                shap_ia_values = self.shap_ia_values
+                shap_ia_values["feature_names"] = self.X.columns
+                shap_ia_values_filename = os.path.join(
+                    self.spec_output_path,
+                    self.var_cfg["analysis"]["output_filenames"]["shap_ia_values"]
+                )
+                with open(shap_ia_values_filename, "w") as file:
+                    json.dump(shap_ia_values, file, indent=4)
+
+            # Lin model coefficients
+            if self.lin_model_coefs:
+                lin_model_coefs = self.lin_model_coefs
+                lin_model_coefs_filename = os.path.join(
+                    self.spec_output_path,
+                    self.var_cfg["analysis"]["output_filenames"]["lin_model_coefs"]
+                )
+                with open(lin_model_coefs_filename, "w") as file:
+                    json.dump(lin_model_coefs, file, indent=4)
 
     def get_average_coefficients(self):
         """Gets the coefficients of linear models of the predictions, implemented in the linear model subclass."""
@@ -1093,7 +1080,7 @@ class BaseMLAnalyzer(ABC):
     def calculate_shap_values(self, X_scaled, pipeline):
         """
         This function calculates tree-based SHAP values for a given analysis setting. This includes applying the
-        preprocessing steps that were applied in the pipeline (e.g., scaling, RFECV if specified).
+        preprocessing steps that were applied in the pipeline (e.g., scaling).
         It calculates the SHAP values using the explainers.TreeExplainer, the SHAP implementation that is
         suitable for tree-based models. SHAP calculations can be parallelized.
         Further, it calculates the SHAP interaction values based on the TreeExplainer, if specified
@@ -1125,7 +1112,7 @@ class BaseMLAnalyzer(ABC):
         print("chunk_size:", chunk_size)
 
         # Compute SHAP values for chunks of the data in parallel
-        results = Parallel(n_jobs=n_jobs, verbose=0)(
+        results = Parallel(n_jobs=n_jobs, verbose=0, backend="threading")(
             delayed(self.calculate_shap_for_chunk)(
                 explainer, X_scaled[i: i + chunk_size]
             )

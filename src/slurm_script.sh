@@ -25,8 +25,7 @@ PARALLELIZE_INNER_CV="true"
 PARALLELIZE_SHAP="true"
 PARALLELIZE_SHAP_IA_VALUES="true"
 # only one of the two should be true -> integrate in sanity_checks
-PARALLELIZE_IMPUTATION_RUNS="false"  # either parallelize runs or columns, for n_cores < 10
-PARALLELIZE_IMPUTATION_COLUMNS="true"  # either parallelize runs or columns, for n_cores > 10
+PARALLELIZE_IMPUTATION_RUNS="true" #
 
 BASE_MINUTES=10
 BASE_CPUS=4
@@ -147,7 +146,6 @@ srun python main.py \\
     --parallelize_shap_ia_values "$PARALLELIZE_SHAP_IA_VALUES" \\
     --parallelize_shap "$PARALLELIZE_SHAP" \\
     --parallelize_imputation_runs "$PARALLELIZE_IMPUTATION_RUNS" \\
-    --parallelize_imputation_columns "$PARALLELIZE_IMPUTATION_COLUMNS" \\
     --output_path "$RESULT_DIR/"
 EOF
 
@@ -168,7 +166,6 @@ srun python main.py \\
     --parallelize_shap_ia_values "$PARALLELIZE_SHAP_IA_VALUES" \\
     --parallelize_shap "$PARALLELIZE_SHAP" \\
     --parallelize_imputation_runs "$PARALLELIZE_IMPUTATION_RUNS" \\
-    --parallelize_imputation_columns "$PARALLELIZE_IMPUTATION_COLUMNS" \\
     --output_path "$RESULT_DIR/"
 EOF
 

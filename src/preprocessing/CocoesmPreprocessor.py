@@ -135,7 +135,6 @@ class CocoesmPreprocessor(BasePreprocessor):
 
     def dataset_specific_post_processing(self, df: pd.DataFrame) -> pd.DataFrame:
         """
-        No custom adjustments necessary in cocoesm.
 
         Args:
             df:
@@ -144,4 +143,23 @@ class CocoesmPreprocessor(BasePreprocessor):
             pd.DataFrame
         """
         df = df.merge(self.relationship, on=self.raw_esm_id_col, how="left")
+        df = self.fill_country_nans(df)
+        return df
+
+    def fill_country_nans(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        This method fills potential missings in the country column from the trait df with the
+        according country as assessed in the state df
+
+        Args:
+            df:
+
+        Returns:
+
+        """
+        # TODO: Move to config
+        state_country_col = "country_esm"
+        trait_country_col = "country"
+        # Fill NaN values in the 'country' column using the 'country_esm' column values
+        df[trait_country_col] = df[trait_country_col].fillna(df[state_country_col])
         return df

@@ -3,6 +3,8 @@ from src.postprocessing.SignificanceTesting import SignificanceTesting
 from src.postprocessing.DescriptiveStatistics import DescriptiveStatistics
 from src.utils.DataLoader import DataLoader
 
+import pandas as pd
+
 
 class Postprocessor:
     """
@@ -22,6 +24,9 @@ class Postprocessor:
         self.shap_processor = ShapProcessor(var_cfg=self.var_cfg)
 
     def postprocess(self):
+        ### test, remove later
+        df = pd.read_pickle("test_file.pkl")
+
         self.shap_processor.recreate_explanation_objects()  # TODO Just for testing
         self.descriptives_creator.create_m_sd_feature_table()
         self.descriptives_creator.create_wb_item_statistics()
