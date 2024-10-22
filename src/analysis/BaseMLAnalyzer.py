@@ -226,7 +226,7 @@ class BaseMLAnalyzer(ABC):
         df_filtered_crit_na = df_filtered.dropna(subset=[crit_col])
         self.rows_dropped_crit_na = len(df_filtered) - len(df_filtered_crit_na)
 
-        df_filtered_crit_na = df_filtered_crit_na.sample(n=100)  # just for testing
+        # df_filtered_crit_na = df_filtered_crit_na.sample(n=100)  # just for testing
         self.df = df_filtered_crit_na
 
     def select_features(self):
