@@ -107,7 +107,7 @@ analysis:
 
   cv:
     num_inner_cv: 3  # 10
-    verbose_inner_cv: 0
+    verbose_inner_cv: 3
     num_outer_cv: 10 # 10
     num_reps: 3  # 10
     id_grouping_col: other_unique_id
@@ -144,19 +144,19 @@ analysis:
 
   model_hyperparameters:
     elasticnet:  # verify
-      model__regressor__alpha: [0.1, 1]
-      model__regressor__l1_ratio: [0, 1]
-      #model__regressor__alpha: [0.00001, 0.0001, 0.001, 0.01, 0.1, 1, 10, 100, 1000, 10000, 100000]
-      #model__regressor__l1_ratio: [0, 0.1, 0.2, 0.3, 0.4, 0.4, 0.6, 0.7, 0.8, 0.9, 1]
-      #model__regressor__max_iter: [ 1000, 10000 ]
-      #model__regressor__tol: [0.1, 0.01, 0.001, 0.0001]
+      #model__regressor__alpha: [0.1, 1]
+      #model__regressor__l1_ratio: [0, 1]
+      model__regressor__alpha: [0.00001, 0.0001, 0.001, 0.01, 0.1, 1, 10, 100, 1000, 10000, 100000]
+      model__regressor__l1_ratio: [0, 0.1, 0.2, 0.3, 0.4, 0.4, 0.6, 0.7, 0.8, 0.9, 1]
+      model__regressor__max_iter: [ 1000, 10000 ]
+      model__regressor__tol: [0.1, 0.01, 0.001, 0.0001]
     randomforestregressor:
-      model__regressor__n_estimators: [ 100 ]
-      model__regressor__max_features: [ 0.2, 0.4 ]
-      #model__regressor__n_estimators: [ 100, 500 ]
-      #model__regressor__max_features: [ 0.25, 0.5, 0.75]
-      #model__regressor__max_depth: [4, 6, 8, 10, 12]
-      #model__regressor__min_samples_split: [5, 10, 15, 20]
+      #model__regressor__n_estimators: [ 100 ]
+      #model__regressor__max_features: [ 0.2, 0.4 ]
+      model__regressor__n_estimators: [ 100, 500 ]
+      model__regressor__max_features: [ 0.25, 0.5, 0.75]
+      model__regressor__max_depth: [4, 6, 8, 10, 12]
+      model__regressor__min_samples_split: [5, 10, 15, 20]
 
   parallelize:
     parallelize_shap: true
