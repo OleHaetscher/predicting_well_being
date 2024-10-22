@@ -12,7 +12,7 @@ class ENRAnalyzer(BaseMLAnalyzer):
     BaseMLAnalyzer. The model attribute is defined in the subclasses.
     """
 
-    def __init__(self, var_cfg, output_dir, df, comm, rank):
+    def __init__(self, var_cfg, output_dir, df, rank):
         """
         Constructor method of the LinearAnalyzer class.
 
@@ -20,7 +20,7 @@ class ENRAnalyzer(BaseMLAnalyzer):
             var_cfg: YAML config determining specifics of the analysis
             output_dir: Specific directory where the results are stored
         """
-        super().__init__(var_cfg, output_dir, df, comm, rank)
+        super().__init__(var_cfg, output_dir, df, rank)
         self.model = ElasticNet(random_state=self.var_cfg["analysis"]["random_state"])
 
     def get_average_coefficients(self):

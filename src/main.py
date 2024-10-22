@@ -101,11 +101,11 @@ if __name__ == "__main__":
 
         prediction_model = var_cfg_updated["analysis"]["params"]["prediction_model"]
         if prediction_model == "elasticnet":
-            enr_analyzer = ENRAnalyzer(var_cfg=var_cfg_updated, output_dir=output_dir, df=df, comm=comm, rank=rank)
-            enr_analyzer.apply_methods()
+            enr_analyzer = ENRAnalyzer(var_cfg=var_cfg_updated, output_dir=output_dir, df=df, rank=rank)
+            enr_analyzer.apply_methods(comm=comm)
         elif prediction_model == "randomforestregressor":
-            rfr_analyzer = RFRAnalyzer(var_cfg=var_cfg_updated, output_dir=output_dir, df=df, comm=None, rank=rank)
-            rfr_analyzer.apply_methods()
+            rfr_analyzer = RFRAnalyzer(var_cfg=var_cfg_updated, output_dir=output_dir, df=df, rank=rank)
+            rfr_analyzer.apply_methods(comm=comm)
         else:
             raise ValueError(f"Model {prediction_model} not implemented")
 

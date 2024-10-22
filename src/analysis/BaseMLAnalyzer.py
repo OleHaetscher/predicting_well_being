@@ -88,7 +88,6 @@ class BaseMLAnalyzer(ABC):
         var_cfg,
         spec_output_path,
         df,
-        comm=None,
         rank=None
     ):
         """
@@ -102,8 +101,9 @@ class BaseMLAnalyzer(ABC):
         self.spec_output_path = spec_output_path
 
         # Multi-node parallelism
-        self.comm = comm
         self.rank = rank
+        # Joblib backend
+        self.joblib_backend = self.var_cfg["analysis"]["parallelize"]["joblib_backend"]
 
         self.crit = self.var_cfg["analysis"]["params"]["crit"]
         self.feature_combination = self.var_cfg["analysis"]["params"]["feature_combination"]
@@ -177,7 +177,7 @@ class BaseMLAnalyzer(ABC):
         """Set hyperparameter grid defined in var_cfg for the specified model as class attribute."""
         return self.var_cfg["analysis"]["model_hyperparameters"][self.model_name]
 
-    def apply_methods(self):
+    def apply_methods(self, comm=None):
         """This function applies the preprocessing methods specified in the var_cfg."""
         for method in self.var_cfg["analysis"]["methods_to_apply"]:
             if method not in dir(BaseMLAnalyzer):
@@ -185,7 +185,13 @@ class BaseMLAnalyzer(ABC):
             log_message = f"  Executing {getattr(self, method).__name__}"
             self.logger.log(log_message)
             print(log_message)
-            getattr(self, method)()
+            # Dynamically call the method
+            method_to_call = getattr(self, method)
+            # If the method is 'repeated_nested_cv', pass comm; otherwise, call without comm
+            if method == 'repeated_nested_cv' and comm is not None:
+                method_to_call(comm)
+            else:
+                method_to_call()
 
     def select_samples(self):
         """
@@ -585,7 +591,7 @@ class BaseMLAnalyzer(ABC):
         # Run the imputation in parallel
         results = Parallel(
             n_jobs=imputation_runs_n_jobs,
-            backend="loky")(
+            backend=self.joblib_backend)(
             delayed(self.impute_single_dataset)(i, X_train_copy, X_train, X_test) for i in range(self.num_imputations)
         )
 
@@ -595,12 +601,12 @@ class BaseMLAnalyzer(ABC):
 
     # Define the parallel imputation function
     def impute_single_dataset(self, i, X_train_copy, X_train, X_test):
-        self.log_thread()
         # Clone the imputer and scaler to avoid shared state
         imputer = clone(self.imputer)
 
         # Fit the imputer on the training data
         self.logger.log(f"    Starting to impute dataset number {i}")
+        self.log_thread()
         imputer.fit(X=X_train, num_imputation=i)
         # Transform both training and test data
         self.logger.log(f"    Number of Cols with NaNs in X_train: {len(X_train.columns[X_train.isna().any()])}")
@@ -849,9 +855,8 @@ class BaseMLAnalyzer(ABC):
             ia_test_shap_values,
         )
 
-    def repeated_nested_cv(self):
+    def repeated_nested_cv(self, comm=None):
         # Initialize MPI
-        comm = MPI.COMM_WORLD
         rank = comm.Get_rank()
         size = comm.Get_size()
         print(f"Process {rank} of {size} is running")
@@ -1120,7 +1125,7 @@ class BaseMLAnalyzer(ABC):
         print("chunk_size:", chunk_size)
 
         # Compute SHAP values for chunks of the data in parallel
-        results = Parallel(n_jobs=n_jobs, verbose=0, backend="loky")(
+        results = Parallel(n_jobs=n_jobs, verbose=0, backend=self.joblib_backend)(
             delayed(self.calculate_shap_for_chunk)(
                 explainer, X_scaled[i: i + chunk_size]
             )
