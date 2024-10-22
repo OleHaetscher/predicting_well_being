@@ -2,9 +2,11 @@ import numpy as np
 import pandas as pd
 from sklearn.tree import DecisionTreeRegressor, DecisionTreeClassifier
 import gc
+from datetime import datetime
 
 class NonLinearImputer:
-    def __init__(self, max_iter=10, random_state=None, tree_max_depth=None):
+    def __init__(self, logger, max_iter=10, random_state=None, tree_max_depth=None):
+        self.logger = logger
         self.max_iter = max_iter
         self.random_state = random_state
         self.models_ = {}        # Stores models for each column
@@ -56,6 +58,8 @@ class NonLinearImputer:
 
         # Iterative imputation process
         for iteration in range(self.max_iter):
+            current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            self.logger.log(f"          -> Execute iteration {iteration+1}/{self.max_iter}, at {current_time}")
             print(f"Iteration {iteration+1}/{self.max_iter}")
             for col in columns_with_na:
                 observed_mask = df_imputed[col].notna()
@@ -182,5 +186,6 @@ class NonLinearImputer:
                 if col in self.fallback_values_:
                     fallback_value = self.fallback_values_[col]
                     print(f"Filling NaNs in column '{col}' with fallback value: {fallback_value}")
+                    self.logger.log(f"    WARNING: Filling NaNs in column '{col}' with fallback value: {fallback_value}")
                     df[col].fillna(fallback_value, inplace=True)
         return df

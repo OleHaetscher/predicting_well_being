@@ -157,6 +157,7 @@ class BaseMLAnalyzer(ABC):
     @property
     def imputer(self):
         return Imputer(
+            logger=self.logger,
             model=self.model_name,
             fix_rs=self.var_cfg["analysis"]["random_state"],
             max_iter=self.var_cfg["analysis"]["imputation"]["max_iter"],
@@ -169,7 +170,6 @@ class BaseMLAnalyzer(ABC):
             pmm_k=self.var_cfg["analysis"]["imputation"]["pmm_k"],
             country_group_by=self.country_grouping_col,
             years_col=self.years_col,
-            logger=self.logger,
         )
 
     @property

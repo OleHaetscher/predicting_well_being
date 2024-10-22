@@ -20,6 +20,7 @@ class Imputer(BaseEstimator, TransformerMixin):
 
     def __init__(
         self,
+        logger,
         model,
         fix_rs,
         num_imputations,
@@ -32,8 +33,8 @@ class Imputer(BaseEstimator, TransformerMixin):
         pmm_k,
         country_group_by,
         years_col,
-        logger
     ):
+        self.logger = logger
         self.model = model
         self.fix_rs = fix_rs
         self.num_imputations = num_imputations
@@ -71,18 +72,19 @@ class Imputer(BaseEstimator, TransformerMixin):
 
         # Fit country-level imputer if needed
         if country_var_cols:
+            self.logger.log(f"        Imputing country-level variables")
             # This will be either the linear or nonlinear imputer, depending on the analysis
             self.country_imputer = self._fit_country_level_imputer(
                 df=df,
                 country_var_cols=country_var_cols,
                 num_imputation=num_imputation
             )
-            # TODO Does this overwrite attributes of the imputer calss (e.g., cl fallback values with individual?)
 
         individual_var_cols = [col for col in df.columns if not col.startswith('mac_') and not col.startswith('other_')]
 
         # Fit individual-level imputer if there are individual-level columns
         if individual_var_cols:
+            self.logger.log(f"        Imputing individual-level variables")
             self.individual_imputer = self._fit_individual_level_imputer(
                 df=df,
                 individual_var_cols=individual_var_cols,
@@ -188,11 +190,13 @@ class Imputer(BaseEstimator, TransformerMixin):
 
         # INFO: The imputer is fitted only with the ml features, not the other cols
         if self.model == 'elasticnet':
+            self.logger.log(f"        Fit linear imputer")
             individual_imputer = self._fit_linear_imputer(
                 df=individual_df_scaled,
                 num_imputation=num_imputation
             )
         elif self.model == 'randomforestregressor':
+            self.logger.log(f"        Fit nonlinear imputer")
             individual_imputer = self._fit_nonlinear_imputer(
                 df=individual_df_scaled,
                 num_imputation=num_imputation
@@ -356,6 +360,7 @@ class Imputer(BaseEstimator, TransformerMixin):
         Fits the NonLinearImputer on the training data.
         """
         imputer = NonLinearImputer(
+            logger=self.logger,
             max_iter=self.max_iter,
             random_state=self.fix_rs + num_imputation,
             tree_max_depth=self.tree_max_depth
