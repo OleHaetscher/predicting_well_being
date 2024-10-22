@@ -127,7 +127,8 @@ class Imputer(BaseEstimator, TransformerMixin):
         df_imputed = pd.concat([df_imputed, other_var_cols], axis=1)
 
         # Remove country group-by columns as they are not needed in the final dataset
-        df_imputed = df_imputed.drop(self.country_group_by, axis=1)
+        if self.country_group_by in df_imputed.columns:
+            df_imputed = df_imputed.drop(self.country_group_by, axis=1)
 
         return df_imputed
 

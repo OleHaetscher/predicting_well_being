@@ -226,7 +226,7 @@ class BaseMLAnalyzer(ABC):
         df_filtered_crit_na = df_filtered.dropna(subset=[crit_col])
         self.rows_dropped_crit_na = len(df_filtered) - len(df_filtered_crit_na)
 
-        # df_filtered_crit_na = df_filtered_crit_na.sample(n=100)  # just for testing
+        df_filtered_crit_na = df_filtered_crit_na.sample(n=100)  # just for testing
         self.df = df_filtered_crit_na
 
     def select_features(self):
@@ -244,6 +244,9 @@ class BaseMLAnalyzer(ABC):
             feature_prefix_lst = ["pl"]
         else:
             raise ValueError(f"Invalid value #{self.samples_to_include}# for attr samples_to_include")
+
+        if self.feature_combination == "all":  # include all features
+            feature_prefix_lst = ["pl", "srmc", "sens", "mac"]
 
         # always include grouping id
         for feature_cat in feature_prefix_lst:
@@ -524,6 +527,7 @@ class BaseMLAnalyzer(ABC):
             ml_model_params.append(ml_model_params_sublst)
             ml_pipelines.append(ml_pipelines_sublst)
 
+        X_filtered = X.drop(columns=[col for col in self.meta_vars if col in X.columns])
         # Summarize SHAP values and return all results
         (
             rep_shap_values,
@@ -532,7 +536,7 @@ class BaseMLAnalyzer(ABC):
             ia_test_shap_values,
         ) = self.summarize_shap_values_outer_cv(
             X_test_imputed_lst=X_test_imputed_lst,
-            X=X.drop(columns=self.meta_vars),
+            X=X_filtered,
             y=y,
             groups=X[self.id_grouping_col],
             pipelines=ml_pipelines,
