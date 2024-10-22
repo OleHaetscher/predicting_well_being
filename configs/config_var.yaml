@@ -1,11 +1,11 @@
 general:
   datasets_to_be_included: [ cocoesm, cocoms, cocout, emotions, pia, zpid ] # cocoesm, cocoms, cocout, emotions, pia, zpid
-  log_dir: "../logs/XXX"  # only for preprocessing
-  log_name: 18102024
+  log_dir: "../logs/mac_2210"  # only for preprocessing
+  log_name: x
 
   steps:
-    preprocessing: true
-    analysis: false
+    preprocessing: false
+    analysis: true
     postprocessing: false
 
 preprocessing:
@@ -15,6 +15,14 @@ preprocessing:
   min_num_esm_measures: 5  # 5
   nrows: 999999 # only for descriptives
   need_inverse_coding: ["cocout", "emotions", "pia", "zpid", "cocoms"]  # all except cocoesm, do not change
+
+  years_of_data_collection:
+    cocoesm: [ 2021, 2022]
+    cocoms: [ 2022, 2023]
+    zpid: [ 2020 ]
+    emotions: [ 2020 ]
+    cocout: [ 2020, 2021 ]
+    pia: [ 2021 ]
 
   sensing:
     app_substring:
@@ -92,15 +100,15 @@ analysis:
     all_in: [cocoesm, cocout, cocoms, emotions, pia, zpid]
 
   params: # adjusted by SLURM
-    prediction_model: elasticnet  # elasticnet, randomforestregressor
+    prediction_model: randomforestregressor  # elasticnet, randomforestregressor
     crit: state_wb  # state_wb, state_pa, state_na, trait_wb, trait_na, trait_pa
-    feature_combination: srmc  # pl, srmc, sens, mac, pl_srmc, pl_sens, pl_srmc_sens, pl_mac, pl_srmc_mac, all
+    feature_combination: pl_sens  # pl, srmc, sens, mac, pl_srmc, pl_sens, pl_srmc_sens, pl_mac, pl_srmc_mac, all
     samples_to_include: all  # all, selected, control
 
   cv:
     num_inner_cv: 3  # 10
     verbose_inner_cv: 0
-    num_outer_cv: 3  # 10
+    num_outer_cv: 10 # 10
     num_reps: 3  # 10
     id_grouping_col: other_unique_id
     cache_pipe: false  # not improving performance
@@ -116,7 +124,7 @@ analysis:
 
   imputation:
     num_imputations: 1  # 5
-    max_iter: 4 # 50
+    max_iter: 2 # 50
     conv_thresh: 0.05  # 0.05  only RFR
     tree_max_depth: 10  # only RFR
     percentage_of_features: 0.5  # only ENR
@@ -152,13 +160,13 @@ analysis:
 
   parallelize:
     parallelize_shap: true
-    shap_n_jobs: 3
+    shap_n_jobs: 5
     parallelize_inner_cv: true
-    inner_cv_n_jobs: 3
+    inner_cv_n_jobs: 5
     parallelize_shap_ia_values: true
-    shap_ia_values_n_jobs: 3
+    shap_ia_values_n_jobs: 1
     parallelize_imputation_runs: true # either parallelize runs or columns, for n_cores < 10
-    imputation_runs_n_jobs: 1
+    imputation_runs_n_jobs: 5
 
   shap_ia_values:  # TODO Needs to be implemented based on our affordances
     comp_shap_ia_values: false
