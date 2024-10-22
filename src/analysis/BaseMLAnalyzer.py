@@ -572,7 +572,6 @@ class BaseMLAnalyzer(ABC):
         with parallel_backend(backend=self.joblib_backend,
                               n_jobs=self.var_cfg["analysis"]["parallelize"]["inner_cv_n_jobs"]):
             grid_search.fit(X_train, y_train, groups=groups)
-        grid_search.fit(X_train, y_train, groups=groups)
         return grid_search
 
     def impute_datasets_for_fold(self, X_train: pd.DataFrame, X_test: pd.DataFrame):
