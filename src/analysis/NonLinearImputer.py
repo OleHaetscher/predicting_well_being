@@ -24,6 +24,7 @@ class NonLinearImputer:
         # Columns with missing values, ordered by increasing number of missing values
         na_counts = df_imputed.isna().sum()
         columns_with_na = na_counts[na_counts > 0].sort_values().index.tolist()
+        print("N columns with NaN:", len(columns_with_na))
 
         missing_indices_dict = {}
 
@@ -52,8 +53,6 @@ class NonLinearImputer:
             else:
                 # Store the mean for continuous columns
                 self.fallback_values_[col] = df_imputed[col].mean()
-
-            print(f"Stored fallback for column '{col}': {self.fallback_values_[col]}")
 
         # Iterative imputation process
         for iteration in range(self.max_iter):

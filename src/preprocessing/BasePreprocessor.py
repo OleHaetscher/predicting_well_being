@@ -1008,6 +1008,20 @@ class BasePreprocessor(ABC):
         # Drop the temporary 'year' column, as it's no longer needed
         df_states = df_states.drop(columns=['year'])
 
+        # Fill NaNs with year(s) of data colection
+        years_of_data_collection = tuple(self.var_cfg["preprocessing"]["years_of_data_collection"][self.dataset])
+
+        # Function to check if a tuple contains NaN
+        def contains_nan(value):
+            if isinstance(value, tuple):
+                return any(pd.isna(v) for v in value)
+            return pd.isna(value)
+
+        # Fill NaN values in "years_of_participation" if a tuple contains NaN or the value is NaN
+        df_states['years_of_participation'] = df_states['years_of_participation'].apply(
+            lambda x: years_of_data_collection if contains_nan(x) else x
+        )
+
         return df_states
 
     def average_criterion_items(self, df_states: pd.DataFrame) -> pd.DataFrame:

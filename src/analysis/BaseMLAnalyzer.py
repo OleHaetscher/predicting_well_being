@@ -580,42 +580,49 @@ class BaseMLAnalyzer(ABC):
         if self.id_grouping_col in X_test.columns:
             X_test = X_test.drop(self.id_grouping_col, axis=1)
 
-        # Define the parallel imputation function
-        def impute_single_dataset(i):
-            # Clone the imputer and scaler to avoid shared state
-            imputer = clone(self.imputer)
-
-            # Fit the imputer on the training data
-            self.logger.log(f"    Starting to impute dataset number {i}")
-            imputer.fit(X=X_train, num_imputation=i)
-            # Transform both training and test data
-            self.logger.log(f"    Number of Cols with NaNs in X_train: {len(X_train.columns[X_train.isna().any()])}")
-            X_train_imputed = imputer.transform(X=X_train, num_imputation=i)
-            self.logger.log(f"    Number of Cols with NaNs in X_test: {len(X_train.columns[X_test.isna().any()])}")
-            X_test_imputed = imputer.transform(X=X_test, num_imputation=i)
-
-            # Remove meta cols
-            X_test_imputed = X_test_imputed.drop(columns=[col for col in self.meta_vars if col in X_test_imputed.columns])
-
-            # Concatenate non-numeric columns if necessary
-            if self.id_grouping_col not in X_train_imputed.columns:
-                X_train_imputed = pd.concat([X_train_imputed, X_train_copy[self.id_grouping_col]], axis=1)
-
-            assert self.check_for_nan(X_train_imputed, dataset_name="X_train_imputed"), "There are NaN values in X_train_imputed!"
-            assert self.check_for_nan(X_test_imputed, dataset_name="X_test_imputed"), "There are NaN values in X_test_imputed!"
-
-            return X_train_imputed, X_test_imputed
-
+        imputation_runs_n_jobs = self.var_cfg["analysis"]["parallelize"]["imputation_runs_n_jobs"]
+        print(imputation_runs_n_jobs)
         # Run the imputation in parallel
         results = Parallel(
-            n_jobs=self.var_cfg["analysis"]["parallelize"]["imputation_runs_n_jobs"],
-            backend="threading")(
-            delayed(impute_single_dataset)(i) for i in range(self.num_imputations)
+            n_jobs=imputation_runs_n_jobs,
+            backend="loky")(
+            delayed(self.impute_single_dataset)(i, X_train_copy, X_train, X_test) for i in range(self.num_imputations)
         )
 
         # Unpack the results
         X_train_imputed_sublst, X_test_imputed_sublst = zip(*results)
         return list(X_train_imputed_sublst), list(X_test_imputed_sublst)
+
+    # Define the parallel imputation function
+    def impute_single_dataset(self, i, X_train_copy, X_train, X_test):
+        self.log_thread()
+        # Clone the imputer and scaler to avoid shared state
+        imputer = clone(self.imputer)
+
+        # Fit the imputer on the training data
+        self.logger.log(f"    Starting to impute dataset number {i}")
+        imputer.fit(X=X_train, num_imputation=i)
+        # Transform both training and test data
+        self.logger.log(f"    Number of Cols with NaNs in X_train: {len(X_train.columns[X_train.isna().any()])}")
+        X_train_imputed = imputer.transform(X=X_train, num_imputation=i)
+        self.logger.log(f"    Number of Cols with NaNs in X_test: {len(X_train.columns[X_test.isna().any()])}")
+        X_test_imputed = imputer.transform(X=X_test, num_imputation=i)
+
+        # Remove meta cols
+        X_test_imputed = X_test_imputed.drop(columns=[col for col in self.meta_vars if col in X_test_imputed.columns])
+
+        # Concatenate non-numeric columns if necessary
+        if self.id_grouping_col not in X_train_imputed.columns:
+            X_train_imputed = pd.concat([X_train_imputed, X_train_copy[self.id_grouping_col]], axis=1)
+
+        test1 = X_train_imputed[X_train_imputed.isna().any(axis=1)]
+        test2 = X_test_imputed[X_test_imputed.isna().any(axis=1)]
+        print()
+
+        assert self.check_for_nan(X_train_imputed, dataset_name="X_train_imputed"), "There are NaN values in X_train_imputed!"
+        assert self.check_for_nan(X_test_imputed, dataset_name="X_test_imputed"), "There are NaN values in X_test_imputed!"
+
+        return X_train_imputed, X_test_imputed
 
     def check_for_nan(self, df, dataset_name=""):
         """

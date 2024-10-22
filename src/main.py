@@ -104,7 +104,7 @@ if __name__ == "__main__":
             enr_analyzer = ENRAnalyzer(var_cfg=var_cfg_updated, output_dir=output_dir, df=df, comm=comm, rank=rank)
             enr_analyzer.apply_methods()
         elif prediction_model == "randomforestregressor":
-            rfr_analyzer = RFRAnalyzer(var_cfg=var_cfg_updated, output_dir=output_dir, df=df, comm=comm, rank=rank)
+            rfr_analyzer = RFRAnalyzer(var_cfg=var_cfg_updated, output_dir=output_dir, df=df, comm=None, rank=rank)
             rfr_analyzer.apply_methods()
         else:
             raise ValueError(f"Model {prediction_model} not implemented")

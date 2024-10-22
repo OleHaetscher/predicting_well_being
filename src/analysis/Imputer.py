@@ -77,6 +77,7 @@ class Imputer(BaseEstimator, TransformerMixin):
                 country_var_cols=country_var_cols,
                 num_imputation=num_imputation
             )
+            # TODO Does this overwrite attributes of the imputer calss (e.g., cl fallback values with individual?)
 
         individual_var_cols = [col for col in df.columns if not col.startswith('mac_') and not col.startswith('other_')]
 

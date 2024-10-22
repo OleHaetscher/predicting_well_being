@@ -43,7 +43,7 @@ for crit in "${CRITERIA[@]}"; do
 
     # Set PRED_MODEL_MULT based on prediction_model
     case $prediction_model in
-      "randomforestregressor") PRED_MODEL_MULT=4 ;;
+      "randomforestregressor") PRED_MODEL_MULT=2 ;;
       "elasticnet") PRED_MODEL_MULT=1 ;;
     esac
 
@@ -57,7 +57,15 @@ for crit in "${CRITERIA[@]}"; do
           "control") SAMPLE_MULT=1 ;;
         esac
 
-        TOTAL_MINUTES=$((BASE_MINUTES * PRED_MODEL_MULT * SAMPLE_MULT))
+        # Check if "sens" is in feature_combination and set MULT accordingly
+        if [[ $feature_combination == *"sens"* ]]; then
+          FEATURE_MULT=3
+        else
+          FEATURE_MULT=1
+        fi
+
+        # Calculate the total minutes using all the multipliers
+        TOTAL_MINUTES=$((BASE_MINUTES * PRED_MODEL_MULT * SAMPLE_MULT * FEATURE_MULT))
 
         # Convert the total minutes to HH:MM:SS format
         HOURS=$((TOTAL_MINUTES / 60))
@@ -102,7 +110,7 @@ for crit in "${CRITERIA[@]}"; do
 #SBATCH -t $TIMELIMIT
 #SBATCH --mail-type=ALL
 #SBATCH --mail-user=aeback.oh@gmail.com
-#SBATCH -J ${JOB_LOG_NAME}
+#SBATCH -J ${feature_combination}_${samples_to_include}_${crit}_${prediction_model}
 #SBATCH --output=${FULL_LOG_PATH_LOG}
 #SBATCH --error=${FULL_LOG_PATH_ERR}
 

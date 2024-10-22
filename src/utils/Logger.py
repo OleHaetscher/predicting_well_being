@@ -14,7 +14,7 @@ class Logger:
             current_time = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
 
             # Concatenate the log_file name with the current timestamp and rank
-            log_file_with_rank = f'{log_file}_rank{rank}_{current_time}.log'
+            log_file_with_rank = f'{log_file}_{current_time}_rank{rank}.log'
 
             # Combine directory and file name
             log_file_path = os.path.join(log_dir, log_file_with_rank)
