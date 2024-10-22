@@ -102,7 +102,7 @@ analysis:
   params: # adjusted by SLURM
     prediction_model: randomforestregressor  # elasticnet, randomforestregressor
     crit: state_wb  # state_wb, state_pa, state_na, trait_wb, trait_na, trait_pa
-    feature_combination: pl_srmc_sens  # pl, srmc, sens, mac, pl_srmc, pl_sens, pl_srmc_sens, pl_mac, pl_srmc_mac, all
+    feature_combination: srmc  # pl, srmc, sens, mac, pl_srmc, pl_sens, pl_srmc_sens, pl_mac, pl_srmc_mac, all
     samples_to_include: control  # all, selected, control
 
   cv:
@@ -155,14 +155,14 @@ analysis:
       #model__regressor__max_features: [ 0.2, 0.4 ]
       model__regressor__n_estimators: [ 100, 500 ]
       model__regressor__max_features: [ 0.25, 0.5, 0.75]
-      model__regressor__max_depth: [4, 6, 8, 10, 12]
+      #model__regressor__max_depth: [4, 6, 8, 10, 12]
       model__regressor__min_samples_split: [5, 10, 15, 20]
 
   parallelize:
     parallelize_shap: true
     shap_n_jobs: 1
     parallelize_inner_cv: true
-    inner_cv_n_jobs: 1
+    inner_cv_n_jobs: 8
     parallelize_shap_ia_values: true
     shap_ia_values_n_jobs: 1
     parallelize_imputation_runs: true # either parallelize runs or columns, for n_cores < 10

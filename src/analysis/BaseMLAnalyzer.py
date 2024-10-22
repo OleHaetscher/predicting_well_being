@@ -12,7 +12,7 @@ import numpy as np
 import pandas as pd
 import shap
 import sklearn
-from joblib import Parallel, delayed, Memory
+from joblib import Parallel, delayed, Memory, parallel_backend
 from scipy.stats import spearmanr
 from sklearn.base import clone
 from sklearn.compose import TransformedTargetRegressor
@@ -226,7 +226,7 @@ class BaseMLAnalyzer(ABC):
         df_filtered_crit_na = df_filtered.dropna(subset=[crit_col])
         self.rows_dropped_crit_na = len(df_filtered) - len(df_filtered_crit_na)
 
-        # df_filtered_crit_na = df_filtered_crit_na.sample(n=100)  # just for testing
+        df_filtered_crit_na = df_filtered_crit_na.sample(n=100)  # just for testing
         self.df = df_filtered_crit_na
 
     def select_features(self):
@@ -568,6 +568,10 @@ class BaseMLAnalyzer(ABC):
         Returns:
             GridSearchCV: Fitted gridsearch object
         """
+        # Use threading backend for parallelization
+        with parallel_backend(backend=self.joblib_backend,
+                              n_jobs=self.var_cfg["analysis"]["parallelize"]["inner_cv_n_jobs"]):
+            grid_search.fit(X_train, y_train, groups=groups)
         grid_search.fit(X_train, y_train, groups=groups)
         return grid_search
 
