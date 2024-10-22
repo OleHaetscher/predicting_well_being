@@ -155,7 +155,7 @@ analysis:
       #model__regressor__max_features: [ 0.2, 0.4 ]
       model__regressor__n_estimators: [ 100, 500 ]
       model__regressor__max_features: [ 0.25, 0.5, 0.75]
-      #model__regressor__max_depth: [4, 6, 8, 10, 12]
+      model__regressor__max_depth: [4, 6, 8, 10, 12]
       model__regressor__min_samples_split: [5, 10, 15, 20]
 
   parallelize:
