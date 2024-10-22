@@ -167,7 +167,7 @@ analysis:
     shap_ia_values_n_jobs: 1
     parallelize_imputation_runs: true # either parallelize runs or columns, for n_cores < 10
     imputation_runs_n_jobs: 1
-    joblib_backend: "loky"  # loky, threading
+    joblib_backend: "threading"  # loky, threading
 
   shap_ia_values:  # TODO Needs to be implemented based on our affordances
     comp_shap_ia_values: false
