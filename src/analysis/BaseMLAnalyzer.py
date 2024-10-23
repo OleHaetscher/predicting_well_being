@@ -4,6 +4,7 @@ import inspect
 import json
 import os
 import pickle
+import sys
 import threading
 from abc import ABC, abstractmethod
 from itertools import product
@@ -240,8 +241,20 @@ class BaseMLAnalyzer(ABC):
         selected_columns = [self.id_grouping_col, self.country_grouping_col, self.years_col]
         if self.samples_to_include in ["all", "selected"]:
             feature_prefix_lst = self.feature_combination.split("_")
+
+            if self.feature_combination == "all_in": # include all features
+                feature_prefix_lst = ["pl", "srmc", "sens", "mac"]
+                if self.samples_to_include == "selected":
+                    self.logger.log(f"    WARNING: No selected analysis needed for {self.feature_combination}, stop computations")
+                    sys.exit(0)  # Exit cleanly with status code 0
+
         elif self.samples_to_include == "control":
             feature_prefix_lst = ["pl"]
+
+            no_control_lst = self.var_cfg["analysis"]["no_control_lst"]
+            if self.feature_combination in no_control_lst:
+                self.logger.log(f"    WARNING: No control analysis needed for {self.feature_combination}, stop computations")
+                sys.exit(0)  # Exit cleanly with status code 0
         else:
             raise ValueError(f"Invalid value #{self.samples_to_include}# for attr samples_to_include")
 

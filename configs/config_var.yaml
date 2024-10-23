@@ -87,7 +87,6 @@ analysis:
     pl: [emotions, cocout, cocoesm, cocoms]
     srmc: [emotions, cocout, cocoesm, cocoms]
     sens: [zpid, cocoms]
-    srmc_sens: [cocoms]
     mac: [cocoesm]
     # 2  filter for "pl_" for comparisons
     pl_srmc: [emotions, cocout, cocoesm, cocoms]
@@ -99,11 +98,13 @@ analysis:
     # 4 all_in
     all_in: [cocoesm, cocout, cocoms, emotions, pia, zpid]
 
+  no_control_lst: ["pl", "srmc", "sens", "mac", "all_in"] # we do not run control analyses for these combinations
+
   params: # adjusted by SLURM
     prediction_model: elasticnet  # elasticnet, randomforestregressor
     crit: state_wb  # state_wb, state_pa, state_na, trait_wb, trait_na, trait_pa
-    feature_combination: all  # pl, srmc, sens, mac, pl_srmc, pl_sens, pl_srmc_sens, pl_mac, pl_srmc_mac, all
-    samples_to_include: all  # all, selected, control
+    feature_combination: all_in  # pl, srmc, sens, mac, pl_srmc, pl_sens, pl_srmc_sens, pl_mac, pl_srmc_mac, all_in
+    samples_to_include: selected  # all, selected, control
 
   cv:
     num_inner_cv: 3  # 10
