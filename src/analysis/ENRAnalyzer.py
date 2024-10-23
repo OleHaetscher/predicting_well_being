@@ -26,8 +26,8 @@ class ENRAnalyzer(BaseMLAnalyzer):
     def get_average_coefficients(self):
         """Calculate the average coefficients across all outer cv loops stored in self.best_models."""
         if self.rank == 0:
-            feature_names = self.X.columns.drop(self.meta_vars).tolist()
-            # feature_names.remove(self.meta_vars)
+            meta_vars_in_df = [col for col in self.meta_vars if col in self.X.columns]
+            feature_names = self.X.columns.drop(meta_vars_in_df).tolist()
             coefs_dict = defaultdict(lambda: defaultdict(lambda: defaultdict(dict)))
 
             for rep in range(self.num_reps):

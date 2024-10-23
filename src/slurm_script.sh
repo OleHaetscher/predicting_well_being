@@ -27,12 +27,13 @@ PARALLELIZE_SHAP="true"
 PARALLELIZE_SHAP_IA_VALUES="true"
 PARALLELIZE_IMPUTATION_RUNS="true"
 
-BASE_MINUTES=10
-CPUS_PER_TASK=40  # Fixed number of CPUs per analysis
+BASE_MINUTES=2000
+CPUS_PER_TASK=10  # Fixed number of CPUs per analysis
 NUM_NODES=10      # If set to 1, no multi-node analysis happens
 
 # Base Directory for Results
-BASE_DIR="/scratch/hpc-prf-mldpr/tests_cocowb_012024/"
+#BASE_DIR="/scratch/hpc-prf-mldpr/tests_cocowb_012024/"
+BASE_DIR="/scratch/hpc-prf-mldpr/coco_wb_ml_code/results_run_2210"
 
 # Current Time
 CURRENT_TIME=$(date +%Y%m%d%H%M%S)
@@ -59,7 +60,7 @@ for crit in "${CRITERIA[@]}"; do
 
         # Check if "sens" is in feature_combination and set MULT accordingly
         if [[ $feature_combination == *"sens"* ]]; then
-          FEATURE_MULT=3
+          FEATURE_MULT=2
         else
           FEATURE_MULT=1
         fi

@@ -100,14 +100,14 @@ analysis:
     all_in: [cocoesm, cocout, cocoms, emotions, pia, zpid]
 
   params: # adjusted by SLURM
-    prediction_model: randomforestregressor  # elasticnet, randomforestregressor
+    prediction_model: elasticnet  # elasticnet, randomforestregressor
     crit: state_wb  # state_wb, state_pa, state_na, trait_wb, trait_na, trait_pa
-    feature_combination: srmc  # pl, srmc, sens, mac, pl_srmc, pl_sens, pl_srmc_sens, pl_mac, pl_srmc_mac, all
-    samples_to_include: control  # all, selected, control
+    feature_combination: all  # pl, srmc, sens, mac, pl_srmc, pl_sens, pl_srmc_sens, pl_mac, pl_srmc_mac, all
+    samples_to_include: all  # all, selected, control
 
   cv:
     num_inner_cv: 3  # 10
-    verbose_inner_cv: 3
+    verbose_inner_cv: 0
     num_outer_cv: 10 # 10
     num_reps: 3  # 10
     id_grouping_col: other_unique_id
@@ -124,7 +124,7 @@ analysis:
 
   imputation:
     num_imputations: 1  # 5
-    max_iter: 2 # 50
+    max_iter: 2 # 40
     conv_thresh: 0.05  # 0.05  only RFR
     tree_max_depth: 10  # only RFR
     percentage_of_features: 0.5  # only ENR
@@ -155,7 +155,7 @@ analysis:
       #model__regressor__max_features: [ 0.2, 0.4 ]
       model__regressor__n_estimators: [ 100, 500 ]
       model__regressor__max_features: [ 0.25, 0.5, 0.75]
-      #model__regressor__max_depth: [4, 6, 8, 10, 12]
+      model__regressor__max_depth: [4, 6, 8, 10, 12]
       model__regressor__min_samples_split: [5, 10, 15, 20]
 
   parallelize:
