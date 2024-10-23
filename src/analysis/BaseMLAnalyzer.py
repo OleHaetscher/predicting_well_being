@@ -227,7 +227,7 @@ class BaseMLAnalyzer(ABC):
         df_filtered_crit_na = df_filtered.dropna(subset=[crit_col])
         self.rows_dropped_crit_na = len(df_filtered) - len(df_filtered_crit_na)
 
-        #df_filtered_crit_na = df_filtered_crit_na.sample(n=100)  # just for testing
+        #df_filtered_crit_na = df_filtered_crit_na.sample(n=100)   # just for testing
         self.df = df_filtered_crit_na
 
     def select_features(self):
@@ -335,7 +335,7 @@ class BaseMLAnalyzer(ABC):
         zero_variance_cols = []
         for column in self.X.columns:
             unique_values = self.X[column].nunique(dropna=True)
-            if unique_values == 1:
+            if unique_values <= 1:  # drop columns with only NaN or zero variance
                 zero_variance_cols.append(column)
                 self.logger.log(f"      Dropping column '{column}' due to zero variance (only one unique value or NaNs).")
         if zero_variance_cols:

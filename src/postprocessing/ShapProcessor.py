@@ -19,6 +19,7 @@ class ShapProcessor:
     def __init__(self, var_cfg):
         self.var_cfg = var_cfg
         self.data_loader = DataLoader()
+        # TODO: We may must do some SHAP processing on the cluster due to data size
 
     def recreate_explanation_objects(self):
         """
@@ -29,7 +30,7 @@ class ShapProcessor:
         Returns:
         """
         # TODO This is more of a test script if we can succefully rebuild the Explanation objects -> Adjust
-        res_dir = "../results/ml_analysis/pl/selected/trait_pa/randomforestregressor"
+        res_dir = "../results/cluster_results/pl_srmc_mac/control/state_wb/randomforestregressor"
         filename = os.path.join(res_dir, "shap_values.pkl")
         shap_results = self.data_loader.read_pkl(filename)
 
@@ -43,6 +44,8 @@ class ShapProcessor:
         features = shap_results["feature_names"]
 
         features.remove("other_unique_id")
+        features.remove("other_country")
+        features.remove("other_years_of_participation")
         shap_df = pd.DataFrame(shap_data, columns=features)
         explanation_test = shap.Explanation(shap_vals, base_vals, data=shap_data, feature_names=features)
 

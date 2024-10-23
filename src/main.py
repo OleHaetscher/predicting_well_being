@@ -111,9 +111,8 @@ if __name__ == "__main__":
 
     # Postprocessing step (only executed on rank 0)
     if var_cfg["general"]["steps"]["postprocessing"]:
-        if rank == 0:
-            postprocessor = Postprocessor(fix_cfg=fix_cfg, var_cfg=var_cfg, name_mapping=name_mapping)
-            postprocessor.postprocess()
+        postprocessor = Postprocessor(fix_cfg=fix_cfg, var_cfg=var_cfg, name_mapping=name_mapping)
+        postprocessor.postprocess()
 
 
 

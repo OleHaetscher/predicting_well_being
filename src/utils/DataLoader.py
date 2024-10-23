@@ -1,3 +1,4 @@
+import json
 import os
 import pandas as pd
 import pyreadr
@@ -98,5 +99,6 @@ class DataLoader:
         Returns:
             pd.DataFrame: DataFrame loaded from the JSON file.
         """
-        df = pd.read_json(path_to_dataset)
-        return df
+        with open(path_to_dataset, 'r') as f:
+            data = json.load(f)
+        return data
