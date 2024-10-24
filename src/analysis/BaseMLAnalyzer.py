@@ -227,7 +227,7 @@ class BaseMLAnalyzer(ABC):
         df_filtered_crit_na = df_filtered.dropna(subset=[crit_col])
         self.rows_dropped_crit_na = len(df_filtered) - len(df_filtered_crit_na)
 
-        #df_filtered_crit_na = df_filtered_crit_na.sample(n=100)   # just for testing
+        df_filtered_crit_na = df_filtered_crit_na.sample(n=300, random_state=self.var_cfg["analysis"]["random_state"])  # just for testing
         self.df = df_filtered_crit_na
 
     def select_features(self):
@@ -641,13 +641,14 @@ class BaseMLAnalyzer(ABC):
         if self.id_grouping_col not in X_train_imputed.columns:
             X_train_imputed = pd.concat([X_train_imputed, X_train_copy[self.id_grouping_col]], axis=1)
 
-        test1 = X_train_imputed[X_train_imputed.isna().any(axis=1)]
-        test2 = X_test_imputed[X_test_imputed.isna().any(axis=1)]
-        print()
-
         assert self.check_for_nan(X_train_imputed, dataset_name="X_train_imputed"), "There are NaN values in X_train_imputed!"
         assert self.check_for_nan(X_test_imputed, dataset_name="X_test_imputed"), "There are NaN values in X_test_imputed!"
 
+        # Check if data is equal
+        data_hash_train = hashlib.md5(X_train_imputed.to_csv().encode()).hexdigest()
+        data_hash_test = hashlib.md5(X_test_imputed.to_csv().encode()).hexdigest()
+        self.logger.log(f"    Num {i} X_train data hash: {data_hash_train}")
+        self.logger.log(f"    Num {i} X_train data hash: {data_hash_test}")
         return X_train_imputed, X_test_imputed
 
     def check_for_nan(self, df, dataset_name=""):

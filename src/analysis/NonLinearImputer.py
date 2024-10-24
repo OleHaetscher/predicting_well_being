@@ -9,6 +9,7 @@ class NonLinearImputer:
         self.logger = logger
         self.max_iter = max_iter
         self.random_state = random_state
+        self.rng_ = np.random.RandomState(self.random_state)  # Local RNG
         self.models_ = {}        # Stores models for each column
         self.fallback_values_ = {}  # Fallback
         self.columns_ = None     # Stores the column names
@@ -35,7 +36,7 @@ class NonLinearImputer:
             obs_values = df_imputed[col].dropna().values
             missing_indices = df_imputed.index[df_imputed[col].isna()]
             if len(obs_values) > 0:
-                df_imputed.loc[missing_indices, col] = np.random.choice(
+                df_imputed.loc[missing_indices, col] = self.rng_.choice(
                     obs_values, size=len(missing_indices)
                 )
             else:
@@ -119,7 +120,7 @@ class NonLinearImputer:
             indices_in_leaf = np.where(leaves_for_missing == leaf)[0]
 
             if donors.size > 0:
-                imputed_values_leaf = np.random.choice(donors, size=len(indices_in_leaf), replace=True)
+                imputed_values_leaf = self.rng_.choice(donors, size=len(indices_in_leaf), replace=True)
                 imputed_values[indices_in_leaf] = imputed_values_leaf
             else:
                 # If no donors are available, impute with the overall mean or mode
@@ -161,7 +162,7 @@ class NonLinearImputer:
             # Fill missing values with a random sample from observed values
             obs_values = df[col].dropna().values
             if len(obs_values) > 0:
-                df.loc[missing_mask, col] = np.random.choice(
+                df.loc[missing_mask, col] = self.rng_.choice(
                     obs_values, size=missing_mask.sum()
                 )
 
