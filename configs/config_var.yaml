@@ -1,7 +1,7 @@
 general:
   datasets_to_be_included: [ cocoesm, cocoms, cocout, emotions, pia, zpid ] # cocoesm, cocoms, cocout, emotions, pia, zpid
-  log_dir: "../logs/Tests_2210"  # only for preprocessing
-  log_name: test_2210
+  log_dir: "../logs/run_2510"  # only for preprocessing
+  log_name: run_2510
 
   steps:
     preprocessing: false
@@ -101,9 +101,9 @@ analysis:
   no_control_lst: ["pl", "srmc", "sens", "mac", "all_in"] # we do not run control analyses for these combinations
 
   params: # adjusted by SLURM
-    prediction_model: elasticnet  # elasticnet, randomforestregressor
+    prediction_model: randomforestregressor  # elasticnet, randomforestregressor
     crit: trait_wb  # state_wb, state_pa, state_na, trait_wb, trait_na, trait_pa
-    feature_combination: pl_srmc_sens  # pl, srmc, sens, mac, pl_srmc, pl_sens, pl_srmc_sens, pl_mac, pl_srmc_mac, all_in
+    feature_combination: pl  # pl, srmc, sens, mac, pl_srmc, pl_sens, pl_srmc_sens, pl_mac, pl_srmc_mac, all_in
     samples_to_include: selected  # all, selected, control
 
   cv:
@@ -152,8 +152,8 @@ analysis:
       model__regressor__max_iter: [ 1000, 10000 ]
       model__regressor__tol: [0.1, 0.01, 0.001, 0.0001]
     randomforestregressor:
-      #model__regressor__n_estimators: [ 100 ]
-      #model__regressor__max_features: [ 0.2, 0.4 ]
+      #model__regressor__max_depth: [4, 6]
+      #model__regressor__max_features: [ 0.2 ]
       model__regressor__n_estimators: [ 100, 500 ]
       model__regressor__max_features: [ 0.25, 0.5, 0.75]
       model__regressor__max_depth: [4, 6, 8, 10, 12]
@@ -186,9 +186,10 @@ analysis:
     lin_model_coefs: 'lin_model_coefficients.json'
 
 postprocessing:
+  processed_output_path: "../results/cluster_results_processed"
   significance_tests:
     output_path: "../results/significance_tests"
-    alpha:
+    alpha: .05
     metric: r2
     methods:
       - xxx
