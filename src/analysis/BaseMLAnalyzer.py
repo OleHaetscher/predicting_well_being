@@ -211,9 +211,10 @@ class BaseMLAnalyzer(ABC):
                 lambda x: any(x.startswith(sample) for sample in self.datasets_included))]
 
             # for "sens" and "selected", remove samples without sensing data
-            if self.samples_to_include == "selected" and "sens" in self.feature_combination:
+            if self.samples_to_include in ["selected", "control"] and "sens" in self.feature_combination:
                 sens_columns = [col for col in self.df.columns if col.startswith("sens_")]
-                df_filtered = self.df[self.df[sens_columns].notna().any(axis=1)]
+                # df_filtered = self.df[self.df[sens_columns].notna().any(axis=1)]   # This was wrong
+                df_filtered = df_filtered[df_filtered[sens_columns].notna().any(axis=1)]
 
         else:  # include all datasets with available criterion
             datasets_included_filtered = [dataset for dataset in self.var_cfg["analysis"]["feature_sample_combinations"]["all_in"]
