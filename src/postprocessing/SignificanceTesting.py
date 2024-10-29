@@ -14,6 +14,8 @@ import yaml
 from scipy.stats import t
 from statsmodels.stats.multitest import fdrcorrection
 
+from collections import deque, defaultdict
+
 
 class SignificanceTesting:
     """
@@ -49,112 +51,259 @@ class SignificanceTesting:
         self.metric = self.var_cfg["postprocessing"]["significance_tests"]["metric"]
         self.data_loader = DataLoader()
 
-    def apply_methods(self):
-        """This function applies the preprocessing methods specified in the config."""
-        for method in self.var_cfg["postprocessing"]["significance_tests"]["methods"]:
-            if method not in dir(SignificanceTesting):
-                raise ValueError(f"Method '{method}' is not implemented yet.")
-            getattr(self, method)()
+        self.compare_model_results = {}
+        self.compare_predictor_classes_results = {}
 
-    def get_cv_results(self):
+    def significance_testing(self, dct):
         """
-        This method extracts all CV results from a file. It loads the JSON files and stores them
-        in a dictionary that mirrors the result directory structure
+        Wrapper function that
+            - compares models
+            - compares predictor classes
+            - applies fdr correction based on both results
+            - returns final t and p values
 
-        Returns:
+        compare_models
+            This method compares the predictive performance of ENR and RFR across all analysis
 
-        """
-
-    def conduct_significance_tests(self):
-        """
-        Wrapper method for all the significance testing. This method
-            - computes the significance tests for the model and feature comparisons
-            - applies a joint FDR correction to all p-values
-            - creates a tabular-like df containing all p and t values
-
-
-
-        Returns:
-
-        """
-        pass
-        # Iterate over the dict that contains the relevant comparisons
-        # conduct the comparisons
-
-        # results_compare_models = self.compare_models(dct)
-        # results_compare_predictor_classes = self.compare_predictor_classes(dct)
-
-    def compare_models(self, dct):
-        """
-        This method compares the predictive performance of ENR and RFR across all analysis
+        compare_predictor_classes
+            This method evaluates of adding other predictor classes to person-level predictors leads to
+            a significant performance increase.
+            Specifically, we compare the addition of
+                - srmc
+                - sens
+                - srmc + sens
+                - mac
+                - srmc + mac
+            using
+                - all samples that includes a lot of missings (i.e., all vs. all)
+                - selected samples to avoid missings (i.e., selected vs. control)
+            seperately for both prediction models
+                - ENR
+                - RFR
+            which results in 20 statistical tests
 
         Args:
             dct:
 
         Returns:
-        """
-        pass
 
-    def compare_predictor_classes(self, dct):
         """
-        This method evaluates of adding other predictor classes to person-level predictors leads to
-        a significant performance increase.
-        Specifically, we compare the addition of
-            - srmc
-            - sens
-            - srmc + sens
-            - mac
-            - srmc + mac
-        using
-            - all samples that includes a lot of missings (i.e., all vs. all)
-            - selected samples to avoid missings (i.e., selected vs. control)
-        seperately for both prediction models
-            - ENR
-            - RFR
-        which results in 20 statistical tests
+        # compare models
+        data_for_compare_models = self.get_data(raw_dct=dct, comparison="models")
+        self.apply_compare_models(data_for_compare_models)
+        data_for_compare_predictor_classes = self.get_data(raw_dct=dct, comparison="predictor_classes")
+        self.apply_compare_predictor_classes(data_for_compare_predictor_classes)
+
+        self.fdr_correct_p_values()
+
+    def get_data(self, raw_dct: dict, comparison: str) -> dict:
+        """
 
         Args:
-            dct:
+            comparison:
 
         Returns:
-        """
-        pass
-
-
-    def extract_metric(self):
-        """
-        This method gets the metric used for the comparisons
-
-        Returns:
+            dict: Dict containing the processed data for significance testing (e.g., the right metric for enr and rfr in
+                the final values).
 
         """
+        # Initialize the result dictionary
+        processed_data = defaultdict(lambda: defaultdict(lambda: defaultdict(dict)))
 
+        # Check if the comparison is based on models
+        if comparison == "models":
+            # Traverse the raw dictionary
+            for fc, fc_vals in raw_dct.items():
+                for sti, sti_values in fc_vals.items():
+                    # Traverse the models under 'state_wb'
+                    if "state_wb" in sti_values:  # remove
+                        for model, model_vals in sti_values["state_wb"].items():
 
-    def fdr_correct_p_values(self, result_dict):
+                            processed_data[fc][sti][model] = (
+                                        self.extract_metric_across_folds_imps(
+                                            data_dct=model_vals["cv_results"],
+                                            metric=self.metric
+                                        )
+                                    )
+
+        elif comparison == "predictor_classes":
+            # Fill full data
+            for fc, fc_vals in raw_dct.items():
+                if "all" in fc_vals:  # remove  -> no results yet, skip
+                    if "state_wb" in fc_vals["all"]:  # remove
+                        for model, models_vals in fc_vals["all"]["state_wb"].items():
+                            if "pl" in fc:
+                                processed_data["full_data"][model][fc] = (
+                                        self.extract_metric_across_folds_imps(
+                                            data_dct=models_vals["cv_results"],
+                                            metric=self.metric
+                                        )
+                                    )
+            # Fill reduced data
+            for fc, fc_vals in raw_dct.items():
+                if "control" in fc_vals or "selected" in fc_vals:
+                    for sti, sti_vals in fc_vals.items():
+                        if "state_wb" in sti_vals:
+                            for model, models_vals in sti_vals["state_wb"].items():
+                                if "pl_" in fc:
+                                    processed_data["reduced_data"][model][fc][sti] = (
+                                        self.extract_metric_across_folds_imps(
+                                            data_dct=models_vals["cv_results"],
+                                            metric=self.metric
+                                        )
+                                    )
+        else:
+            raise ValueError
+        return processed_data
+
+    @staticmethod
+    def extract_metric_across_folds_imps(data_dct, metric: str):
         """
-        Correct p-values using False Discovery Rate (FDR) as described by Benjamini & Hochberg (1995)
+        This function extracts a given metric across outer folds and imputations for the significance tests
 
         Args:
-            result_dict: Dict, containing all results for a certain analysis setting (e.g., main/ssc)
+            data_dct: Dict with the levels reps/outer_folds/imp that contain the metrics as values
+            metric: Metric the significance tests are based on (r2)
 
         Returns:
-              corrected_p_values_dct: Dict, same structure as result_dict, but with corrected p_values
+            metric_values (deque): A deque containing the 500 metric values
+
+        """
+        metric_values = deque()
+        # Traverse replications, outer folds, and imputations
+        for rep_key, rep_vals in data_dct.items():
+            for fold_key, fold_vals in rep_vals.items():
+                for imp_key, imp_vals in fold_vals.items():
+                    # Extract the 'r2' value and add to the deque
+                    r2_val = imp_vals.get(metric, None)
+                    if r2_val is not None:
+                        metric_values.append(r2_val)
+        return metric_values
+
+    def apply_compare_models(self, processed_data: dict) -> None:
+        """
+        This function applies the corrected dependent t-test to compare models in the given processed data.
+
+        Args:
+            processed_data (dict): A dictionary structured as fc/sti/models where models contain lists or deques of r2 values.
+
+        Returns:
+            dict: The same processed_data dictionary, but with test results (p_val, t_val, etc.) replacing the original lists.
+        """
+
+        for fc, fc_vals in processed_data.items():
+            for sti, model_data in fc_vals.items():
+                if len(model_data) < 2:
+                    print(f"WARNING: Not enough models to compare in {fc}/{sti}, SKIP")
+                    # raise ValueError(f"Not enough models to compare in {fc}/{sti}")
+                    continue
+
+                # Extract model names and their associated r2 value lists (or deque)
+                model_names = list(model_data.keys())
+                model1_name = model_names[0]
+                model2_name = model_names[1]
+
+                data1 = model_data[model1_name]  # Get the r2 values for model1
+                data2 = model_data[model2_name]  # Get the r2 values for model2
+
+                # Perform the corrected dependent t-test
+                t_val, p_val = self.corrected_dependent_ttest(data1, data2)
+
+                # Replace the r2 values with the test results
+                processed_data[fc][sti] = {
+                    'model_comparison': f"{model1_name} vs {model2_name}",
+                    'p_val': p_val,
+                    't_val': np.round(t_val, 2)
+                }
+        self.compare_model_results = processed_data
+
+    def apply_compare_predictor_classes(self, processed_data: dict) -> None:
+        """
+
+        Args:
+            processed_data:
+
+        Returns:
+
+        """
+        # Iterate over models
+        for model, model_vals in processed_data["full_data"].items():
+            # First, identify the 'pl' feature class values
+            if "pl" not in model_vals:
+                print(f"WARNING: 'pl' feature class not found for model {model}, SKIP")
+                continue
+
+            pl_vals = model_vals["pl"]  # Get the 'pl' feature class values
+
+            # Now, iterate through the other feature classes and compare them with 'pl'
+            for fc, fc_vals in model_vals.items():
+                if fc == "pl":
+                    continue  # Skip the 'pl' comparison with itself
+
+                # Perform the corrected dependent t-test between 'pl' and the current feature class
+                t_val, p_val = self.corrected_dependent_ttest(pl_vals, fc_vals)
+
+                # Store the comparison results for the current feature class
+                processed_data["full_data"][model][fc] = {
+                    'comparison_with_pl': f"{fc} vs pl",
+                    'p_val': p_val,
+                    't_val': round(t_val, 2)
+                }
+
+        for model, model_vals in processed_data["reduced_data"].items():
+            for fc, fc_vals in model_vals.items():
+                if len(fc_vals) < 2:
+                    print(f"WARNING: Not enough data yet, SKIP")
+                    # raise ValueError(f"Not enough models to compare in {fc}/{sti}")
+                    continue
+                # Perform the corrected dependent t-test
+                t_val, p_val = self.corrected_dependent_ttest(fc_vals["selected"], fc_vals["control"])
+                processed_data["reduced_data"][model][fc] = {
+                'model_comparison': f"{fc} vs pl",
+                'p_val': p_val,
+                't_val': round(t_val, 2)
+                }
+
+        self.compare_predictor_classes_results = processed_data
+
+    def fdr_correct_p_values(self):
+        """
+        Correct p-values using False Discovery Rate (FDR) as described by Benjamini & Hochberg (1995).
+        This function works recursively to find all instances of 'p_val' in a nested dictionary structure.
+
+        Returns:
+            result_dict: dict, with corrected 'p_val_corrected' values added to the same structure.
         """
         p_values = []
-        labels = []
-        for esm_sample, data in result_dict.items():
-            for soc_int_var, comparisons in data.items():
-                for model_pair, stats in comparisons.items():
-                    p_value = stats["p"]
-                    p_values.append(p_value)
-                    labels.append((esm_sample, soc_int_var, model_pair))
-        adjusted_p_values = fdrcorrection(p_values)[1]
-        # format the p_values for the table accordingly
-        formatted_p_values = self.format_p_values(adjusted_p_values)
-        corrected_p_values_dct = {
-            label: formatted_p for label, formatted_p in zip(labels, formatted_p_values)
-        }
-        return corrected_p_values_dct
+        p_val_locations = []
+
+        # Helper function to recursively traverse the dictionary
+        def find_p_values(d):
+            for key, value in d.items():
+                if isinstance(value, dict):
+                    # Recursively search nested dictionaries
+                    find_p_values(value)
+                elif key == "p_val":
+                    # Collect the p_val and its dictionary reference
+                    p_values.append(value)
+                    p_val_locations.append((d, key))
+
+        # Start the recursive search
+        find_p_values(self.compare_model_results)
+        find_p_values(self.compare_predictor_classes_results)
+        print()
+
+        # Apply FDR correction on collected p-values
+        if p_values:
+            adjusted_p_values = fdrcorrection(p_values)[1]
+
+            # Format the p_values for the table accordingly (if you have a format function)
+            formatted_p_values = self.format_p_values(adjusted_p_values)
+
+            # Insert the corrected p-values back into the same dictionary locations
+            for i, (p_val_dict, key) in enumerate(p_val_locations):
+                p_val_dict["p_val_corrected"] = formatted_p_values[i]
+        print()
 
     @staticmethod
     def corrected_dependent_ttest(data1, data2, test_training_ratio=1 / 9):

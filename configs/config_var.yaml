@@ -1,12 +1,12 @@
 general:
   datasets_to_be_included: [ cocoesm, cocoms, cocout, emotions, pia, zpid ] # cocoesm, cocoms, cocout, emotions, pia, zpid
-  log_dir: "../logs/run_2510"  # only for preprocessing
-  log_name: run_2510
+  log_dir: "../logs/check_pl_mac_features"  # only for preprocessing
+  log_name: pl_mac_features
 
   steps:
     preprocessing: false
-    analysis: true
-    postprocessing: false
+    analysis: false
+    postprocessing: true
 
 preprocessing:
   path_to_raw_data: "../data/raw"
@@ -101,10 +101,10 @@ analysis:
   no_control_lst: ["pl", "srmc", "sens", "mac", "all_in"] # we do not run control analyses for these combinations
 
   params: # adjusted by SLURM
-    prediction_model: randomforestregressor  # elasticnet, randomforestregressor
-    crit: trait_wb  # state_wb, state_pa, state_na, trait_wb, trait_na, trait_pa
-    feature_combination: pl  # pl, srmc, sens, mac, pl_srmc, pl_sens, pl_srmc_sens, pl_mac, pl_srmc_mac, all_in
-    samples_to_include: selected  # all, selected, control
+    prediction_model: elasticnet  # elasticnet, randomforestregressor
+    crit: state_wb  # state_wb, state_pa, state_na, trait_wb, trait_na, trait_pa
+    feature_combination: pl_sens   # pl, srmc, sens, mac, pl_srmc, pl_sens, pl_srmc_sens, pl_mac, pl_srmc_mac, all_in
+    samples_to_include: control   # all, selected, control
 
   cv:
     num_inner_cv: 3  # 10
@@ -145,12 +145,12 @@ analysis:
 
   model_hyperparameters:
     elasticnet:  # verify
-      #model__regressor__alpha: [0.1, 1]
-      #model__regressor__l1_ratio: [0, 1]
-      model__regressor__alpha: [0.00001, 0.0001, 0.001, 0.01, 0.1, 1, 10, 100, 1000, 10000, 100000]
-      model__regressor__l1_ratio: [0, 0.1, 0.2, 0.3, 0.4, 0.4, 0.6, 0.7, 0.8, 0.9, 1]
-      model__regressor__max_iter: [ 1000, 10000 ]
-      model__regressor__tol: [0.1, 0.01, 0.001, 0.0001]
+      model__regressor__alpha: [0.1, 1]
+      model__regressor__l1_ratio: [0, 1]
+      #model__regressor__alpha: [0.00001, 0.0001, 0.001, 0.01, 0.1, 1, 10, 100, 1000, 10000, 100000]
+      #model__regressor__l1_ratio: [0, 0.1, 0.2, 0.3, 0.4, 0.4, 0.6, 0.7, 0.8, 0.9, 1]
+      #model__regressor__max_iter: [ 1000, 10000 ]
+      #model__regressor__tol: [0.1, 0.01, 0.001, 0.0001]
     randomforestregressor:
       #model__regressor__max_depth: [4, 6]
       #model__regressor__max_features: [ 0.2 ]
@@ -161,13 +161,13 @@ analysis:
 
   parallelize:
     parallelize_shap: true
-    shap_n_jobs: 1
+    shap_n_jobs: 3
     parallelize_inner_cv: true
-    inner_cv_n_jobs: 8
+    inner_cv_n_jobs: 3
     parallelize_shap_ia_values: true
     shap_ia_values_n_jobs: 1
     parallelize_imputation_runs: true # either parallelize runs or columns, for n_cores < 10
-    imputation_runs_n_jobs: 1
+    imputation_runs_n_jobs: 3
     joblib_backend: "threading"  # loky, threading  # for pc2, use threading, loky may crash in multi-node settings
 
   shap_ia_values:  # TODO Needs to be implemented based on our affordances
@@ -178,7 +178,7 @@ analysis:
 
 
   output_path: "../results/local_tests"
-  results_cluster_path: "../results/cluster_results"
+  results_cluster_path: "../results/cluster_results_state_wb_selected_shap"
   output_filenames:
     performance: 'cv_results.json'
     shap_values: 'shap_values.pkl'  # contains shap_values, base_values, and data
@@ -186,13 +186,24 @@ analysis:
     lin_model_coefs: 'lin_model_coefficients.json'
 
 postprocessing:
-  processed_output_path: "../results/cluster_results_processed"
+  processed_output_path: "../results/cluster_results_processed_5_shap" # "../results/cluster_results_processed"
   significance_tests:
     output_path: "../results/significance_tests"
     alpha: .05
     metric: r2
     methods:
       - xxx
+
+
+  plots:
+    shap_importance_plot:
+      prediction_model: elasticnet  # elasticnet, randomforestregressor
+      crit: state_wb
+      samples_to_include: selected
+      first_col: ["pl", "srmc", "sens", "mac"]
+      second_col: ["pl_srmc", "pl_sens", "pl_srmc_sens", "pl_mac"]
+      third_col: ["pl_srmc_mac", "all_in"]
+
 
 
 
