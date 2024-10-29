@@ -1,12 +1,12 @@
 general:
   datasets_to_be_included: [ cocoesm, cocoms, cocout, emotions, pia, zpid ] # cocoesm, cocoms, cocout, emotions, pia, zpid
-  log_dir: "../logs/check_pl_mac_features"  # only for preprocessing
-  log_name: pl_mac_features
+  log_dir: "../logs/cluster_js"  # only for preprocessing
+  log_name: cluster_js
 
   steps:
     preprocessing: false
-    analysis: false
-    postprocessing: true
+    analysis: true
+    postprocessing: false
 
 preprocessing:
   path_to_raw_data: "../data/raw"
@@ -97,14 +97,30 @@ analysis:
     pl_srmc_mac: [cocoesm]
     # 4 all_in
     all_in: [cocoesm, cocout, cocoms, emotions, pia, zpid]
+    # control analyses for pl_srmc_sens results
+    pl_srmc_control: [cocoms] # only persons with sensing data
+    srmc_control: [cocoms] # only persons with sensing data
+
+    # control analysis without the neruo facets
+    # 1
+    pl_nnse: [emotions, cocout, cocoesm, cocoms]
+    # 2  filter for "pl_" for comparisons
+    pl_srmc_nnse: [ emotions, cocout, cocoesm, cocoms ]
+    pl_sens_nnse: [ zpid, cocoms ]
+    pl_srmc_sens_nnse: [ cocoms ]
+    pl_mac_nnse: [ cocoesm ]
+    # 3
+    pl_srmc_mac_nnse: [ cocoesm ]
+    # 4 all_in
+    all_in_nnse: [ cocoesm, cocout, cocoms, emotions, pia, zpid ]
 
   no_control_lst: ["pl", "srmc", "sens", "mac", "all_in"] # we do not run control analyses for these combinations
 
   params: # adjusted by SLURM
-    prediction_model: elasticnet  # elasticnet, randomforestregressor
+    prediction_model: randomforestregressor  # elasticnet, randomforestregressor
     crit: state_wb  # state_wb, state_pa, state_na, trait_wb, trait_na, trait_pa
-    feature_combination: pl_sens   # pl, srmc, sens, mac, pl_srmc, pl_sens, pl_srmc_sens, pl_mac, pl_srmc_mac, all_in
-    samples_to_include: control   # all, selected, control
+    feature_combination: pl_srmc_sens_nnse   # pl, srmc, sens, mac, pl_srmc, pl_sens, pl_srmc_sens, pl_mac, pl_srmc_mac, all_in
+    samples_to_include: all   # all, selected, control
 
   cv:
     num_inner_cv: 3  # 10
@@ -145,12 +161,12 @@ analysis:
 
   model_hyperparameters:
     elasticnet:  # verify
-      model__regressor__alpha: [0.1, 1]
-      model__regressor__l1_ratio: [0, 1]
-      #model__regressor__alpha: [0.00001, 0.0001, 0.001, 0.01, 0.1, 1, 10, 100, 1000, 10000, 100000]
-      #model__regressor__l1_ratio: [0, 0.1, 0.2, 0.3, 0.4, 0.4, 0.6, 0.7, 0.8, 0.9, 1]
-      #model__regressor__max_iter: [ 1000, 10000 ]
-      #model__regressor__tol: [0.1, 0.01, 0.001, 0.0001]
+      #model__regressor__alpha: [0.1, 1]
+      #model__regressor__l1_ratio: [0, 1]
+      model__regressor__alpha: [0.00001, 0.0001, 0.001, 0.01, 0.1, 1, 10, 100, 1000, 10000, 100000]
+      model__regressor__l1_ratio: [0, 0.1, 0.2, 0.3, 0.4, 0.4, 0.6, 0.7, 0.8, 0.9, 1]
+      model__regressor__max_iter: [ 1000, 10000 ]
+      model__regressor__tol: [0.1, 0.01, 0.001, 0.0001]
     randomforestregressor:
       #model__regressor__max_depth: [4, 6]
       #model__regressor__max_features: [ 0.2 ]
@@ -170,11 +186,11 @@ analysis:
     imputation_runs_n_jobs: 3
     joblib_backend: "threading"  # loky, threading  # for pc2, use threading, loky may crash in multi-node settings
 
-  shap_ia_values:  # TODO Needs to be implemented based on our affordances
+  shap_ia_values:
     comp_shap_ia_values: false
-    min_order: 2  # min interaction order, we already got 1 (the normal SHAP values)
+    min_order: 0  # min interaction order, we already got 1 (the normal SHAP values)
     max_order: 3  # max interaction order, one correspond to the normal SHAP values
-    budget: x  # budget for computation
+    budget: 200  # budget for computation
 
 
   output_path: "../results/local_tests"

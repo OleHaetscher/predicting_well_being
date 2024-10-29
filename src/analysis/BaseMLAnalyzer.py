@@ -216,6 +216,11 @@ class BaseMLAnalyzer(ABC):
                 # df_filtered = self.df[self.df[sens_columns].notna().any(axis=1)]   # This was wrong
                 df_filtered = df_filtered[df_filtered[sens_columns].notna().any(axis=1)]
 
+            # New -> Add control analysis with reduced samples
+            if "_control" in self.feature_combination:
+                sens_columns = [col for col in self.df.columns if col.startswith("sens_")]
+                df_filtered = df_filtered[df_filtered[sens_columns].notna().any(axis=1)]
+
         else:  # include all datasets with available criterion
             datasets_included_filtered = [dataset for dataset in self.var_cfg["analysis"]["feature_sample_combinations"]["all_in"]
                                           if dataset in self.var_cfg["analysis"]["crit_available"][self.crit]]
@@ -228,7 +233,7 @@ class BaseMLAnalyzer(ABC):
         df_filtered_crit_na = df_filtered.dropna(subset=[crit_col])
         self.rows_dropped_crit_na = len(df_filtered) - len(df_filtered_crit_na)
 
-        #df_filtered_crit_na = df_filtered_crit_na.sample(n=300, random_state=self.var_cfg["analysis"]["random_state"])  # just for testing
+        # df_filtered_crit_na = df_filtered_crit_na.sample(n=200, random_state=self.var_cfg["analysis"]["random_state"])  # just for testing
         self.df = df_filtered_crit_na
 
     def select_features(self):
@@ -268,6 +273,12 @@ class BaseMLAnalyzer(ABC):
                 if col.startswith(feature_cat):
                     selected_columns.append(col)
 
+        # remove neuroticism facets and self-esteem for selected analysis
+        print(len(selected_columns))
+        if "nnse" in self.feature_combination:
+            to_remove = ["pl_depression", "pl_anxiety", "pl_emotional_volatility", "pl_self_esteem"]
+            selected_columns = [col for col in selected_columns if col not in to_remove]
+        print(len(selected_columns))
         X = self.df[selected_columns].copy()
 
         setattr(self, "X", X)
@@ -750,7 +761,8 @@ class BaseMLAnalyzer(ABC):
             self.model_name == "randomforestregressor"
             and self.var_cfg["analysis"]["shap_ia_values"]["comp_shap_ia_values"]
         ):
-            shap_ia_values_test = self.calculate_shap_ia_values(X_test_scaled, pipeline)
+            shap_ia_values_test = None  # TODO correct
+            # shap_ia_values_test, base_values_test = self.calculate_shap_ia_values(X_test_scaled, pipeline)
 
         else:
             shap_ia_values_test = None
