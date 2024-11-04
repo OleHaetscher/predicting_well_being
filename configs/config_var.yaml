@@ -1,7 +1,7 @@
 general:
   datasets_to_be_included: [ cocoesm, cocoms, cocout, emotions, pia, zpid ] # cocoesm, cocoms, cocout, emotions, pia, zpid
-  log_dir: "../logs/cluster_js"  # only for preprocessing
-  log_name: cluster_js
+  log_dir: "../logs/test_shapiq"  # only for preprocessing
+  log_name: run_shapiq
 
   steps:
     preprocessing: false
@@ -79,6 +79,7 @@ analysis:
     - create_pipeline
     - repeated_nested_cv
     - get_average_coefficients
+    - process_all_shap_ia_values
     - store_analysis_results  # CAUTION
 
 # for each combination, we will also use all samples and always compare it against the same samples using only pl
@@ -119,8 +120,8 @@ analysis:
   params: # adjusted by SLURM
     prediction_model: randomforestregressor  # elasticnet, randomforestregressor
     crit: state_wb  # state_wb, state_pa, state_na, trait_wb, trait_na, trait_pa
-    feature_combination: pl_srmc_sens_nnse   # pl, srmc, sens, mac, pl_srmc, pl_sens, pl_srmc_sens, pl_mac, pl_srmc_mac, all_in
-    samples_to_include: all   # all, selected, control
+    feature_combination: srmc # pl, srmc, sens, mac, pl_srmc, pl_sens, pl_srmc_sens, pl_mac, pl_srmc_mac, all_in
+    samples_to_include: all  # all, selected, control
 
   cv:
     num_inner_cv: 3  # 10
@@ -140,7 +141,7 @@ analysis:
     trait_na: [cocoesm, cocout, cocoms, pia, zpid]
 
   imputation:
-    num_imputations: 1  # 5
+    num_imputations: 5  # 5
     max_iter: 1 # 40
     conv_thresh: 0.05  # 0.05  only RFR
     tree_max_depth: 10  # only RFR
@@ -168,7 +169,7 @@ analysis:
       model__regressor__max_iter: [ 1000, 10000 ]
       model__regressor__tol: [0.1, 0.01, 0.001, 0.0001]
     randomforestregressor:
-      #model__regressor__max_depth: [4, 6]
+      #model__regressor__max_depth: [ 4 ]
       #model__regressor__max_features: [ 0.2 ]
       model__regressor__n_estimators: [ 100, 500 ]
       model__regressor__max_features: [ 0.25, 0.5, 0.75]
@@ -177,32 +178,33 @@ analysis:
 
   parallelize:
     parallelize_shap: true
-    shap_n_jobs: 3
+    shap_n_jobs: 1
     parallelize_inner_cv: true
-    inner_cv_n_jobs: 3
+    inner_cv_n_jobs: 1
     parallelize_shap_ia_values: true
-    shap_ia_values_n_jobs: 1
+    shap_ia_values_n_jobs: 3
     parallelize_imputation_runs: true # either parallelize runs or columns, for n_cores < 10
-    imputation_runs_n_jobs: 3
-    joblib_backend: "threading"  # loky, threading  # for pc2, use threading, loky may crash in multi-node settings
+    imputation_runs_n_jobs: 1
+    joblib_backend: "threading"  # threading; for pc2, use threading, loky may crash in multi-node settings
 
   shap_ia_values:
-    comp_shap_ia_values: false
-    min_order: 0  # min interaction order, we already got 1 (the normal SHAP values)
-    max_order: 3  # max interaction order, one correspond to the normal SHAP values
-    budget: 200  # budget for computation
-
+    comp_shap_ia_values: true # true
+    interaction_index: "k-SII"
+    min_order: 0  # 0; min interaction order, always choose 0
+    max_order: 3  # 3; max interaction order, one correspond to the normal SHAP values
+    num_samples: 100  # 100
 
   output_path: "../results/local_tests"
-  results_cluster_path: "../results/cluster_results_state_wb_selected_shap"
+  results_cluster_path: "../results/cluster_results_6_shap"
   output_filenames:
     performance: 'cv_results.json'
     shap_values: 'shap_values.pkl'  # contains shap_values, base_values, and data
-    shap_ia_values: 'shap_ia_values.pkl'
+    shap_ia_values_for_local: 'shap_ia_values_for_local.pkl'
+    shap_ia_values_for_cluster: 'shap_ia_values_for_cluster.pkl'
     lin_model_coefs: 'lin_model_coefficients.json'
 
 postprocessing:
-  processed_output_path: "../results/cluster_results_processed_5_shap" # "../results/cluster_results_processed"
+  processed_output_path: "../results/cluster_results_processed_6_shap" # "../results/cluster_results_processed"
   significance_tests:
     output_path: "../results/significance_tests"
     alpha: .05

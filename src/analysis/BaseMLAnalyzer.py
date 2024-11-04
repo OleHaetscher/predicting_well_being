@@ -1,6 +1,7 @@
 import gc
 import hashlib
 import inspect
+import itertools
 import json
 import os
 import pickle
@@ -121,6 +122,8 @@ class BaseMLAnalyzer(ABC):
         self.impute_datasets_for_fold = self.timer._decorator(self.impute_datasets_for_fold)
         self.clocked_grid_search_fit = self.timer._decorator(self.clocked_grid_search_fit)
 
+        self.calculate_shap_ia_values = self.timer._decorator(self.calculate_shap_ia_values)
+
         # Data
         self.df = df
         self.X = None
@@ -131,7 +134,15 @@ class BaseMLAnalyzer(ABC):
         self.best_models = {}
         self.repeated_nested_scores = {}
         self.shap_results = {'shap_values': {}, "base_values": {}, "data": {}}
-        self.shap_ia_values = {}  # ggfs adjust
+        self.shap_ia_results = {'shap_ia_values': {}, "base_values": {}}
+        self.shap_ia_results_reps_imps = {'shap_ia_values': {}, "base_values": {}}  # Store these only on the cluster due to big size
+
+        self.shap_ia_results_processed = {'top_interactions': {},  # this can be transfered to the local computer
+                                          'top_interacting_features': {},
+                                          'ia_value_agg_reps_imps_samples': {},
+                                          'ia_values_sample': {},
+                                          'base_values_sample': {},
+                                          }
         self.lin_model_coefs = {}  # ggfs adjust
 
         # Defined in subclass
@@ -147,6 +158,11 @@ class BaseMLAnalyzer(ABC):
         self.id_grouping_col = self.var_cfg["analysis"]["cv"]["id_grouping_col"]
         self.country_grouping_col = self.var_cfg["analysis"]["imputation"]["country_grouping_col"]
         self.years_col = self.var_cfg["analysis"]["imputation"]["years_col"]
+
+        # Attributes for shap_ia_values
+        self.combo_index_mapping = None
+        self.feature_index_mapping = None
+        self.num_combos = None
 
         self.meta_vars = [self.id_grouping_col, self.country_grouping_col, self.years_col]
 
@@ -233,7 +249,7 @@ class BaseMLAnalyzer(ABC):
         df_filtered_crit_na = df_filtered.dropna(subset=[crit_col])
         self.rows_dropped_crit_na = len(df_filtered) - len(df_filtered_crit_na)
 
-        # df_filtered_crit_na = df_filtered_crit_na.sample(n=200, random_state=self.var_cfg["analysis"]["random_state"])  # just for testing
+        #df_filtered_crit_na = df_filtered_crit_na.sample(n=100, random_state=self.var_cfg["analysis"]["random_state"])  # just for testing
         self.df = df_filtered_crit_na
 
     def select_features(self):
@@ -559,6 +575,7 @@ class BaseMLAnalyzer(ABC):
             rep_base_values,
             rep_data,
             ia_test_shap_values,
+            base_values,
         ) = self.summarize_shap_values_outer_cv(
             X_test_imputed_lst=X_test_imputed_lst,
             X=X_filtered,
@@ -578,6 +595,7 @@ class BaseMLAnalyzer(ABC):
             rep_base_values,
             rep_data,
             ia_test_shap_values,
+            base_values,
         )
 
     def clocked_grid_search_fit(self, grid_search: GridSearchCV, X_train: pd.DataFrame, y_train: pd.Series, groups: pd.Series):
@@ -761,11 +779,20 @@ class BaseMLAnalyzer(ABC):
             self.model_name == "randomforestregressor"
             and self.var_cfg["analysis"]["shap_ia_values"]["comp_shap_ia_values"]
         ):
-            shap_ia_values_test = None  # TODO correct
-            # shap_ia_values_test, base_values_test = self.calculate_shap_ia_values(X_test_scaled, pipeline)
+            if self.combo_index_mapping is None:
+                combo_index_mapping, feature_index_mapping, num_combos = self.create_index_mappings(X_test)
+                self.combo_index_mapping = combo_index_mapping
+                self.feature_index_mapping = feature_index_mapping
+                self.num_combos = num_combos
+            shap_ia_values_arr, shap_ia_base_values_arr = self.calculate_shap_ia_values(
+                X_scaled=X_test_scaled,
+                pipeline=pipeline,
+                combo_index_mapping=self.combo_index_mapping,
+            )
 
         else:
-            shap_ia_values_test = None
+            shap_ia_values_arr = None
+            shap_ia_base_values_arr = None
 
         return (
             shap_values_test,
@@ -774,8 +801,24 @@ class BaseMLAnalyzer(ABC):
             # X_test,
             num_test_indices[num_cv_],
             # num_cv_,
-            shap_ia_values_test,
+            shap_ia_values_arr,
+            shap_ia_base_values_arr
         )
+
+    def calculate_shap_ia_values(self, X_scaled: pd.DataFrame, pipeline: Pipeline, combo_index_mapping: dict):
+        """
+        Placeholder method to compute SHAP interaction values.
+
+        Args:
+            X_scaled:
+            pipeline:
+            combo_index_mapping:
+
+        Returns:
+            dict:
+            list(float):
+        """
+        raise NotImplementedError("Subclasses should implement this method")
 
     def summarize_shap_values_outer_cv(self,
                                        X_test_imputed_lst: list[list[pd.DataFrame]],
@@ -851,7 +894,7 @@ class BaseMLAnalyzer(ABC):
                     base_values_template,
                     X_test_scaled,
                     test_idx,
-                    # _,
+                    _,
                     _,
             ) in enumerate(fold_results):
                 # Aggregate results for the current fold and imputation
@@ -860,34 +903,70 @@ class BaseMLAnalyzer(ABC):
                 rep_data[test_idx, :, num_imputation] += X_test_scaled.astype(np.float32)
 
         # We need to divide the base values, because we get base_values in every outer fold
-        # Test if the SHAP assumptions hold with this procedure and plotting is possible
         rep_base_values = rep_base_values / self.num_outer_cv
 
-        # TODO adjust
         if (
             self.model_name == "randomforestregressor"
             and self.var_cfg["analysis"]["shap_ia_values"]["comp_shap_ia_values"]
         ):
-            ia_test_shap_values = np.zeros((X.shape[0], X.shape[1], X.shape[1]))
-            # Aggregate results from all folds
-            for (
-                #_,
-                #_,
-                #_,
-                #test_idx,
-                #_,
-                test_ia_shap_template,
-            ) in results:
-                ia_test_shap_values[test_idx, :, :] += test_ia_shap_template
+            ia_test_shap_values = np.zeros((X.shape[0], self.num_combos, self.num_imputations), dtype=np.float32)
+            ia_test_base_values = np.zeros((X.shape[0], self.num_imputations), dtype=np.float32)  # we get different base values per fold
+
+            # Aggregate results from all folds and imputations for SHAP-IA Values
+            for num_cv_, fold_results in enumerate(results):
+                for num_imputation, (
+                        _,
+                        _,
+                        _,
+                        test_idx,
+                        shap_ia_values_arr,
+                        shap_ia_base_values_arr,
+                ) in enumerate(fold_results):
+                    ia_test_shap_values[test_idx, :, num_imputation] += shap_ia_values_arr
+                    ia_test_base_values[test_idx, num_imputation] += shap_ia_base_values_arr
         else:
             ia_test_shap_values = None
+            ia_test_base_values = None
 
         return (
             rep_shap_values,
             rep_base_values,
             rep_data,
             ia_test_shap_values,
+            ia_test_base_values,
         )
+
+    def create_index_mappings(self, X):
+        """
+        This function creates a unambiguous mapping between feature combinations (based on their indices)
+        and numerical indices in a numpy array, used to store the shap_ia_values efficiently.
+        Additionally, it creates a mapping between feature_indices and feature_names, as the SHAP-IQ explainer just return
+        feature indices
+
+        Args:
+            feature_indices:
+
+        Returns:
+            dict:
+            dict:
+            int:
+        """
+        min_order_shap = self.var_cfg["analysis"]["shap_ia_values"]["min_order"]
+        max_order_shap = self.var_cfg["analysis"]["shap_ia_values"]["max_order"]
+        num_features = X.shape[1]
+        feature_indices = range(num_features)
+        feature_names = X.columns
+
+        feature_to_index = {feature_idx: feature for feature_idx, feature in zip(feature_indices, feature_names)}
+
+        combinations = []
+        for r in range(min_order_shap, max_order_shap+1):  # TODO verify that this indeed matches the output
+            combinations.extend(itertools.combinations(feature_indices, r))
+
+        # Map each combination to a unique index
+        combination_to_index = {idx: combination for idx, combination in enumerate(combinations)}
+
+        return combination_to_index, feature_to_index, len(combinations)
 
     def repeated_nested_cv(self, comm=None):
         # Initialize MPI
@@ -945,134 +1024,23 @@ class BaseMLAnalyzer(ABC):
                     rep_shap_values,
                     rep_base_values,
                     rep_data,
-                    shap_ia_values_test,
+                    rep_shap_ia_values_test,
+                    rep_shap_ia_base_values,
             ) in enumerate(final_results):
                 self.best_models[f"rep_{rep}"] = best_models
                 self.shap_results["shap_values"][f"rep_{rep}"] = rep_shap_values
                 self.shap_results["base_values"][f"rep_{rep}"] = rep_base_values
                 self.shap_results["data"][f"rep_{rep}"] = rep_data
                 self.repeated_nested_scores[f"rep_{rep}"] = nested_scores_rep
-                print()
 
-                if (
-                        self.model_name == "randomforestregressor"
-                        and self.var_cfg["analysis"]["shap_ia_values"]["comp_shap_ia_values"]
-                ):
-                    self.summarize_shap_interaction_values(
-                        shap_ia_values=shap_ia_values_test, columns=X.columns, dataset="test"
-                    )
+                self.shap_ia_results["shap_ia_values"][f"rep_{rep}"] = rep_shap_ia_values_test
+                self.shap_ia_results["base_values"][f"rep_{rep}"] = rep_shap_ia_base_values
+                print()
 
             for rep in range(len(self.repeated_nested_scores)):
                 print(f"scores for rep {rep}: ", self.repeated_nested_scores[f"rep_{rep}"])
         else:
             pass  # Other ranks do nothing further
-
-    def summarize_shap_interaction_values(self, shap_ia_values, columns, dataset):
-        """
-        This function is used for summarizing the raw interactions values of shape (n_samples, n_features, n_features).
-        1) It summarizes the raw and the absolute shap values across samples
-        2) It identifies the most influential interaction per person and stores a) the variables and
-           b) the pairs that interacts most in two dictionaries
-        3) It summarizes the interaction values across features and samples, so that for each feature there
-           is a score reflecting a "global" interaction value
-        All results are stored as key:value pairs in the attribute self.shap_ia_values
-
-        Args:
-            shap_ia_values: ndarray, containing the IA values, Shap (n_samples x n_features xn_features)
-            columns: pd.Index, Features corresponding to n_features in shap_ia_values
-            dataset: str, "train" or "test"
-        """
-        # Rescale all shap_ia_values -> + 1 Mio -> is reverted in the ShapValueAnalyzer
-        # TODO: do not do this
-        shap_ia_values = shap_ia_values * 1000000
-
-        # 1) Summarize across persons
-        ia_across_persons = shap_ia_values.mean(0)
-        ia_across_persons_df = pd.DataFrame(
-            ia_across_persons, index=columns, columns=columns
-        )
-        ia_across_persons_dct = {
-            col: {
-                row: value for row, value in ia_across_persons_df[col].items()
-            }  # keep the main effects
-            for col in ia_across_persons_df.columns
-        }
-        abs_ia_across_persons = np.abs(shap_ia_values).mean(0)
-        abs_ia_across_persons_df = pd.DataFrame(
-            abs_ia_across_persons, index=columns, columns=columns
-        )
-        abs_ia_across_persons_dct = {
-            col: {
-                row: value for row, value in abs_ia_across_persons_df[col].items()
-            }  # keep the main effects
-            for col in abs_ia_across_persons_df.columns
-        }
-
-        # 2) Most influential interactions
-        mask = np.eye(len(columns), dtype=bool)
-        most_influential_ia_per_person = np.array(
-            [
-                np.unravel_index(
-                    np.nanargmax(
-                        np.where(mask, np.nan, np.abs(shap_ia_values[i, :, :]))
-                    ),
-                    (len(columns), len(columns)),
-                )
-                for i in range(shap_ia_values.shape[0])
-            ]
-        )
-        most_influential_interaction_df = pd.DataFrame(
-            [
-                (columns[row], columns[col])
-                for row, col in most_influential_ia_per_person
-            ],
-            columns=["Feature 1", "Feature 2"],
-        )
-        feature_counts = most_influential_interaction_df.apply(
-            pd.Series.value_counts
-        ).sum(axis=1)
-        feature_count_dict = feature_counts.sort_values(ascending=False).to_dict()
-        unordered_pairs = most_influential_interaction_df.apply(
-            lambda row: tuple(sorted([row["Feature 1"], row["Feature 2"]])), axis=1
-        )
-        unordered_pairs_as_strings = [
-            str(pair) for pair in unordered_pairs
-        ]  # Convert tuples to strings
-        pair_counts_dct = pd.Series(unordered_pairs_as_strings).value_counts().to_dict()
-
-        # 3) Summarize across persons and features
-        agg_ia_across_persons_ias = np.nanmean(
-            np.where(mask, np.nan, shap_ia_values), axis=(0, 1)
-        )
-        agg_ia_across_persons_ias_df = pd.DataFrame(
-            agg_ia_across_persons_ias, index=columns, columns=["agg_ia_val"]
-        )
-        agg_ia_across_persons_ias_dct = agg_ia_across_persons_ias_df[
-            "agg_ia_val"
-        ].to_dict()
-        abs_agg_ia_across_persons_ias = np.nanmean(
-            np.abs(np.where(mask, np.nan, shap_ia_values)), axis=(0, 1)
-        )
-        abs_agg_ia_across_persons_ias_df = pd.DataFrame(
-            abs_agg_ia_across_persons_ias, index=columns, columns=["agg_ia_val"]
-        )
-        abs_agg_ia_across_persons_ias_dct = abs_agg_ia_across_persons_ias_df[
-            "agg_ia_val"
-        ].to_dict()
-
-        # Set the aggregates in the class attribute Dict
-        self.shap_ia_values[dataset]["agg_ia_persons"] = ia_across_persons_dct
-        self.shap_ia_values[dataset]["abs_agg_ia_persons"] = abs_ia_across_persons_dct
-        self.shap_ia_values[dataset][
-            "most_influential_ia_features"
-        ] = feature_count_dict
-        self.shap_ia_values[dataset]["most_influential_ia_pairs"] = pair_counts_dct
-        self.shap_ia_values[dataset][
-            "agg_ia_persons_ias"
-        ] = agg_ia_across_persons_ias_dct
-        self.shap_ia_values[dataset][
-            "abs_agg_ia_persons_ias"
-        ] = abs_agg_ia_across_persons_ias_dct
 
     def store_analysis_results(self):
         """This function stores the prediction results and the SHAP values / Shap interaction values as .JSON files."""
@@ -1100,15 +1068,23 @@ class BaseMLAnalyzer(ABC):
                 pickle.dump(shap_values, f)
 
             # SHAP IA values
-            if self.shap_ia_values:
-                shap_ia_values = self.shap_ia_values
-                shap_ia_values["feature_names"] = self.X.columns
-                shap_ia_values_filename = os.path.join(
+            if self.shap_ia_results_reps_imps:  # this may stay on the cluster due to sample size
+                shap_ia_values_for_cluster = self.shap_ia_results_reps_imps
+                shap_ia_values_filename_cluster = os.path.join(
                     self.spec_output_path,
-                    self.var_cfg["analysis"]["output_filenames"]["shap_ia_values"]
+                    self.var_cfg["analysis"]["output_filenames"]["shap_ia_values_for_cluster"]
                 )
-                with open(shap_ia_values_filename, "w") as file:
-                    json.dump(shap_ia_values, file, indent=4)
+                with open(shap_ia_values_filename_cluster, "wb") as file:
+                    pickle.dump(shap_ia_values_for_cluster, file)
+
+            if self.shap_ia_results_processed:
+                shap_ia_values_for_local = self.shap_ia_results_processed
+                shap_ia_values_filename_local = os.path.join(
+                    self.spec_output_path,
+                    self.var_cfg["analysis"]["output_filenames"]["shap_ia_values_for_local"]
+                )
+                with open(shap_ia_values_filename_local, "wb") as file:
+                    pickle.dump(shap_ia_values_for_local, file)
 
             # Lin model coefficients
             if self.lin_model_coefs:
@@ -1122,6 +1098,10 @@ class BaseMLAnalyzer(ABC):
 
     def get_average_coefficients(self):
         """Gets the coefficients of linear models of the predictions, implemented in the linear model subclass."""
+        pass
+
+    def process_all_shap_ia_values(self):
+        """Aggregates shap interaction values, implemented in the RFR subclass."""
         pass
 
     def calculate_shap_values(self, X_scaled, pipeline):
