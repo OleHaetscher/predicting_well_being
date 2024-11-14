@@ -1,16 +1,18 @@
 import os
 import pickle
+import random
+import string
 from collections import defaultdict
 
 import numpy as np
 import pandas as pd
 import shap
 import matplotlib.pyplot as plt
+import shutil
 
 from src.utils.DataLoader import DataLoader
 
 
-# TODO: This should
 class ShapProcessor:
     """
     This class processes the SHAP values. It
@@ -28,7 +30,7 @@ class ShapProcessor:
         self.data_importance_plot = None
         self.data_violin_plot = None
 
-    def aggregate_shap_values(self):
+    def aggregate_shap_values(self, feature_mappings):
         """
         This function compoutes the mean and the sd across 500 outer folds for
             - the shap values
@@ -48,7 +50,8 @@ class ShapProcessor:
                 shap_values = self.data_loader.read_pkl(shap_values_path)
                 shap_values["feature_names"] = self.process_feature_names(
                     feature_names=shap_values["feature_names"].copy(),
-                    rel_path=rel_path
+                    rel_path=rel_path,
+                    feature_mappings=feature_mappings
                 )
                 shap_values_processed = self.compute_mean_sd(shap_value_dct=shap_values)
                 output_path = os.path.join(self.processed_output_path, rel_path, "shap_values_processed.pkl")
@@ -59,13 +62,64 @@ class ShapProcessor:
                 print("stored shap values processed in: ", output_path)
                 # This may be the place to apply the feature assignment correction
 
-    def prepare_importance_plot_data(self):
+    def merge_folders(self, source1: str, source2: str, merged_folder: str):
+        """
+        This is used to merge folders with processed shap_values to account for data from different sources. We do this
+        here as copying the unprocessed shap values may consume to much storage
+
+        Args:
+            source1:
+            source2:
+            merged_folder:
+
+        """
+        # Create the merged folder if it doesn't exist
+        os.makedirs(merged_folder, exist_ok=True)
+
+        # Step 1: Copy all contents from source1 into merged_folder
+        for root, dirs, files in os.walk(source1):
+            # Get relative path for the current directory
+            rel_path = os.path.relpath(root, source1)
+            target_dir = os.path.join(merged_folder, rel_path)
+
+            # Create directories as needed in the target location
+            os.makedirs(target_dir, exist_ok=True)
+
+            # Copy files to the merged folder
+            for file in files:
+                src_file = os.path.join(root, file)
+                dest_file = os.path.join(target_dir, file)
+                shutil.copy2(src_file, dest_file)
+
+        # Step 2: Process files from source2
+        for root, dirs, files in os.walk(source2):
+            rel_path = os.path.relpath(root, source2)
+            target_dir = os.path.join(merged_folder, rel_path)
+
+            for file in files:
+                src_file = os.path.join(root, file)
+                dest_file = os.path.join(target_dir, file)
+
+                # Check if it's a log file
+                if "log" in file:
+                    os.makedirs(target_dir, exist_ok=True)
+                    shutil.copy2(src_file, dest_file)
+                else:
+                    # Check for .json and .pkl files in case of conflicts
+                    if os.path.isfile(dest_file) and (file.endswith(".json") or file.endswith(".pkl")):
+                        # Conflict detected; keeping version from source1
+                        print(f"Conflict detected for {os.path.relpath(dest_file, merged_folder)}. Keeping version from {source1}.")
+                    else:
+                        # Copy file from source2 if no conflict or if it's a new file
+                        os.makedirs(target_dir, exist_ok=True)
+                        shutil.copy2(src_file, dest_file)
+
+        print(f"Merging complete. Results stored in {merged_folder}")
+
+    def prepare_data(self, model_to_plot: str, crit_to_plot: str, samples_to_include: str):
+        print("XXX")
         # Initialize the root result dictionary with nested defaultdicts
         result_dct = self.nested_dict()
-
-        model_to_plot = self.var_cfg["postprocessing"]["plots"]["shap_importance_plot"]["prediction_model"]
-        crit_to_plot = self.var_cfg["postprocessing"]["plots"]["shap_importance_plot"]["crit"]
-        samples_to_include = self.var_cfg["postprocessing"]["plots"]["shap_importance_plot"]["samples_to_include"]
 
         # Traverse the directory structure
         for root, dirs, files in os.walk(self.processed_output_path):
@@ -86,7 +140,10 @@ class ShapProcessor:
                         shap_values = self.data_loader.read_pkl(shap_values_path)
 
                         # Apply name mapping
-                        feature_names = self.apply_name_mapping(shap_values["feature_names"])
+                        feature_names = shap_values["feature_names"]
+                        # TODO sauberer klären
+                        feature_names = [name for name in feature_names if name.startswith("mac")] + [name for name in feature_names if not name.startswith("mac")]
+                        feature_names = self.apply_name_mapping(feature_names)
 
                         # Recreate explanation objects
                         shap_exp = self.recreate_shap_exp_objects(
@@ -96,12 +153,13 @@ class ShapProcessor:
                             feature_names=feature_names,
                         )
                         # Store explanation objects in the nested defaultdict structure
-                        result_dct[crit][samples][model][predictor_combination] = shap_exp
+                        # result_dct[crit][samples][model][predictor_combination] = shap_exp
+                        result_dct[predictor_combination] = shap_exp
+        return result_dct
         # Convert nested defaultdict structure to a regular dictionary
-        self.data_importance_plot = self.defaultdict_to_dict(result_dct)
+        # self.data_importance_plot = self.defaultdict_to_dict(result_dct)
 
-        # TODO We may adjust this, but for now, this is ok
-        self.data_violin_plot = self.defaultdict_to_dict(result_dct)
+        # self.data_violin_plot = self.defaultdict_to_dict(result_dct)
 
     def apply_name_mapping(self, features: list) -> list:
         """
@@ -190,7 +248,7 @@ class ShapProcessor:
         return results
 
     @staticmethod
-    def process_feature_names(feature_names, rel_path):
+    def process_feature_names(feature_names, rel_path, feature_mappings):
         """
         This function processes the feature names. It
             - removes the meta-columns
@@ -206,12 +264,20 @@ class ShapProcessor:
         meta_vars = [col for col in feature_names if col.startswith("other")]
         feature_names_processed = [col for col in feature_names if col not in meta_vars]
 
+        if "_mac" in rel_path:
+            #feature_names_processed
+            #cols = df.columns[3:]
+            for feat_combo, mapping in feature_mappings.items():
+                if len(feature_names_processed) == len(mapping):
+                    feature_names_processed = [mapping.get(col, col) for col in feature_names_processed]
+                else:
+                    continue
+        return feature_names_processed
+
         #if "mac" in rel_path:
         #    country_feature_lst = [col for col in feature_names_processed if col.startswith("mac")]
         #    individual_feature_lst = [col for col in feature_names_processed if not col.startswith("mac")]
         #    feature_names_processed = individual_feature_lst + country_feature_lst
-
-        return feature_names_processed
 
     def recreate_explanation_objects(self):
         """

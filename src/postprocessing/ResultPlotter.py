@@ -1,3 +1,8 @@
+import os
+import random
+import string
+from typing import Callable
+
 import matplotlib.pyplot as plt
 import numpy as np
 import shap
@@ -13,8 +18,10 @@ class ResultPlotter:
         - Plotting the data
         - Adjusting the format
     """
-    def __init__(self, var_cfg):
+    def __init__(self, var_cfg, plot_base_dir):
         self.var_cfg = var_cfg
+        self.plot_base_dir = os.path.join(plot_base_dir, "plots")  # this is the folder containing the processed final results
+        self.store_plots = self.var_cfg["postprocessing"]["plots"]["store_plots"]
 
     def plot_cv_results(self, processed_cv_result_dict: dict) -> None:
         """
@@ -135,7 +142,7 @@ class ResultPlotter:
 
         """
         data_current = data[crit][samples_to_include][model]
-        fig, axes = self.create_grid(num_rows=4, num_cols=3, figsize=(20,15), empty_cells=[(2, 2), (3, 2)])
+        fig, axes = self.create_grid(num_rows=4, num_cols=3, figsize=(20, 15), empty_cells=[(2, 2), (3, 2)])
 
         # Define the arrangement of predictor combinations in the grid
         first_col = ["pl", "srmc", "sens", "mac"]
@@ -160,21 +167,6 @@ class ResultPlotter:
             if predictor_combination in data_current:
                 shap_values = data_current[predictor_combination]
 
-                ### TODO Remove and find fault
-                feature_names =shap_values.feature_names.copy()
-                if "Power distance" in feature_names:
-                    reordered_feature_names = feature_names
-                    #index = feature_names.index("Power distance")
-                    #reordered_feature_names = feature_names[index:] + feature_names[:index]
-                    #print("changed feature order for", predictor_combination)
-                else:
-                    reordered_feature_names = feature_names
-
-                shap_values = shap.Explanation(values=shap_values.values,
-                                               base_values=shap_values.base_values,
-                                               data=shap_values.data,
-                                               feature_names=reordered_feature_names)
-
                 ax = axes[row][col]
                 # Plot the SHAP importance plot in the specified subplot
                 shap.plots.bar(
@@ -192,87 +184,87 @@ class ResultPlotter:
         # Adjust layout and display the figure
         # Save the plot
         plt.tight_layout()
-        plot_name = f"{crit}_{model}_imp.png"
-        plt.savefig(plot_name, format='png', dpi=300)  # You can adjust the format and DPI as needed
-        plt.close()
+        plt.show()
+        #plot_name = f"{crit}_{model}_imp.png"
+        #plt.savefig(plot_name, format='png', dpi=300)  # You can adjust the format and DPI as needed
+        #plt.close()
 
-    def plot_shap_beeswarm_plot(self, data: dict, crit: str, samples_to_include: str, model: str):
+    def plot_shap_beeswarm_plots(self, prepare_data_func: Callable):
         """
         Plots SHAP beeswarm plots for different predictor combinations arranged in a grid.
 
         Args:
-            data: Nested dictionary containing shap_values.
-            crit: Criterion to filter data.
-            samples_to_include: Which samples to include.
-            model: Model name.
+            prepare_data_func
 
         Returns:
             None
         """
-        # Extract the relevant data
-        data_current = data[crit][samples_to_include][model]
+        crits = self.var_cfg["postprocessing"]["plots"]["shap_importance_plot"].get("crit", [])
+        samples_to_include_list = self.var_cfg["postprocessing"]["plots"]["shap_importance_plot"].get("samples_to_include", [])
+        models = self.var_cfg["postprocessing"]["plots"]["shap_importance_plot"].get("prediction_model", [])
 
-        # Create a grid of subplots with specified empty cells
-        fig, axes = self.create_grid(num_rows=4, num_cols=3, figsize=(20, 30), empty_cells=[(2, 2), (3, 2)])
+        # Iterate over each combination of crit, samples_to_include, and model
+        for crit in crits:
+            for samples_to_include in samples_to_include_list:
+                for model in models:
+                    data_current = prepare_data_func(crit_to_plot=crit, samples_to_include=samples_to_include, model_to_plot=model)
 
-        # fig.set_size_inches(18, 24)
-        # Define the arrangement of predictor combinations in the grid
-        first_col = ["pl", "srmc", "sens", "mac"]
-        second_col = ["pl_srmc", "pl_sens", "pl_srmc_sens", "pl_mac"]
-        third_col = ["pl_srmc_mac", "all_in"]
+                    print("### Plot combination:", samples_to_include, crit, model)
 
-        # Define the predictor combinations
-        predictor_combinations = [
-            "pl", "srmc", "sens", "mac",
-            "pl_srmc", "pl_sens", "pl_srmc_sens", "pl_mac",
-            "pl_srmc_mac", "all_in"
-        ]
+                    # Create a grid of subplots with specified empty cells
+                    fig, axes = self.create_grid(num_rows=4, num_cols=3, figsize=(40, 30))  # , empty_cells=[(2, 2), (3, 2)])
 
-        # Map predictor combinations to their positions in the grid
-        positions = {}
-        # First column
-        for row, predictor_combination in enumerate(first_col):
-            positions[(row, 0)] = predictor_combination
-        # Second column
-        for row, predictor_combination in enumerate(second_col):
-            positions[(row, 1)] = predictor_combination
-        # Third column
-        for row, predictor_combination in enumerate(third_col):
-            positions[(row, 2)] = predictor_combination
-        # Empty positions are at (2, 2) and (3, 2)
+                    # Define the arrangement of predictor combinations in the grid
+                    first_col = self.var_cfg["postprocessing"]["plots"]["shap_importance_plot"]["first_col"]
+                    second_col = self.var_cfg["postprocessing"]["plots"]["shap_importance_plot"]["second_col"]
+                    third_col = self.var_cfg["postprocessing"]["plots"]["shap_importance_plot"]["third_col"]
 
-        # Iterate over the positions and plot the SHAP beeswarm plots
-        for (row, col), predictor_combination in positions.items():
-            if predictor_combination in data_current:
-                shap_values = data_current[predictor_combination]
-                ax = axes[row][col]
-                # Set the current axis to the subplot
-                plt.sca(ax)
-                # Plot the SHAP beeswarm plot in the specified subplot
-                shap.plots.beeswarm(
-                    shap_values,
-                    max_display=5,
-                    show=False,
-                    color_bar=False,
-                    plot_size=None,
-                    alpha=0.6,
-                    s=3
-                )
-                # Set the title of the subplot to the predictor combination name
-                ax.set_title(predictor_combination, fontsize=22)
-                ax.tick_params(axis='both', which='major', labelsize=13)
-            else:
-                print(f"Predictor combination '{predictor_combination}' not found in data.")
+                    # Map predictor combinations to their positions in the grid
+                    positions = {}
+                    # First column
+                    for row, predictor_combination in enumerate(first_col):
+                        positions[(row, 0)] = predictor_combination
+                    # Second column
+                    for row, predictor_combination in enumerate(second_col):
+                        positions[(row, 1)] = predictor_combination
+                    # Third column
+                    for row, predictor_combination in enumerate(third_col):
+                        positions[(row, 2)] = predictor_combination
+                    # Empty positions are at (2, 2) and (3, 2)
 
-        # Hide any unused subplots
-        for idx in range(len(predictor_combinations), len(axes)):
-            fig.delaxes(axes[idx])
+                    # Iterate over the positions and plot the SHAP beeswarm plots
+                    for (row, col), predictor_combination in positions.items():
+                        if predictor_combination in data_current:
+                            shap_values = data_current[predictor_combination]
+                            ax = axes[row][col]
+                            # Set the current axis to the subplot
+                            plt.sca(ax)
+                            # Plot the SHAP beeswarm plot in the specified subplot
+                            shap.plots.beeswarm(
+                                shap_values,
+                                max_display=self.var_cfg["postprocessing"]["plots"]["shap_importance_plot"]["num_to_display"],
+                                show=False,
+                                color_bar=False,
+                                plot_size=None,
+                                alpha=0.6,
+                                s=3
+                            )
+                            # Set the title of the subplot to the predictor combination name
+                            ax.set_title(predictor_combination, fontsize=22)
+                            ax.tick_params(axis='both', which='major', labelsize=18)
+                        else:
+                            print(f"Predictor combination '{predictor_combination}' not found in data.")
 
-        # Adjust layout and display the figure
-        plt.subplots_adjust(left=0.25, wspace=0.3, hspace=0.8)  # Adjust horizontal and vertical spacing
-        plot_name = f"{crit}_{model}_bee.png"
-        plt.savefig(plot_name, format='png', dpi=300)  # You can adjust the format and DPI as needed
-        plt.close()
+                    # Hide any unused subplots
+                    #for idx in range(len(predictor_combinations), len(axes)):
+                    #    fig.delaxes(axes[idx])
+
+                    # Adjust layout and display the figure
+                    plt.subplots_adjust(left=0.2, wspace=0.55, hspace=0.4)  # Adjust horizontal and vertical spacing
+                    if self.store_plots:
+                        self.store_plot(plot_name="beeswarm", crit=crit, samples_to_include=samples_to_include, model=model)
+                    else:
+                        plt.show()
 
     def plot_lin_model_coefs(self):
         pass
@@ -282,3 +274,67 @@ class ResultPlotter:
 
     def plot_shap_ia_values(self):
         pass
+
+    def store_plot(self,
+                   plot_name: str,
+                   plot_format: str = "png",
+                   dpi: int = 450,
+                   feature_combination: str = None,
+                   samples_to_include: str = None,
+                   crit: str = None,
+                   model: str = None,
+                   ):
+        #TODO We could adjust this to a more general method that also stores tables?
+        """
+        This function is a generic method to store plots in a given directory
+            - If we have single plots for specific model/crit/... combinations, we store the plots in the respective dirs
+            - If we have a single summarizing plots across everything, we save it in the base folder
+
+        Args:
+            plot_name: Name of the plot type, will be used in the filename (e.g. "beeswarm")
+            format: Format for the stored image (e.g. "png")
+            dpi: Resolution of the plot in dots per inch
+            feature_combination: e.g., "pl_srmc"
+            samples_to_include: e.g., "all"
+            crit: e.g., "state_wb"
+            model: e.g., "randomforestregressor"
+
+        """
+        plot_path = self.create_plot_path(feature_combination=feature_combination,
+                                          samples_to_include=samples_to_include,
+                                          crit=crit,
+                                          model=model)
+        os.makedirs(plot_path, exist_ok=True)
+        filename = f"{plot_name}.{plot_format}"
+        file_path = os.path.join(plot_path, filename)
+        print("store plot in:", file_path)
+        plt.savefig(
+            file_path, format=plot_format, dpi=dpi,  #...
+        )
+        plt.close()
+
+    def create_plot_path(self,
+                         samples_to_include: str = None,
+                         crit: str = None,
+                         model: str = None,
+                         feature_combination: str = None,
+                         ):
+        """
+        This method creates the path were the plots should be stored
+
+        Args:
+            feature_combination:
+            samples_to_include:
+            crit:
+            model:
+
+        Returns:
+
+        """
+        path_components = [None, None, None, None]
+        for path_idx, var in enumerate([samples_to_include, crit, model, feature_combination]):
+            if var is not None:
+                path_components[path_idx] = var
+                print(path_components)
+        filtered_path_components = [comp for comp in path_components if comp]
+        return os.path.normpath(os.path.join(self.plot_base_dir, *filtered_path_components))

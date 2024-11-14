@@ -3,10 +3,6 @@ import json
 import os
 import re
 from datetime import datetime
-
-import seaborn as sns
-import matplotlib.pyplot as plt
-
 import numpy as np
 
 from src.postprocessing.ResultPlotter import ResultPlotter
@@ -16,6 +12,8 @@ from src.postprocessing.DescriptiveStatistics import DescriptiveStatistics
 from src.utils.DataLoader import DataLoader
 
 import pandas as pd
+
+from src.utils.Logger import Logger
 
 
 class Postprocessor:
@@ -30,15 +28,16 @@ class Postprocessor:
         self.fix_cfg = fix_cfg
         self.var_cfg = var_cfg
         self.name_mapping = name_mapping
+
+        self.logger = Logger(log_dir=self.var_cfg["general"]["log_dir"], log_file=self.var_cfg["general"]["log_name"])
         self.data_loader = DataLoader()
         self.descriptives_creator = DescriptiveStatistics(fix_cfg=self.fix_cfg, var_cfg=self.var_cfg, name_mapping=name_mapping)
         self.significance_testing = SignificanceTesting(var_cfg=self.var_cfg)
-        self.plotter = ResultPlotter(var_cfg=self.var_cfg)
-        self.base_result_dir = self.var_cfg["analysis"]["results_cluster_path"]
+
+        self.base_result_dir = self.var_cfg["postprocessing"]["raw_results_path"]
         self.result_filenames = self.var_cfg["analysis"]["output_filenames"]
-
-        self.processed_output_path = self.var_cfg["postprocessing"]["processed_output_path"]
-
+        self.processed_output_path = self.var_cfg["postprocessing"]["processed_results_path"]
+        self.plotter = ResultPlotter(var_cfg=self.var_cfg, plot_base_dir=self.processed_output_path)
         self.cv_result_dct = {}
 
         self.shap_processor = ShapProcessor(
@@ -47,31 +46,83 @@ class Postprocessor:
             processed_output_path=self.processed_output_path,
             name_mapping=self.name_mapping,
         )
+        self.feature_mappings = {}
+        self.metric = self.var_cfg["postprocessing"]["metric"]
+        self.methods_to_apply = self.var_cfg["postprocessing"]["methods"]
 
     def postprocess(self):
-        #self.extract_fitting_times(base_dir=self.base_result_dir, output_dir=self.processed_output_path)
-        #self.shap_processor.aggregate_shap_values()
-        #self.shap_processor.prepare_importance_plot_data()
-        #self.plotter.plot_shap_importance_plot(
-        #    data=self.shap_processor.data_importance_plot,
-        #    crit="state_wb",
-        #    samples_to_include="selected",
-        #    model="elasticnet"
-        #)
-        #self.plotter.plot_shap_beeswarm_plot(
-        #    data=self.shap_processor.data_importance_plot,
-        #    crit="state_wb",
-        #    samples_to_include="selected",
-        #    model="elasticnet"
-        #)
-        #self.process_cv_results()
-        self.process_lin_model_coefs()
-        #self.extract_metrics_and_coefficients(base_dir=self.processed_output_path, output_dir=self.processed_output_path)
-        # self.shap_processor.recreate_explanation_objects()
-        #self.descriptives_creator.create_m_sd_feature_table()
-        #self.descriptives_creator.create_wb_item_statistics()
-        #self.significance_testing.compare_models(dct=self.cv_result_dct.copy())
-        #self.significance_testing.significance_testing(dct=self.cv_result_dct.copy())
+        """
+        This is kind of a wrapper method that does all the postprocessing steps specified in the config.
+        It may invoke the methods in the other classes
+
+        Returns:
+
+        """
+        self.create_correction_mapping()
+
+        # These are the costly operations that condenses the inforfmation of the full cluster results
+        if "process_cv_results" in self.methods_to_apply:
+            self.process_cv_results()
+
+        if "process_lin_model_coefs" in self.methods_to_apply:
+            self.process_lin_model_coefs()
+
+        if "process_shap_values" in self.methods_to_apply:
+            self.shap_processor.aggregate_shap_values(feature_mappings=self.feature_mappings)
+            if self.var_cfg["postprocessing"]["shap_processing"]["merge_folders"]:  # This applies to already processed folders
+                self.shap_processor.merge_folders(source1=self.var_cfg["postprocessing"]["shap_processing"]["source_1"],
+                                                  source2=self.var_cfg["postprocessing"]["shap_processing"]["source_2"],
+                                                  merged_folder=self.var_cfg["postprocessing"]["shap_processing"]["output_folder"]
+                                                  )
+
+        # These are the operations to condense the results into one file (.e.g., of the coefficients
+        if "condense_results" in self.methods_to_apply:
+            self.extract_fitting_times(base_dir=self.base_result_dir, output_dir=self.processed_output_path)
+            metrics_dict, data_points = self.extract_metrics(self.processed_output_path, self.metric)
+            coefficients_dict, coefficient_points = self.extract_coefficients(self.processed_output_path)
+            self.create_df_table(data_points, self.metric, self.processed_output_path)
+            self.create_coefficients_dataframe(coefficient_points, self.processed_output_path)
+
+        if "create_shap_plots" in self.methods_to_apply:
+            # self.shap_processor.prepare_shap_plot_data()
+            self.plotter.plot_shap_beeswarm_plots(prepare_data_func=self.shap_processor.prepare_data)
+
+        if "create_descriptives" in self.methods_to_apply:
+            self.descriptives_creator.create_m_sd_feature_table()
+            self.descriptives_creator.create_wb_item_statistics()
+
+        if "conduct_significance_tests" in self.methods_to_apply:
+            self.significance_testing.significance_testing(dct=self.cv_result_dct.copy())
+
+    def create_correction_mapping(self):
+        """
+        We need to map back shap_values and lin_model_coefs for analysis where country-level and individual-level
+        features are involved. To do so, we load the data, extract the features for each feature_combination affected
+        and create a mapping
+
+        Note: We need this only for the linear model coefficients, not the SHAP values
+        """
+        df = pd.read_pickle(os.path.join(self.var_cfg["preprocessing"]["path_to_preprocessed_data"], "full_data"))
+
+        for feat_combo in ["pl_mac", "pl_mac_nnse", "pl_srmc_mac", "pl_srmc_mac_nnse", "all_in", "all_in_nnse"]:
+            selected_columns = []
+            feature_prefix_lst = feat_combo.split("_")
+            if feat_combo in ["all_in", "all_in_nnse"]:
+                feature_prefix_lst = ["pl", "srmc", "sens", "mac"]
+            # select cols
+            for feature_cat in feature_prefix_lst:
+                for col in df.columns:
+                    if col.startswith(feature_cat):
+                        selected_columns.append(col)
+            # create mappings
+            col_order_before_imputation = selected_columns
+            mac_columns = [col for col in selected_columns if col.startswith("mac_")]
+            other_columns = [col for col in selected_columns if not col.startswith("mac_")]
+            col_order_after_imputation = mac_columns + other_columns
+            mapping = {col_before: col_after for col_after, col_before in
+                       zip(col_order_after_imputation, col_order_before_imputation)}
+            assert len(mapping) == len(col_order_before_imputation)
+            getattr(self, "feature_mappings")[feat_combo] = mapping
 
     @staticmethod
     def extract_fitting_times(base_dir, output_dir):
@@ -82,12 +133,8 @@ class Postprocessor:
         Args:
             base_dir (str): The base directory to start the search.
             output_json_path (str): The path to save the output JSON file.
-
-        Returns:
-            None
         """
         fitting_times_dict = {}
-
         # Regular expressions to match the fitting time and timestamp pattern
         time_pattern = re.compile(r"repeated_nested_cv executed in (\d+h \d+m \d+\.\d+s) at (\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})")
 
@@ -138,162 +185,147 @@ class Postprocessor:
         print(f"Fitting times extracted and saved to {output_json_path}")
 
     @staticmethod
-    def extract_metrics_and_coefficients(base_dir, output_dir):
+    def extract_metrics(base_dir, metric):
         """
-        Traverse the folder structure from a base directory, find 'proc_cv_results.json' and 'lin_model_coefficients.json',
-        extract required metrics and coefficients, store results in JSON files, and generate a heatmap.
+        Extract required metrics from 'proc_cv_results.json' files in the directory structure.
 
         Args:
             base_dir (str): The base directory to start the search.
-            output_dir (str): The directory to save the output JSON files.
+            metric (str): The metric to extract.
 
         Returns:
-            None
+            dict: Extracted metrics dictionary.
+            list: Data points for DataFrame creation.
         """
         metrics_dict = {}
-        coefficients_dict = {}
         data_points = []
-        coefficient_points = []
 
-        # Traverse the directory structure
-        for root, dirs, files in os.walk(base_dir):
-            # Check if 'proc_cv_results.json' exists in the current directory
+        for root, _, files in os.walk(base_dir):
             if 'proc_cv_results.json' in files:
-                # Build the key from the folder structure rearranged from a/b/c/d/ to c/a/d/b
                 relative_path = os.path.relpath(root, base_dir)
                 path_parts = relative_path.strip(os.sep).split(os.sep)
 
                 if len(path_parts) >= 4:
-                    a = path_parts[0]
-                    b = path_parts[1]
-                    c = path_parts[2]
-                    d = path_parts[3]
+                    a, b, c, d = path_parts[0], path_parts[1], path_parts[2], path_parts[3]
                 else:
-                    # Handle cases where path_parts has fewer than 4 elements
                     print(f"Skipping directory {root} due to insufficient path depth.")
                     continue
 
-                # Rearrange the parts according to c/a/d/b for the concatenated key
-                rearranged_parts = [c, a, d, b]
-                concatenated_key = '_'.join(rearranged_parts)
+                rearranged_key = '_'.join([c, a, d, b])
 
-                # Extract metrics from 'proc_cv_results.json'
-                proc_cv_results_path = os.path.join(root, 'proc_cv_results.json')
                 try:
-                    with open(proc_cv_results_path, 'r') as f:
+                    with open(os.path.join(root, 'proc_cv_results.json'), 'r') as f:
                         proc_cv_results = json.load(f)
 
-                    # Extract 'm' and 'sd' of 'r2' metric
-                    m_r2 = proc_cv_results['m']['r2']
-                    sd_r2 = proc_cv_results['sd_across_folds_imps']['r2']  # Adjust the key if needed
+                    m_metric = proc_cv_results['m'][metric]
+                    sd_metric = proc_cv_results['sd_across_folds_imps'][metric]
 
-                    # Store in metrics_dict
-                    metrics_dict[concatenated_key] = {'m_r2': m_r2, 'sd_r2': sd_r2}
-
-                    # Collect data for DataFrame
-                    data_points.append({'c': c, 'd': d, 'b': b, 'a': a, 'm_r2': m_r2})
+                    metrics_dict[rearranged_key] = {f'm_{metric}': m_metric, f'sd_{metric}': sd_metric}
+                    data_points.append({'c': c, 'd': d, 'b': b, 'a': a, f"m_{metric}": m_metric})
 
                 except Exception as e:
-                    print(f"Error reading {proc_cv_results_path}: {e}")
+                    print(f"Error reading {os.path.join(root, 'proc_cv_results.json')}: {e}")
 
-                # Check if 'lin_model_coefficients.json' exists in the current directory
-                if 'proc_lin_model_coefficients.json' in files:
-                    lin_model_coefficients_path = os.path.join(root, 'proc_lin_model_coefficients.json')
-                    try:
-                        with open(lin_model_coefficients_path, 'r') as f:
-                            lin_model_coefficients = json.load(f)
+        return metrics_dict, data_points
 
-                        # Extract 'm' coefficients
-                        coefficients = lin_model_coefficients['m']
+    @staticmethod
+    def extract_coefficients(base_dir):
+        """
+        Extract top coefficients from 'lin_model_coefficients.json' files in the directory structure.
 
-                        # Get the five most important coefficients (by absolute value)
-                        sorted_coefficients = sorted(coefficients.items(), key=lambda x: abs(x[1]), reverse=True)
-                        top_seven_coefficients = sorted_coefficients[:7]  # Get the top 7
+        Args:
+            base_dir (str): The base directory to start the search.
 
-                        # Store the top 7 coefficients in coefficients_dict
-                        coefficients_dict[concatenated_key] = dict(top_seven_coefficients)
+        Returns:
+            dict: Extracted coefficients dictionary.
+            list: Coefficient points for DataFrame creation.
+        """
+        coefficients_dict = {}
+        coefficient_points = []
 
-                        # Collect data for DataFrame with tuples of (feature, value)
-                        coefficient_points.append({
-                            'c': c,
-                            'd': d,
-                            'b': b,
-                            'a': a,
-                            'coefficients': top_seven_coefficients  # Store as list of tuples
-                        })
+        for root, _, files in os.walk(base_dir):
+            if 'proc_lin_model_coefficients.json' in files:
+                relative_path = os.path.relpath(root, base_dir)
+                path_parts = relative_path.strip(os.sep).split(os.sep)
 
-                    except Exception as e:
-                        print(f"Error reading {lin_model_coefficients_path}: {e}")
+                if len(path_parts) >= 4:
+                    a, b, c, d = path_parts[0], path_parts[1], path_parts[2], path_parts[3]
+                else:
+                    print(f"Skipping directory {root} due to insufficient path depth.")
+                    continue
 
-        # Sort the dictionaries by keys (alphabetically)
-        metrics_dict = dict(sorted(metrics_dict.items()))
-        coefficients_dict = dict(sorted(coefficients_dict.items()))
+                rearranged_key = '_'.join([c, a, d, b])
 
-        # Save the results to JSON files
-        os.makedirs(output_dir, exist_ok=True)
+                try:
+                    with open(os.path.join(root, 'proc_lin_model_coefficients.json'), 'r') as f:
+                        lin_model_coefficients = json.load(f)
 
-        metrics_output_path = os.path.join(output_dir, 'metrics.json')
-        with open(metrics_output_path, 'w') as json_file:
-            json.dump(metrics_dict, json_file, indent=4)
+                    coefficients = lin_model_coefficients['m']
+                    sorted_coefficients = sorted(coefficients.items(), key=lambda x: abs(x[1]), reverse=True)
+                    top_seven_coefficients = sorted_coefficients[:7]
 
-        coefficients_output_path = os.path.join(output_dir, 'coefficients.json')
-        with open(coefficients_output_path, 'w') as json_file:
-            json.dump(coefficients_dict, json_file, indent=4)
+                    coefficients_dict[rearranged_key] = dict(top_seven_coefficients)
+                    coefficient_points.append({
+                        'c': c, 'd': d, 'b': b, 'a': a,
+                        'coefficients': top_seven_coefficients
+                    })
 
-        print(f"Metrics extracted and saved to {metrics_output_path}")
-        print(f"Coefficients extracted and saved to {coefficients_output_path}")
+                except Exception as e:
+                    print(f"Error reading {os.path.join(root, 'proc_lin_model_coefficients.json')}: {e}")
 
-        # Create DataFrame from data_points
+        return coefficients_dict, coefficient_points
+
+    @staticmethod
+    def create_df_table(data_points, metric, output_dir):
+        """
+        Create DataFrame from metrics data, save to Excel.
+
+        Args:
+            data_points (list): Data points extracted for DataFrame.
+            metric (str): The metric used for the heatmap title.
+            output_dir (str): Directory to save the Excel file.
+
+        Returns:
+            None
+        """
         if data_points:
-
-            # Filter out control analyses
             filtered_data_points = [entry for entry in data_points if entry.get('b') != 'control']
-
             df = pd.DataFrame(filtered_data_points)
-
-            # Set MultiIndex from 'c', 'd', 'b' (in that order)
             df.set_index(['c', 'd', 'b'], inplace=True)
+            df_pivot = df.pivot_table(values=f"m_{metric}", index=['c', 'd', 'b'], columns='a', aggfunc=np.mean)
 
-            # Pivot the DataFrame to have 'a' as columns, and the MultiIndex as rows
-            df_pivot = df.pivot_table(values='m_r2', index=['c', 'd', 'b'], columns='a', aggfunc=np.mean)
-
-            df_pivot = df_pivot.sort_index()
-            # Fill missing values with np.nan (this is default behavior)
-            custom_order = ["pl", "srmc", "sens", "mac", "pl_srmc", "pl_sens", "pl_srmc_sens", "pl_mac", "pl_srmc_mac", "all_in"]  # Replace with the actual column names in the desired order
-            # Reindex df_pivot to match the custom column ord
+            custom_order = [
+                "pl", "pl_nnse", "srmc", "sens", "mac",
+                "pl_srmc", "pl_srmc_nnse", "pl_sens", "pl_sens_nnse",
+                "pl_srmc_sens", "pl_srmc_sens_nnse", "srmc_control",
+                "pl_srmc_control", "pl_mac", "pl_mac_nnse",
+                "pl_srmc_mac", "pl_srmc_mac_nnse", "all_in", "all_in_nnse"
+            ]
             df_pivot = df_pivot.reindex(columns=custom_order)
 
-            df_pivot.to_excel("df_pivot.xlsx", merge_cells=True)
+            output_path = os.path.join(output_dir, f'df_pivot_{metric}.xlsx')
+            df_pivot.to_excel(output_path, merge_cells=True)
 
+    @staticmethod
+    def create_coefficients_dataframe(coefficient_points, output_dir):
+        """
+        Create a DataFrame of the coefficients data and save it to Excel.
 
-            # Display the DataFrame
-            print("\nDataFrame of m_r2 values:")
-            print(df_pivot)
+        Args:
+            coefficient_points (list): Coefficient points extracted for DataFrame.
+            output_dir (str): Directory to save the Excel file.
 
-            # Generate and display the heatmap
-            plt.figure(figsize=(10, 8))
-            sns.heatmap(df_pivot, annot=True, cmap='viridis', fmt=".3f")
-            plt.title('Heatmap of m_r2 Values')
-            plt.ylabel('c / d / b')
-            plt.xlabel('a')
-            plt.tight_layout()
-            plt.show()
-        else:
-            print("No data available to create DataFrame and heatmap.")
-
-        # Process the coefficients DataFrame
+        Returns:
+            None
+        """
         if coefficient_points:
             filtered_coeff_points = [entry for entry in coefficient_points if entry.get('b') != 'control']
             df_coeff = pd.DataFrame(filtered_coeff_points)
             df_coeff.set_index(['c', 'd', 'b'], inplace=True)
-
-            # Pivot table with 'a' as columns and each entry containing the top 7 coefficients as tuples
             df_coeff_pivot = df_coeff.pivot_table(values='coefficients', index=['c', 'd', 'b'], columns='a', aggfunc=lambda x: x)
-            df_coeff_pivot = df_coeff_pivot.sort_index()
-            df_coeff_pivot.to_excel("df_coefficients.xlsx", merge_cells=True)
 
-            print("\nDataFrame of Top 7 Coefficients:")
-            print(df_coeff_pivot)
+            output_path = os.path.join(output_dir, 'df_coefficients.xlsx')
+            df_coeff_pivot.to_excel(output_path, merge_cells=True)
 
     def process_cv_results(self):
         """
@@ -305,66 +337,26 @@ class Postprocessor:
                 1) across outer folds and imputations
                 2) across outer folds within imputations
                 3) across imputations within outer folds
-        Returns:
         """
         cv_result_dct = self.get_results(result_type="performance")
         self.cv_result_dct = cv_result_dct
         cv_result_dct_processed = self.compute_result_statistics(result_dict=cv_result_dct, result_type="performance")
         self.store_results(processed_result_dct=cv_result_dct_processed, result_type="performance")
 
-        # self.plotter.plot_cv_results(cv_result_dct_processed)
-
     def process_lin_model_coefs(self):
         """
-
-        Returns:
-
+        This function
+            - iterates over all subdirectories of self.base_result_dir
+            - stores the content of the result files "lin_model_coefficients.json" in a dictionary that mirros the folder structure
+            - computes M
+            - computes SD
+                1) across outer folds and imputations
+                2) across outer folds within imputations
+                3) across imputations within outer folds
         """
         coef_result_dct = self.get_results(result_type="lin_model_coefs")
         coef_dct_processed = self.compute_result_statistics(result_dict=coef_result_dct, result_type="lin_model_coefs")
-        coef_dct_processed = self.reorder_mac_keys_in_nested_dict(input_dict=coef_dct_processed)
         self.store_results(processed_result_dct=coef_dct_processed, result_type="lin_model_coefs")
-
-    def reorder_mac_keys_in_nested_dict(self, input_dict):
-        """
-        Searches for the 'lin_model_coefficients' key in a nested dictionary and reorders its keys so that
-        keys starting with 'mac_' are moved to the beginning.
-
-        Args:
-            input_dict (dict): The nested dictionary to process.
-
-        Returns:
-            dict: The modified dictionary with 'mac_' keys reordered within 'lin_model_coefficients'.
-        """
-        # Traverse the dictionary to find 'lin_model_coefficients'
-        for key, value in input_dict.items():
-            if key == "lin_model_coefficients" and isinstance(value, dict):
-                # Found 'lin_model_coefficients', reorder its keys
-                input_dict[key] = self.reorder_mac_keys(value)
-            elif isinstance(value, dict):
-                # Recurse into nested dictionaries
-                self.reorder_mac_keys_in_nested_dict(value)
-
-        return input_dict
-
-    def reorder_mac_keys(self, input_dict):
-        """
-        Reorders keys in the input dictionary so that keys starting with "mac_" are moved to the beginning.
-
-        Args:
-            input_dict (dict): The dictionary to reorder.
-
-        Returns:
-            dict: A reordered dictionary with "mac_" keys first.
-        """
-        # Separate keys that start with "mac_" and those that don't
-        mac_keys = {k: v for k, v in input_dict.items() if k.startswith("mac_")}
-        other_keys = {k: v for k, v in input_dict.items() if not k.startswith("mac_")}
-
-        # Combine dictionaries with "mac_" keys first
-        reordered_dict = {**other_keys, **mac_keys}
-
-        return reordered_dict
 
     def get_results(self, result_type: str) -> dict:
         """
@@ -454,6 +446,8 @@ class Postprocessor:
 
                     # Convert to DataFrame
                     df = pd.DataFrame(data_records)
+                    df = self.correct_mac_feature_assign(df)
+
                     # Identify metric columns
                     identifier_cols = ['rep', 'outer_fold', 'imputation']
                     metric_cols = [col for col in df.columns if col not in identifier_cols]
@@ -480,6 +474,7 @@ class Postprocessor:
 
                     # Add non-zero coefs of features if result_type is "lin_model_coefs"
                     if result_type == "lin_model_coefs":
+                        print()
                         non_zero_count = (df[metric_cols] != 0).sum().to_dict()
                         node[key_to_search]['coef_not_zero_across_folds_imps'] = non_zero_count
 
@@ -501,6 +496,26 @@ class Postprocessor:
         process_node(result_dict_copy)
 
         return result_dict_copy
+
+    def correct_mac_feature_assign(self, df):
+        """
+        This function applies a correction to the feature assignment in the case where country-level and individual level
+        features are together in a certain analysis
+
+        Args:
+            df:
+
+        Returns:
+            df:
+
+        """
+        cols = df.columns[3:]
+        for feat_combo, mapping in self.feature_mappings.items():
+            if len(cols) == len(mapping):
+                df = df.rename(columns=mapping)
+            else:
+                continue
+        return df
 
     def store_results(self, processed_result_dct: dict, result_type: str) -> None:
         """

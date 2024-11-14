@@ -1,12 +1,12 @@
 general:
   datasets_to_be_included: [ cocoesm, cocoms, cocout, emotions, pia, zpid ] # cocoesm, cocoms, cocout, emotions, pia, zpid
-  log_dir: "../logs/test_shapiq"  # only for preprocessing
-  log_name: run_shapiq
+  log_dir: "../logs/process_results"  # only for preprocessing
+  log_name: process_results
 
   steps:
     preprocessing: false
-    analysis: true
-    postprocessing: false
+    analysis: false
+    postprocessing: true
 
 preprocessing:
   path_to_raw_data: "../data/raw"
@@ -194,8 +194,8 @@ analysis:
     max_order: 3  # 3; max interaction order, one correspond to the normal SHAP values
     num_samples: 100  # 100
 
-  output_path: "../results/local_tests"
-  results_cluster_path: "../results/cluster_results_6_shap"
+  output_path: "../results/test"
+
   output_filenames:
     performance: 'cv_results.json'
     shap_values: 'shap_values.pkl'  # contains shap_values, base_values, and data
@@ -204,23 +204,61 @@ analysis:
     lin_model_coefs: 'lin_model_coefficients.json'
 
 postprocessing:
-  processed_output_path: "../results/cluster_results_processed_6_shap" # "../results/cluster_results_processed"
+  methods:
+    # performance based
+    #- process_cv_results
+    #- process_lin_model_coefs
+    #- condense_results
+    # shap based, may need to change "raw_results_path" and "processed_results_path"
+    #- process_shap_values
+    - create_shap_plots
+    #- conduct_significance_tests
+    #- create_descriptives
+
+  # Currently, because of the big amounts of data, we may have separated raw dirs
+  # raw: cv: "../results/cluster_results_only_cv_raw" , shap:
+  # proc: cv: "../results/cluster_results_only_cv_proc" , shap: "../results/cluster_results_shap_merged" or
+
+  raw_results_path: "../results/cluster_results_only_cv_raw"  # BASE RESULT DIR FOR RAW RESULTS  # shap or cv
+  processed_results_path: "../results/cluster_results_shap_merged"  # "# BASE RESULT DIR FOR PROCESSED RESULTS  # shap or cv
+
+
+  #plots_base_dir: "../results/plots"
+  #tables_base_dir: "../results/plots"
+
+  shap_processing:
+    merge_folders: true  # do merge folders from different cluster accounts
+    source_1: "../results/cluster_results_shap_js"
+    source_2: "../results/cluster_results_shap_oh"
+    output_folder: "../results/cluster_results_shap_merged"
+
+  metric: r2
+
+
   significance_tests:
     output_path: "../results/significance_tests"
     alpha: .05
-    metric: r2
+    metric: r2 # r2
     methods:
       - xxx
 
-
   plots:
-    shap_importance_plot:
-      prediction_model: elasticnet  # elasticnet, randomforestregressor
-      crit: state_wb
-      samples_to_include: selected
+    store_plots: true
+    plots:
+      - importance_plot
+      - beeswarm_plot
+    shap_importance_plot:  # could define dpi, etc as well here
+
+      # This should be lists
+      prediction_model: [elasticnet, randomforestregressor]  # elasticnet, randomforestregressor
+      crit: [state_wb, trait_wb]
+      samples_to_include: [selected, all]
+
+      num_to_display: 8
+
       first_col: ["pl", "srmc", "sens", "mac"]
       second_col: ["pl_srmc", "pl_sens", "pl_srmc_sens", "pl_mac"]
-      third_col: ["pl_srmc_mac", "all_in"]
+      third_col: ["pl_srmc_mac", "pl_nnse", "pl_srmc_nnse", "pl_mac_nnse"]
 
 
 
