@@ -161,7 +161,7 @@ class RFRAnalyzer(BaseMLAnalyzer):
         Returns:
 
         """
-        if self.rank == 0 and self.shap_ia_results:  # use rank that collectd the results
+        if self.rank == 0 and any(self.shap_ia_results.values()):  # use rank that collectd the results
 
             ia_values_agg_reps_imps, base_value_agg_reps_imps = self.agg_ia_values_across_reps_imps(
                 ia_value_dct=self.shap_ia_results["shap_ia_values"],

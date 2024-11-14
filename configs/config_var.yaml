@@ -1,12 +1,12 @@
 general:
   datasets_to_be_included: [ cocoesm, cocoms, cocout, emotions, pia, zpid ] # cocoesm, cocoms, cocout, emotions, pia, zpid
-  log_dir: "../logs/process_results"  # only for preprocessing
-  log_name: process_results
+  log_dir: "../logs/test_fs"  # only for preprocessing
+  log_name: test_fs
 
   steps:
     preprocessing: false
-    analysis: false
-    postprocessing: true
+    analysis: true
+    postprocessing: false
 
 preprocessing:
   path_to_raw_data: "../data/raw"
@@ -98,11 +98,13 @@ analysis:
     pl_srmc_mac: [cocoesm]
     # 4 all_in
     all_in: [cocoesm, cocout, cocoms, emotions, pia, zpid]
+
+    #### Additional analysis ####
     # control analyses for pl_srmc_sens results
     pl_srmc_control: [cocoms] # only persons with sensing data
     srmc_control: [cocoms] # only persons with sensing data
 
-    # control analysis without the neruo facets
+    # control analysis without neuroticism and self-esteem
     # 1
     pl_nnse: [emotions, cocout, cocoesm, cocoms]
     # 2  filter for "pl_" for comparisons
@@ -115,22 +117,31 @@ analysis:
     # 4 all_in
     all_in_nnse: [ cocoesm, cocout, cocoms, emotions, pia, zpid ]
 
+    # Sensing with feature selection # TODO: Check feature/ sample filtering
+    sens_fs: [zpid, cocoms]
+    pl_sens_fs: [zpid, cocoms]
+    pl_srmc_sens_fs: [ cocoms ]
+    all_in_fs: [cocoesm, cocout, cocoms, emotions, pia, zpid]
+
   no_control_lst: ["pl", "srmc", "sens", "mac", "all_in"] # we do not run control analyses for these combinations
 
   params: # adjusted by SLURM
     prediction_model: randomforestregressor  # elasticnet, randomforestregressor
     crit: state_wb  # state_wb, state_pa, state_na, trait_wb, trait_na, trait_pa
-    feature_combination: srmc # pl, srmc, sens, mac, pl_srmc, pl_sens, pl_srmc_sens, pl_mac, pl_srmc_mac, all_in
-    samples_to_include: all  # all, selected, control
+    feature_combination: sens_fs # pl, srmc, sens, mac, pl_srmc, pl_sens, pl_srmc_sens, pl_mac, pl_srmc_mac, all_in
+    samples_to_include: selected  # all, selected, control
 
   cv:
     num_inner_cv: 3  # 10
     verbose_inner_cv: 0
     num_outer_cv: 3 # 10
-    num_reps: 3  # 10
+    num_reps: 1  # 10
     id_grouping_col: other_unique_id
     cache_pipe: false  # not improving performance
     warm_start: false  # not improving performance
+
+  feature_selection:
+    num_sensing_features: 21  # as number of srmc features
 
   crit_available: # not all criteria are available for all samples
     state_wb: [cocoesm, cocout, cocoms, emotions, pia, zpid]
@@ -169,12 +180,12 @@ analysis:
       model__regressor__max_iter: [ 1000, 10000 ]
       model__regressor__tol: [0.1, 0.01, 0.001, 0.0001]
     randomforestregressor:
-      #model__regressor__max_depth: [ 4 ]
+      model__regressor__max_depth: [ 8 ]
       #model__regressor__max_features: [ 0.2 ]
-      model__regressor__n_estimators: [ 100, 500 ]
-      model__regressor__max_features: [ 0.25, 0.5, 0.75]
-      model__regressor__max_depth: [4, 6, 8, 10, 12]
-      model__regressor__min_samples_split: [5, 10, 15, 20]
+      #model__regressor__n_estimators: [ 100, 500 ]
+      #model__regressor__max_features: [ 0.25, 0.5, 0.75]
+      #model__regressor__max_depth: [4, 6, 8, 10, 12]
+      #model__regressor__min_samples_split: [5, 10, 15, 20]
 
   parallelize:
     parallelize_shap: true
@@ -188,13 +199,13 @@ analysis:
     joblib_backend: "threading"  # threading; for pc2, use threading, loky may crash in multi-node settings
 
   shap_ia_values:
-    comp_shap_ia_values: true # true
+    comp_shap_ia_values: false # true
     interaction_index: "k-SII"
     min_order: 0  # 0; min interaction order, always choose 0
     max_order: 3  # 3; max interaction order, one correspond to the normal SHAP values
     num_samples: 100  # 100
 
-  output_path: "../results/test"
+  output_path: "../results/local_tests"
 
   output_filenames:
     performance: 'cv_results.json'

@@ -28,6 +28,7 @@ from sklearn.preprocessing import LabelEncoder, StandardScaler
 
 from src.analysis.CustomScaler import CustomScaler
 from src.analysis.Imputer import Imputer
+from src.analysis.PearsonFeaureSelector import PearsonFeatureSelector
 from src.analysis.ShuffledGroupKFold import ShuffledGroupKFold
 from src.utils.DataLoader import DataLoader
 from src.utils.Logger import Logger
@@ -264,7 +265,7 @@ class BaseMLAnalyzer(ABC):
         if self.samples_to_include in ["all", "selected"]:
             feature_prefix_lst = self.feature_combination.split("_")
 
-            if self.feature_combination == "all_in": # include all features
+            if self.feature_combination == "all_in":  # include all features
                 feature_prefix_lst = ["pl", "srmc", "sens", "mac"]
                 if self.samples_to_include == "selected":
                     self.logger.log(f"    WARNING: No selected analysis needed for {self.feature_combination}, stop computations")
@@ -403,14 +404,28 @@ class BaseMLAnalyzer(ABC):
         else:
             memory = None
 
-        # create pipeline
-        pipe = Pipeline(
-            [
-                ("preprocess", preprocessor),
-                ("model", model_wrapped),
-            ],
-            memory=memory
-        )
+        # create pipeline for feature selection
+        if "_fs" in self.feature_combination:
+            self.logger.log("    -> Include feature selection for sensing features")
+            feature_selector = PearsonFeatureSelector(
+                num_features=self.var_cfg["analysis"]["feature_selection"]["num_sensing_features"],
+                target_prefix="sens_")
+            pipe = Pipeline(
+                [
+                    ("preprocess", preprocessor),
+                    ("feature_selection", feature_selector),
+                    ("model", model_wrapped),
+                ],
+                memory=memory
+            )
+        else:
+            pipe = Pipeline(
+                [
+                    ("preprocess", preprocessor),
+                    ("model", model_wrapped),
+                ],
+                memory=memory
+            )
         setattr(self, "pipeline", pipe)
 
     def nested_cv(
@@ -507,11 +522,7 @@ class BaseMLAnalyzer(ABC):
             assert len(set(X_train[self.id_grouping_col]).intersection(set(X_test[self.id_grouping_col]))) == 0, \
                 "Grouping did not work as expected"
 
-            # TODO Remove, just for testing
-            # y_test = np.random.randn(len(y_test))
-
             print("now imputing dataset")
-
             # Create imputed datasets and save the test datasets for SHAP computations
             X_train_imputed_sublst, X_test_imputed_sublst = self.impute_datasets_for_fold(X_train=X_train, X_test=X_test)
             X_test_imputed_lst.append(X_test_imputed_sublst)
