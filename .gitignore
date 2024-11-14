@@ -170,6 +170,9 @@ data/raw
 # results
 results/
 
+# deprecated stuff
+deprecated/
+
 # cache
 src/cache_directory
 
