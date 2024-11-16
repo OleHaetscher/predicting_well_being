@@ -69,8 +69,6 @@ class RFRAnalyzer(BaseMLAnalyzer):
             combo_index_mapping=combo_index_mapping,
             num_samples=X_scaled.shape[0],
         )
-        # Remove later -> Simple test for correct feature assignment
-
 
         return ia_values_arr, base_values_arr
 
@@ -163,7 +161,7 @@ class RFRAnalyzer(BaseMLAnalyzer):
         """
         if self.rank == 0 and any(self.shap_ia_results.values()):  # use rank that collectd the results
 
-            ia_values_agg_reps_imps, base_value_agg_reps_imps = self.agg_ia_values_across_reps_imps(
+            ia_values_agg_reps_imps, base_value_agg_reps_imps = self.agg_ia_values_across_reps(
                 ia_value_dct=self.shap_ia_results["shap_ia_values"],
                 base_value_dct=self.shap_ia_results["base_values"],
             )
@@ -199,10 +197,11 @@ class RFRAnalyzer(BaseMLAnalyzer):
             print()
 
     @staticmethod
-    def agg_ia_values_across_reps_imps(ia_value_dct, base_value_dct):
+    def agg_ia_values_across_reps(ia_value_dct, base_value_dct):
         """
-        Aggregates the mean and standard deviation of interaction attribution (IA) values across repetitions and imputations,
+        Aggregates the mean and standard deviation of interaction attribution (IA) values across repetitions
         preserving the samples and combinations dimensions.
+        NOTE: Aggregation across imps already took place
 
         Args:
             ia_value_dct (dict): Dictionary where keys are repetitions, and values are ndarrays of shape (samples, combinations, imputations).
@@ -216,15 +215,15 @@ class RFRAnalyzer(BaseMLAnalyzer):
         ia_values_array = np.stack(list(ia_value_dct.values()), axis=-1)  # Shape: (samples, combinations, imputations, repetitions)
 
         # Compute mean and std across imputations and repetitions (axes=-2 and -1)
-        ia_mean = np.mean(ia_values_array, axis=(-2, -1))  # Resulting shape: (samples, combinations)
-        ia_std = np.std(ia_values_array, axis=(-2, -1))  # Resulting shape: (samples, combinations)
+        ia_mean = np.mean(ia_values_array, axis=-1)  # Resulting shape: (samples, combinations)
+        ia_std = np.std(ia_values_array, axis=-1)  # Resulting shape: (samples, combinations)
 
         # Stack the base values across repetitions into a single ndarray
         base_values_array = np.stack(list(base_value_dct.values()), axis=-1)  # Shape: (samples, imputations, repetitions)
 
         # Compute mean and std across imputations and repetitions (axes=-2 and -1)
-        base_mean = np.mean(base_values_array, axis=(-2, -1))  # Resulting shape: (samples,)
-        base_std = np.std(base_values_array, axis=(-2, -1))  # Resulting shape: (samples,)
+        base_mean = np.mean(base_values_array, axis=-1)  # Resulting shape: (samples,)
+        base_std = np.std(base_values_array, axis=-1)  # Resulting shape: (samples,)
 
         return ({'mean': ia_mean, 'std': ia_std},
                 {'mean': base_mean, 'std': base_std})

@@ -586,7 +586,7 @@ class BaseMLAnalyzer(ABC):
             rep_base_values,
             rep_data,
             ia_test_shap_values,
-            base_values,
+            ia_base_values,
         ) = self.summarize_shap_values_outer_cv(
             X_test_imputed_lst=X_test_imputed_lst,
             X=X_filtered,
@@ -605,8 +605,8 @@ class BaseMLAnalyzer(ABC):
             rep_shap_values,
             rep_base_values,
             rep_data,
-            ia_test_shap_values,
-            base_values,
+            ia_test_shap_values, # mean across imps
+            ia_base_values, # mean across imps
         )
 
     def clocked_grid_search_fit(self, grid_search: GridSearchCV, X_train: pd.DataFrame, y_train: pd.Series, groups: pd.Series):
@@ -935,6 +935,10 @@ class BaseMLAnalyzer(ABC):
                 ) in enumerate(fold_results):
                     ia_test_shap_values[test_idx, :, num_imputation] += shap_ia_values_arr
                     ia_test_base_values[test_idx, num_imputation] += shap_ia_base_values_arr
+
+            # For reducing
+            ia_test_shap_values = ia_test_shap_values.mean(axis=2)  # Shape: (test_idx, features)
+            ia_test_base_values = ia_test_base_values.mean(axis=1)  # Shape: (test_idx)
         else:
             ia_test_shap_values = None
             ia_test_base_values = None
@@ -943,8 +947,8 @@ class BaseMLAnalyzer(ABC):
             rep_shap_values,
             rep_base_values,
             rep_data,
-            ia_test_shap_values,
-            ia_test_base_values,
+            ia_test_shap_values,  # already mean across imps
+            ia_test_base_values,  # already mean across imps
         )
 
     def create_index_mappings(self, X):
@@ -998,6 +1002,7 @@ class BaseMLAnalyzer(ABC):
         self.logger.log(f"    [Rank {rank}] Handling repetitions {my_reps}")
 
         results = []
+        results_file_paths = []
         for rep in my_reps:
             print(f"    Rank {rank}: Starting repetition {rep}")
             self.logger.log(f"    [Rank {rank}] Starting repetition {rep}")
@@ -1015,38 +1020,75 @@ class BaseMLAnalyzer(ABC):
                 fix_rs=fix_random_state,
                 dynamic_rs=dynamic_rs,
             )
-            results.append(result)
+
+            # Unpack result and exclude ia_test_shap_values and ia_test_base_values
+            result_without_large_arrays = (
+                result[0],  # nested_scores_rep
+                result[1],  # ml_model_params
+                result[2],  # rep_shap_values
+                result[3],  # rep_base_values
+                result[4],  # rep_data
+                # Exclude result[5] (ia_test_shap_values) and result[6] (ia_test_base_values)
+            )
+
+            # Append the filtered result to results
+            results.append(result_without_large_arrays)
+
             print(f"    [Rank {rank}] Finished repetition {rep}")
             self.logger.log(f"    Rank {rank}: Finished repetition {rep}")
 
-        # Gather results at the root process
-        all_results = comm.gather(results, root=0)
+            # Save IA values to files
+            file_name_ia_values = os.path.join(
+                self.spec_output_path, f"ia_values_rank{rank}_rep_{rep}.pkl"
+            )
+            file_name_ia_base_values = os.path.join(
+                self.spec_output_path, f"ia_base_values_rank{rank}_rep_{rep}.pkl"
+            )
+            with open(file_name_ia_values, "wb") as f:
+                pickle.dump(result[5], f)
+            with open(file_name_ia_base_values, "wb") as f:
+                pickle.dump(result[6], f)
+            # Store file paths with their corresponding rep number
+            results_file_paths.append((rep, file_name_ia_values, file_name_ia_base_values))
+
+        # Gather results and file paths at the root process
+        all_results = comm.gather((results, results_file_paths), root=0)
 
         if rank == 0:
-            # Flatten results
-            final_results = [item for sublist in all_results for item in sublist]
+            # Unpack all_results
+            final_results = []
+            all_file_paths = []
+            for res, paths in all_results:
+                final_results.extend(res)
+                all_file_paths.extend(paths)
             print(f"  [Rank {rank}] Collected all results")
             self.logger.log(f"  [Rank {rank}] Collected all results")
 
             # Process the final results
-            for rep, (
+            for rep_idx, (
                     nested_scores_rep,
                     best_models,
                     rep_shap_values,
                     rep_base_values,
                     rep_data,
-                    rep_shap_ia_values_test,
-                    rep_shap_ia_base_values,
             ) in enumerate(final_results):
+                rep = my_reps[rep_idx]  # Get the correct rep number
+
                 self.best_models[f"rep_{rep}"] = best_models
                 self.shap_results["shap_values"][f"rep_{rep}"] = rep_shap_values
                 self.shap_results["base_values"][f"rep_{rep}"] = rep_base_values
                 self.shap_results["data"][f"rep_{rep}"] = rep_data
                 self.repeated_nested_scores[f"rep_{rep}"] = nested_scores_rep
 
+            # Load the large arrays from the file paths
+            for rep, ia_values_path, ia_base_values_path in all_file_paths:
+                with open(ia_values_path, "rb") as f:
+                    rep_shap_ia_values_test = pickle.load(f)
+                with open(ia_base_values_path, "rb") as f:
+                    rep_shap_ia_base_values = pickle.load(f)
+
                 self.shap_ia_results["shap_ia_values"][f"rep_{rep}"] = rep_shap_ia_values_test
                 self.shap_ia_results["base_values"][f"rep_{rep}"] = rep_shap_ia_base_values
-                print()
 
             for rep in range(len(self.repeated_nested_scores)):
                 print(f"scores for rep {rep}: ", self.repeated_nested_scores[f"rep_{rep}"])
