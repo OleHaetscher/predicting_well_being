@@ -27,12 +27,15 @@ PARALLELIZE_SHAP="true"
 PARALLELIZE_SHAP_IA_VALUES="true"
 PARALLELIZE_IMPUTATION_RUNS="true"
 
+# New parameters
+SPLIT_REPS="false"    # If "true", split repetitions into separate jobs
+USE_MPI="true"        # If "true", use mpi4py
+
 BASE_MINUTES=2000
 CPUS_PER_TASK=10  # Fixed number of CPUs per analysis
 NUM_NODES=10      # If set to 1, no multi-node analysis happens
 
 # Base Directory for Results
-#BASE_DIR="/scratch/hpc-prf-mldpr/tests_cocowb_012024/"
 BASE_DIR="/scratch/hpc-prf-mldpr/coco_wb_ml_code/results_run_2210"
 
 # Current Time
@@ -58,7 +61,7 @@ for crit in "${CRITERIA[@]}"; do
           "control") SAMPLE_MULT=1 ;;
         esac
 
-        # Check if "sens" is in feature_combination and set MULT accordingly
+        # Check if "sens" is in feature_combination and set FEATURE_MULT accordingly
         if [[ $feature_combination == *"sens"* ]]; then
           FEATURE_MULT=2
         else
@@ -114,6 +117,10 @@ for crit in "${CRITERIA[@]}"; do
 #SBATCH -J ${feature_combination}_${samples_to_include}_${crit}_${prediction_model}
 #SBATCH --output=${FULL_LOG_PATH_LOG}
 #SBATCH --error=${FULL_LOG_PATH_ERR}
+EOF
+
+        # Load Modules
+        cat >> $SLURM_SCRIPT << EOF
 
 # Load Modules
 module load python
@@ -140,16 +147,25 @@ srun python main.py \\
     --parallelize_shap_ia_values "$PARALLELIZE_SHAP_IA_VALUES" \\
     --parallelize_shap "$PARALLELIZE_SHAP" \\
     --parallelize_imputation_runs "$PARALLELIZE_IMPUTATION_RUNS" \\
+    --use_mpi "$USE_MPI" \\
+    --split_reps "$SPLIT_REPS" \\
     --output_path "$RESULT_DIR/"
 EOF
 
         else
-          # Single-node execution using srun
-          cat >> $SLURM_SCRIPT << EOF
+          # Single-node execution
+          if [ "$SPLIT_REPS" == "true" ]; then
+            # Submit as an array job over repetitions
+            NUM_REPS=10  # Number of repetitions, adjust as needed
+
+            # Add SLURM_ARRAY_TASK_ID to SLURM directives
+            cat >> $SLURM_SCRIPT << EOF
+#SBATCH --array=0-$(($NUM_REPS - 1))
+
 # Activate your Python environment if needed
 # source activate your_python_environment
 
-# Run the Python script using srun (for single-node jobs)
+# Run the Python script with SLURM_ARRAY_TASK_ID as the repetition number
 srun python main.py \\
     --prediction_model "$prediction_model" \\
     --crit "$crit" \\
@@ -160,8 +176,34 @@ srun python main.py \\
     --parallelize_shap_ia_values "$PARALLELIZE_SHAP_IA_VALUES" \\
     --parallelize_shap "$PARALLELIZE_SHAP" \\
     --parallelize_imputation_runs "$PARALLELIZE_IMPUTATION_RUNS" \\
+    --use_mpi "$USE_MPI" \\
+    --split_reps "$SPLIT_REPS" \\
+    --rep "\$SLURM_ARRAY_TASK_ID" \\
     --output_path "$RESULT_DIR/"
 EOF
+
+          else
+            # Single-node execution without splitting repetitions
+            cat >> $SLURM_SCRIPT << EOF
+# Activate your Python environment if needed
+# source activate your_python_environment
+
+# Run the Python script
+srun python main.py \\
+    --prediction_model "$prediction_model" \\
+    --crit "$crit" \\
+    --feature_combination "$feature_combination" \\
+    --samples_to_include "$samples_to_include" \\
+    --comp_shap_ia_values "$COMP_SHAP_IA_VALUES" \\
+    --parallelize_inner_cv "$PARALLELIZE_INNER_CV" \\
+    --parallelize_shap_ia_values "$PARALLELIZE_SHAP_IA_VALUES" \\
+    --parallelize_shap "$PARALLELIZE_SHAP" \\
+    --parallelize_imputation_runs "$PARALLELIZE_IMPUTATION_RUNS" \\
+    --use_mpi "$USE_MPI" \\
+    --split_reps "$SPLIT_REPS" \\
+    --output_path "$RESULT_DIR/"
+EOF
+          fi
 
         fi
 
@@ -172,7 +214,6 @@ EOF
     done
   done
 done
-
 
 
 

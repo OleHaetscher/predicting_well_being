@@ -1,3 +1,5 @@
+import os
+import pickle
 from collections import defaultdict
 
 from sklearn.linear_model import ElasticNet
@@ -12,7 +14,7 @@ class ENRAnalyzer(BaseMLAnalyzer):
     BaseMLAnalyzer. The model attribute is defined in the subclasses.
     """
 
-    def __init__(self, var_cfg, output_dir, df, rank):
+    def __init__(self, var_cfg, output_dir, df, rep, rank):
         """
         Constructor method of the LinearAnalyzer class.
 
@@ -20,7 +22,7 @@ class ENRAnalyzer(BaseMLAnalyzer):
             var_cfg: YAML config determining specifics of the analysis
             output_dir: Specific directory where the results are stored
         """
-        super().__init__(var_cfg, output_dir, df, rank)
+        super().__init__(var_cfg, output_dir, df, rep, rank)
         self.model = ElasticNet(random_state=self.var_cfg["analysis"]["random_state"])
 
     def get_average_coefficients(self):
@@ -31,17 +33,24 @@ class ENRAnalyzer(BaseMLAnalyzer):
             coefs_dict = defaultdict(lambda: defaultdict(lambda: defaultdict(dict)))
 
             for rep in range(self.num_reps):
-                for outer_fold_idx, outer_fold in enumerate(self.best_models[f"rep_{rep}"]):
-                    for imputation_idx, model in enumerate(outer_fold):
-                        print(rep, outer_fold_idx, imputation_idx)
-                        coefs_sub_dict = dict(zip(feature_names, model.coef_))
-                        sorted_coefs_sub_dict = dict(
-                            sorted(
-                                coefs_sub_dict.items(), key=lambda item: abs(item[1]), reverse=True
+                best_models_file = os.path.join(self.spec_output_path, f"best_models_rep_{rep}.pkl")
+                print(best_models_file)
+                if os.path.exists(best_models_file):
+                    with open(best_models_file, "rb") as f:
+                        best_models_rep = pickle.load(f)
+                    for outer_fold_idx, outer_fold in enumerate(best_models_rep):
+                        for imputation_idx, model in enumerate(outer_fold):
+                            print(rep, outer_fold_idx, imputation_idx)
+                            coefs_sub_dict = dict(zip(feature_names, model.coef_))
+                            sorted_coefs_sub_dict = dict(
+                                sorted(
+                                    coefs_sub_dict.items(), key=lambda item: abs(item[1]), reverse=True
+                                )
                             )
-                        )
-                        # Insert sorted_coefs_dict into coefs_dict according to the hierarchy
-                        coefs_dict[f"rep_{rep}"][f"outer_fold_{outer_fold_idx}"][f"imputation_{imputation_idx}"] = sorted_coefs_sub_dict
+                            coefs_dict[f"rep_{rep}"][f"outer_fold_{outer_fold_idx}"][
+                                f"imputation_{imputation_idx}"] = sorted_coefs_sub_dict
+                else:
+                    print(f"Best models file for rep {rep} not found.")
 
             regular_dict = self.defaultdict_to_dict(coefs_dict)
             self.lin_model_coefs = regular_dict

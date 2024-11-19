@@ -10,72 +10,33 @@ class SlurmHandler:
 
     def get_slurm_vars(self, var_cfg):
         """
-        This function is used to update the args that were provided by the SLURM script. Thus, in the SLURM scipt,
-        we provide arguments that determine the current analysis that is run on the cluster (i.e., a specific analysis /
-        study / esm sample/ etc) combination. This parameters has to be passed to the python script that runs the
-        machine learning analysis. This is done via this function using an ArgumentParser object.
-
+        This function updates the args that were provided by the SLURM script.
         Args:
             var_cfg: Dict, containing the yaml var_cfg for default arguments for the parameters
-
         Returns:
             args: argparse.Namespace, contains the SLURM arguments passed to the script
         """
-        # Dictionary of arguments
-        args_dict = {
-            "--prediction_model": {
-                "help": "elasticnet or randomforestregression",
-            },
-            "--crit": {
-                "help": "state or trait wb/pa/na",
-            },
-            "--feature_combination": {
-                "help": "all combinations of pl, srmc, sens, and mac defined in the PreReg",
-            },
-            "--samples_to_include": {
-                "help": "all (include all samples and impute a lot), "
-                        "selected (include selected samples),"
-                        "control (include only pl for the samples included in selected",
-            },
-            "--output_path": {"default": "test_results", "help": "output file path."},
-        }
+        parser = argparse.ArgumentParser(description="CoCo WB ML - OH")
 
-        parser = argparse.ArgumentParser(
-            description="CoCo WB ML - OH"
-        )
+        # Add string arguments
+        parser.add_argument("--prediction_model", type=str, help="elasticnet or randomforestregressor")
+        parser.add_argument("--crit", type=str, help="state or trait wb/pa/na")
+        parser.add_argument("--feature_combination", type=str, help="Feature combinations defined in the PreReg")
+        parser.add_argument("--samples_to_include", type=str, help="all, selected, control")
+        parser.add_argument("--output_path", type=str, help="Output file path.")
 
-        # Loop through the dictionary and add each argument
-        for arg, params in args_dict.items():
-            parser.add_argument(
-                arg, type=str, help=params["help"]
-            )
+        # Add boolean arguments using str2bool
+        parser.add_argument("--comp_shap_ia_values", type=self.str2bool, help="Calculate IA values for RFR, Bool")
+        parser.add_argument("--parallelize_imputation_runs", type=self.str2bool, help="Parallelize imputed datasets, Bool")
+        parser.add_argument("--parallelize_inner_cv", type=self.str2bool, help="Parallelize inner CV, Bool")
+        parser.add_argument("--parallelize_shap_ia_values", type=self.str2bool, help="Parallelize SHAP IA values, Bool")
+        parser.add_argument("--parallelize_shap", type=self.str2bool, help="Parallelize SHAP calculations, Bool")
+        parser.add_argument("--use_mpi", type=self.str2bool, help="Use mpi4py, Bool")
+        parser.add_argument("--split_reps", type=self.str2bool, help="Split repetitions into separate jobs, Bool")
 
-        # In the get_slurm_vars function, when adding arguments, specify the type as str2bool for boolean variables
-        parser.add_argument(
-            "--comp_shap_ia_values",
-            type=self.str2bool,
-            help="if for rfr ia_values are calculated, Bool",
-        )
-        parser.add_argument(
-            "--parallelize_imputation_runs",
-            type=self.str2bool,
-            help="if we parallelize the creation of the imputed datasets, Bool",
-        )
-        parser.add_argument(
-            "--parallelize_inner_cv",
-            type=self.str2bool,
-            help="if we parallelize the inner cv of the analysis, Bool",
-        )
-        parser.add_argument(
-            "--parallelize_shap_ia_values",
-            type=self.str2bool,
-            help="if we parallelize the shap ia value calculations, Bool",
-        )
-        parser.add_argument(
-            "--parallelize_shap",
-            type=self.str2bool,
-            help="if we parallelize the shap calculations, Bool",
-        )
+        # Add integer argument for repetitions
+        parser.add_argument("--rep", type=int, default=None, help="Repetition number, used when split_reps is true")
+
         args = parser.parse_args()
         return args
 
@@ -104,28 +65,41 @@ class SlurmHandler:
     @staticmethod
     def update_cfg_with_slurm_vars(var_cfg, args):
         """
-        This function updates the currenct var_cfg with the SLURM vars provided so that the machine learning analysis
-        can still grab the parameters from the var_cfg, but with the updated parameters of the current analysis.
-        It is important though that this updated var_cfg is used in the main script, not the old var_cfg.
-
+        This function updates the current var_cfg with the SLURM vars provided.
         Args:
-            var_cfg: Dict, containg the old YAML var_cfg before parameter update
-            args:
-
+            var_cfg: Dict, containing the old YAML var_cfg before parameter update
+            args: argparse.Namespace, contains the SLURM arguments passed to the script
         Returns:
-            cfg_updated: Dict, cpontaining the new YAML var_cfg with the parameters defined in the SLURM script
+            cfg_updated: Dict, containing the new YAML var_cfg with the parameters defined in the SLURM script
         """
         args_dict = vars(args)
         print(args_dict)
         for arg_name, arg_value in args_dict.items():
-            # Traverse the entire configuration to find the right key and update it.
+            # Skip 'rep' as it's not part of var_cfg
+            if arg_name == "rep" or arg_value is None:
+                continue
             updated = False
-            for section in ["params", "parallelize", "shap_ia_values", "output_path"]:
-                if arg_name in var_cfg["analysis"][section]:
-                    var_cfg["analysis"][section][arg_name] = arg_value
-                    updated = True
-                    break
-            if not updated:
+            # Update 'general' section
+            if arg_name in ["use_mpi", "split_reps"]:
+                var_cfg["analysis"][arg_name] = arg_value
+                updated = True
+            # Update 'params' section
+            elif arg_name in var_cfg["analysis"]["params"]:
+                var_cfg["analysis"]["params"][arg_name] = arg_value
+                updated = True
+            # Update 'parallelize' section
+            elif arg_name in var_cfg["analysis"]["parallelize"]:
+                var_cfg["analysis"]["parallelize"][arg_name] = arg_value
+                updated = True
+            # Update 'shap_ia_values' section
+            elif arg_name in var_cfg["analysis"]["shap_ia_values"]:
+                var_cfg["analysis"]["shap_ia_values"][arg_name] = arg_value
+                updated = True
+            # Update 'output_path'
+            elif arg_name == "output_path":
+                var_cfg["analysis"]["output_path"] = arg_value
+                updated = True
+            else:
                 print(f"Warning: Argument {arg_name} not recognized. Skipping update for this argument.")
 
         return var_cfg

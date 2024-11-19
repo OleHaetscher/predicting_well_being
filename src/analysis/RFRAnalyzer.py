@@ -1,4 +1,5 @@
 import os
+import pickle
 from collections import defaultdict
 
 import numpy as np
@@ -20,7 +21,7 @@ class RFRAnalyzer(BaseMLAnalyzer):
     BaseMLAnalyzer. For class attributes, see BaseMLAnalyzer. Hyperparameters to tune are defined in the config.
     """
 
-    def __init__(self, var_cfg, output_dir, df, rank):
+    def __init__(self, var_cfg, output_dir, df, rep, rank):
         """
         Constructor method of the RFRAnalyzer class.
 
@@ -28,7 +29,7 @@ class RFRAnalyzer(BaseMLAnalyzer):
             config: YAML config determining specifics of the analysis
             output_dir: Specific directory where the results are stored
         """
-        super().__init__(var_cfg, output_dir, df, rank)
+        super().__init__(var_cfg, output_dir, df, rep, rank)
         self.model = RandomForestRegressor(
             random_state=self.var_cfg["analysis"]["random_state"]
         )
@@ -127,59 +128,79 @@ class RFRAnalyzer(BaseMLAnalyzer):
 
     def process_all_shap_ia_values(self):
         """
-        This function
-            - aggregates shap_ia_values across reps and imputations for each person (extract mean and sd)
-                - This reduces the data size from 10 reps x (n_samples, n_combos, n_imputations) to (n_samples, n_combos)
-            - summarize the shap_ia_values across persons (extract mean and sd, leads to data size: n_combos)
-                - I think the raw rather than the absolute value may be appropriate here
-            - Take a random sample of e.g. 100 out of the total number of samples
-            - extracts the
-                - most interactive features
-                - most common interactions (on 2nd and third order)
-
-
-
-            - Sets the processed shap_ia_values as an attribute "shap_ia_results_processed"
-
-        Returns:
-
+        Process SHAP interaction values by aggregating across repetitions and imputations.
         """
-        if self.rank == 0 and self.var_cfg["analysis"]["shap_ia_values"]["comp_shap_ia_values"]:
+        # This method should only be executed after all repetitions have been completed
+        # Ensure that it is not run per repetition when repetitions are run independently
+        # So, we can check if MPI is used and rank == 0, or if MPI is not used and we're running a dedicated postprocessing step
 
+        if self.rank == 0 and self.var_cfg["analysis"]["shap_ia_values"][
+            "comp_shap_ia_values"]:
+            # Initialize dictionaries to collect results across repetitions
+            ia_values_all_reps = {}
+            base_values_all_reps = {}
+
+            # Determine the number of repetitions
+            num_reps = self.var_cfg["analysis"]["params"].get("num_reps", 10)
+
+            # Loop over all repetitions and load stored SHAP IA values
+            for rep in range(num_reps):
+                shap_ia_values_filename_cluster = os.path.join(
+                    self.spec_output_path,
+                    f"{self.var_cfg['analysis']['output_filenames']['shap_ia_values_for_cluster']}_rep_{rep}.pkl"
+                )
+
+                if os.path.exists(shap_ia_values_filename_cluster):
+                    with open(shap_ia_values_filename_cluster, "rb") as file:
+                        shap_ia_results_reps_imps = pickle.load(file)
+
+                    ia_values_all_reps[f"rep_{rep}"] = shap_ia_results_reps_imps["shap_ia_values"]
+                    base_values_all_reps[f"rep_{rep}"] = shap_ia_results_reps_imps["base_values"]
+                else:
+                    print(f"Warning: SHAP IA values file for repetition {rep} not found.")
+                    continue
+
+            # Now proceed with aggregation across repetitions and imputations
             ia_values_agg_reps_imps, base_value_agg_reps_imps = self.agg_ia_values_across_reps(
-                ia_value_dct=self.shap_ia_results["shap_ia_values"],
-                base_value_dct=self.shap_ia_results["base_values"],
+                ia_value_dct=ia_values_all_reps,
+                base_value_dct=base_values_all_reps,
             )
             self.shap_ia_results_reps_imps["shap_ia_values"] = ia_values_agg_reps_imps
             self.shap_ia_results_reps_imps["base_values"] = base_value_agg_reps_imps
 
+            # Aggregate results across samples
             abs_ia_values_agg_reps_imps_samples, base_value_agg_reps_imps_samples = self.agg_results_across_samples(
                 ia_value_dct=ia_values_agg_reps_imps.copy(),
                 base_value_dct=base_value_agg_reps_imps.copy(),
             )
-            # this can be processed on a normal PC, select sample
+
+            # Map combo to features
             abs_ia_values_agg_reps_imps_samples = self.map_combo_to_features(abs_ia_values_agg_reps_imps_samples)
             ia_values_agg_reps_imps = self.map_combo_to_features(ia_values_agg_reps_imps)
+
+            # Sample aggregated results
             ia_values_sample, base_values_sample = self.sample_aggregated_results(
                 ia_values_agg_reps_imps,
                 base_value_agg_reps_imps,
-                num_samples=self.var_cfg["analysis"]["shap_ia_values"]["num_samples"])
+                num_samples=self.var_cfg["analysis"]["shap_ia_values"]["num_samples"]
+            )
 
             self.shap_ia_results_processed["ia_values_sample"] = ia_values_sample
             self.shap_ia_results_processed["base_values_sample"] = base_values_sample
 
+            # Get top interactions
             top_interactions_per_order = self.get_top_interactions(
                 abs_mapped_results_agg_samples=abs_ia_values_agg_reps_imps_samples,
                 mapped_results_no_agg_samples=ia_values_agg_reps_imps
             )
-            # get most interacting features
+            # Get most interacting features
             top_interacting_features = self.get_most_interacting_features(
                 abs_mapped_results_agg_samples=abs_ia_values_agg_reps_imps_samples,
             )
             self.shap_ia_results_processed["top_interactions"] = top_interactions_per_order
             self.shap_ia_results_processed["top_interacting_features"] = top_interacting_features
             self.shap_ia_results_processed['abs_ia_value_agg_reps_imps_samples'] = abs_ia_values_agg_reps_imps_samples
-            print()
+            print("Processed all SHAP IA values.")
 
     @staticmethod
     def agg_ia_values_across_reps(ia_value_dct, base_value_dct):

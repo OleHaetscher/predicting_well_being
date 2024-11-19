@@ -2,34 +2,12 @@ import os
 import pickle
 import yaml
 import numpy as np
-
-# Import MPI
-from mpi4py import MPI
-
-# Initialize MPI
-comm = MPI.COMM_WORLD
-rank = comm.Get_rank()
-size = comm.Get_size()
-
-print(f"Hello from rank {rank} out of {size}", flush=True)
-print(f"Starting main.py on rank {rank} out of {size}")
-
-from src.analysis.ENRAnalyzer import ENRAnalyzer
-from src.analysis.RFRAnalyzer import RFRAnalyzer
-from src.postprocessing.Postprocessor import Postprocessor
-from src.postprocessing.SignificanceTesting import SignificanceTesting
-from src.preprocessing.CocoesmPreprocessor import CocoesmPreprocessor
-from src.preprocessing.CocomsPreprocessor import CocomsPreprocessor
-from src.preprocessing.CocoutPreprocessor import CocoutPreprocessor
-from src.preprocessing.EmotionsPreprocessor import EmotionsPreprocessor
-from src.preprocessing.PiaPreprocessor import PiaPreprocessor
-from src.preprocessing.ZpidPreprocessor import ZpidPreprocessor
 import pandas as pd
 
 from src.utils.SlurmHandler import SlurmHandler
 
 if __name__ == "__main__":
-    # Load configurations (all ranks need var_cfg, fix_cfg, name_mapping)
+    # Load configurations (before importing mpi4py)
     var_config_path = "../configs/config_var.yaml"
     with open(var_config_path, "r") as f:
         var_cfg = yaml.safe_load(f)
@@ -39,6 +17,44 @@ if __name__ == "__main__":
     name_mapping_path = "../configs/name_mapping.yaml"
     with open(name_mapping_path, "r") as f:
         name_mapping = yaml.safe_load(f)
+
+    slurm_handler = SlurmHandler()
+
+    # Parse arguments before importing mpi4py
+    args = slurm_handler.get_slurm_vars(var_cfg=var_cfg)
+    var_cfg_updated = slurm_handler.update_cfg_with_slurm_vars(var_cfg=var_cfg, args=args)
+    use_mpi = var_cfg_updated["analysis"]["use_mpi4py"]
+    split_reps = var_cfg_updated["analysis"]["split_reps"]
+    rep = args.rep
+
+    # Now, conditionally import
+    if use_mpi:
+        from mpi4py import MPI
+        # Initialize MPI
+        comm = MPI.COMM_WORLD
+        rank = comm.Get_rank()
+        size = comm.Get_size()
+        print("using mpi")
+    else:
+        comm = None
+        rank = 0
+        size = 1
+        print("not using mpi")
+
+    print(f"Hello from rank {rank} out of {size}", flush=True)
+    print(f"Starting main.py on rank {rank} out of {size}")
+
+    # Rest of your imports
+    from src.analysis.ENRAnalyzer import ENRAnalyzer
+    from src.analysis.RFRAnalyzer import RFRAnalyzer
+    from src.postprocessing.Postprocessor import Postprocessor
+    from src.postprocessing.SignificanceTesting import SignificanceTesting
+    from src.preprocessing.CocoesmPreprocessor import CocoesmPreprocessor
+    from src.preprocessing.CocomsPreprocessor import CocomsPreprocessor
+    from src.preprocessing.CocoutPreprocessor import CocoutPreprocessor
+    from src.preprocessing.EmotionsPreprocessor import EmotionsPreprocessor
+    from src.preprocessing.PiaPreprocessor import PiaPreprocessor
+    from src.preprocessing.ZpidPreprocessor import ZpidPreprocessor
 
     # Preprocessing step (all ranks execute)
     if var_cfg["general"]["steps"]["preprocessing"]:
@@ -76,43 +92,58 @@ if __name__ == "__main__":
 
         # Load data if required (all ranks need to load the data)
         if var_cfg["analysis"]["load_data"]:
-            # Each rank loads the data from the shared filesystem
             df = pd.read_pickle(os.path.join(var_cfg["preprocessing"]["path_to_preprocessed_data"], "full_data"))
         else:
-            # Data already loaded during preprocessing
             pass  # df is already available
 
-        # Handle SLURM job variables (all ranks need to process this)
+        # Handle SLURM job variables
         if os.getenv("SLURM_JOB_ID"):
-            args = slurm_handler.get_slurm_vars(var_cfg=var_cfg)
-            var_cfg_updated = slurm_handler.update_cfg_with_slurm_vars(var_cfg=var_cfg, args=args)
-            var_cfg_updated = slurm_handler.sanity_checks_cfg_cluster(var_cfg=var_cfg_updated)
             total_cores = int(os.environ.get("SLURM_CPUS_PER_TASK", 1))
             print("total_cores in main:", total_cores)
             var_cfg_updated = slurm_handler.allocate_cores(var_cfg=var_cfg_updated, total_cores=total_cores)
             output_dir = args.output_path
+            if not use_mpi and split_reps and args.rep is not None:
+                rep = args.rep  # TODO test this on the cluster -> only relevant for logging
+            else:
+                rep = None
         else:
-            # Non-SLURM environment
-            var_cfg_updated = var_cfg
-            output_dir = slurm_handler.construct_local_output_path(var_cfg=var_cfg)
+            output_dir = slurm_handler.construct_local_output_path(var_cfg=var_cfg_updated)
+            rep = None
 
         # All ranks proceed with analysis
         np.random.seed(var_cfg["analysis"]["random_state"])
 
         prediction_model = var_cfg_updated["analysis"]["params"]["prediction_model"]
         if prediction_model == "elasticnet":
-            enr_analyzer = ENRAnalyzer(var_cfg=var_cfg_updated, output_dir=output_dir, df=df, rank=rank)
+            enr_analyzer = ENRAnalyzer(
+                var_cfg=var_cfg_updated,
+                output_dir=output_dir,
+                df=df,
+                rank=rank,
+                rep=rep  # Pass the repetition number
+            )
             enr_analyzer.apply_methods(comm=comm)
         elif prediction_model == "randomforestregressor":
-            rfr_analyzer = RFRAnalyzer(var_cfg=var_cfg_updated, output_dir=output_dir, df=df, rank=rank)
+            rfr_analyzer = RFRAnalyzer(
+                var_cfg=var_cfg_updated,
+                output_dir=output_dir,
+                df=df,
+                rank=rank,
+                rep=rep  # Pass the repetition number
+            )
             rfr_analyzer.apply_methods(comm=comm)
         else:
             raise ValueError(f"Model {prediction_model} not implemented")
 
-    # Postprocessing step (only executed on rank 0)
-    if var_cfg["general"]["steps"]["postprocessing"]:
-        postprocessor = Postprocessor(fix_cfg=fix_cfg, var_cfg=var_cfg, name_mapping=name_mapping)
-        postprocessor.postprocess()
+    # Postprocessing step
+    if var_cfg_updated["general"]["steps"]["postprocessing"]:
+        if use_mpi and rank == 0:
+            postprocessor = Postprocessor(fix_cfg=fix_cfg, var_cfg=var_cfg_updated, name_mapping=name_mapping)
+            postprocessor.postprocess()
+        elif not use_mpi:
+            # Run postprocessing after all repetitions have been completed
+            postprocessor = Postprocessor(fix_cfg=fix_cfg, var_cfg=var_cfg_updated, name_mapping=name_mapping)
+            postprocessor.postprocess()
 
 
 

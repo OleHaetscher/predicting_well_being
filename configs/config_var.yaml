@@ -86,6 +86,9 @@ analysis:
   path_to_preprocessed_data: "../data/preprocessed"
   random_state: 42
 
+  use_mpi4py: true  # Change Backend to LOKY, if FALSE
+  split_reps: false  # this makes only sense if use_mpi4py is False
+
   methods_to_apply:
     - select_samples
     - select_features
@@ -142,9 +145,9 @@ analysis:
   no_control_lst: ["pl", "srmc", "sens", "mac", "all_in"] # we do not run control analyses for these combinations
 
   params: # adjusted by SLURM
-    prediction_model: elasticnet  # elasticnet, randomforestregressor
-    crit: state_wb  # state_wb, state_pa, state_na, trait_wb, trait_na, trait_pa
-    feature_combination: mac # pl, srmc, sens, mac, pl_srmc, pl_sens, pl_srmc_sens, pl_mac, pl_srmc_mac, all_in
+    prediction_model: randomforestregressor  # elasticnet, randomforestregressor
+    crit: trait_pa  # state_wb, state_pa, state_na, trait_wb, trait_na, trait_pa
+    feature_combination: srmc # pl, srmc, sens, mac, pl_srmc, pl_sens, pl_srmc_sens, pl_mac, pl_srmc_mac, all_in
     samples_to_include: selected  # all, selected, control
 
   cv:
@@ -189,15 +192,15 @@ analysis:
 
   model_hyperparameters:
     elasticnet:  # verify
-      #model__regressor__alpha: [0.1, 1]
-      #model__regressor__l1_ratio: [0, 1]
-      model__regressor__alpha: [0.00001, 0.0001, 0.001, 0.01, 0.1, 1, 10, 100, 1000, 10000, 100000]
-      model__regressor__l1_ratio: [0, 0.1, 0.2, 0.3, 0.4, 0.4, 0.6, 0.7, 0.8, 0.9, 1]
-      model__regressor__max_iter: [ 1000, 10000 ]
-      model__regressor__tol: [0.1, 0.01, 0.001, 0.0001]
+      model__regressor__alpha: [0.1, 1, 10]
+      model__regressor__l1_ratio: [0, 0.5, 1]
+      #model__regressor__alpha: [0.00001, 0.0001, 0.001, 0.01, 0.1, 1, 10, 100, 1000, 10000, 100000]
+      #model__regressor__l1_ratio: [0, 0.1, 0.2, 0.3, 0.4, 0.4, 0.6, 0.7, 0.8, 0.9, 1]
+      #model__regressor__max_iter: [ 1000, 10000 ]
+      #model__regressor__tol: [0.1, 0.01, 0.001, 0.0001]
     randomforestregressor:
-      model__regressor__max_depth: [ 8 ]
-      #model__regressor__max_features: [ 0.2 ]
+      model__regressor__max_depth: [ 4,5,6,7,8 ]
+      model__regressor__max_features: [ 0.2 ]
       #model__regressor__n_estimators: [ 100, 500 ]
       #model__regressor__max_features: [ 0.25, 0.5, 0.75]
       #model__regressor__max_depth: [4, 6, 8, 10, 12]
@@ -205,17 +208,17 @@ analysis:
 
   parallelize:
     parallelize_shap: true
-    shap_n_jobs: 1
+    shap_n_jobs: 5
     parallelize_inner_cv: true
-    inner_cv_n_jobs: 1
+    inner_cv_n_jobs: 5
     parallelize_shap_ia_values: true
-    shap_ia_values_n_jobs: 3
-    parallelize_imputation_runs: true # either parallelize runs or columns, for n_cores < 10
-    imputation_runs_n_jobs: 1
-    joblib_backend: "threading"  # threading; for pc2, use threading, loky may crash in multi-node settings
+    shap_ia_values_n_jobs: 5
+    parallelize_imputation_runs: true # Cannot parallelize columns
+    imputation_runs_n_jobs: 5
+    joblib_backend: "loky"  # threading; for pc2, use threading, loky may crash in multi-node settings
 
   shap_ia_values:
-    comp_shap_ia_values: true # true
+    comp_shap_ia_values: false # true
     interaction_index: "k-SII"
     min_order: 0  # 0; min interaction order, always choose 0
     max_order: 3  # 3; max interaction order, one correspond to the normal SHAP values
@@ -224,11 +227,11 @@ analysis:
   output_path: "../results/local_tests"
 
   output_filenames:
-    performance: 'cv_results.json'
-    shap_values: 'shap_values.pkl'  # contains shap_values, base_values, and data
-    shap_ia_values_for_local: 'shap_ia_values_for_local.pkl'
-    shap_ia_values_for_cluster: 'shap_ia_values_for_cluster.pkl'
-    lin_model_coefs: 'lin_model_coefficients.json'
+    performance: 'cv_results'  # .json
+    shap_values: 'shap_values'  # .pkl
+    shap_ia_values_for_local: 'shap_ia_values_for_local' #.pkl
+    shap_ia_values_for_cluster: 'shap_ia_values_for_cluster' #.pkl
+    lin_model_coefs: 'lin_model_coefficients' # .pkl
 
 postprocessing:
   methods:

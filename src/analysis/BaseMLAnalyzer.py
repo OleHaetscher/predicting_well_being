@@ -91,6 +91,7 @@ class BaseMLAnalyzer(ABC):
         var_cfg,
         spec_output_path,
         df,
+        rep,
         rank=None
     ):
         """
@@ -107,12 +108,14 @@ class BaseMLAnalyzer(ABC):
         self.rank = rank
         # Joblib backend
         self.joblib_backend = self.var_cfg["analysis"]["parallelize"]["joblib_backend"]
+        self.rep = rep
+        self.split_reps = self.var_cfg["analysis"]["split_reps"]
 
         self.crit = self.var_cfg["analysis"]["params"]["crit"]
         self.feature_combination = self.var_cfg["analysis"]["params"]["feature_combination"]
         self.samples_to_include = self.var_cfg["analysis"]["params"]["samples_to_include"]
 
-        self.logger = Logger(log_dir=self.spec_output_path, log_file=self.var_cfg["general"]["log_name"], rank=self.rank)
+        self.logger = Logger(log_dir=self.spec_output_path, log_file=self.var_cfg["general"]["log_name"], rank=self.rank, rep=self.rep)
         self.timer = Timer(self.logger)
         self.data_loader = DataLoader()
 
@@ -167,6 +170,13 @@ class BaseMLAnalyzer(ABC):
 
         self.meta_vars = [self.id_grouping_col, self.country_grouping_col, self.years_col]
 
+        # Output filenames (without type endings)
+        self.performance_name = self.var_cfg["analysis"]["output_filenames"]["performance"]  # .json
+        self.shap_value_name = self.var_cfg["analysis"]["output_filenames"]["shap_values"]  # .pkl
+        self.shap_ia_values_for_local_name = self.var_cfg["analysis"]["output_filenames"]["shap_ia_values_for_local"]  # .pkl
+        self.shap_ia_values_for_cluster_name = self.var_cfg["analysis"]["output_filenames"]["shap_ia_values_for_cluster"] # .pkl
+        self.lin_model_coefs_name = self.var_cfg["analysis"]["output_filenames"]["lin_model_coefs"] # .json
+
     @property
     def model_name(self):
         """Get a string repr of the model name and sets it as class attribute (e.g., "lasso")."""
@@ -196,17 +206,23 @@ class BaseMLAnalyzer(ABC):
         return self.var_cfg["analysis"]["model_hyperparameters"][self.model_name]
 
     def apply_methods(self, comm=None):
-        """This function applies the preprocessing methods specified in the var_cfg."""
-        for method in self.var_cfg["analysis"]["methods_to_apply"]:
-            if method not in dir(BaseMLAnalyzer):
-                raise ValueError(f"Method '{method}' is not implemented yet.")
-            log_message = f"  Executing {getattr(self, method).__name__}"
+        """This function applies the analysis methods specified in the var_cfg."""
+        for method_name in self.var_cfg["analysis"]["methods_to_apply"]:
+            if not hasattr(self, method_name):
+                raise ValueError(f"Method '{method_name}' is not implemented yet.")
+            # If split_reps is True, skip 'get_average_coefficients' and 'process_all_shap_ia_values'
+            if self.split_reps and method_name in ['get_average_coefficients', 'process_all_shap_ia_values']:
+                log_message = f"Skipping {method_name} because split_reps is True."
+                self.logger.log(log_message)
+                print(log_message)
+                continue  # Skip this method
+            log_message = f"  Executing {method_name}"
             self.logger.log(log_message)
             print(log_message)
             # Dynamically call the method
-            method_to_call = getattr(self, method)
+            method_to_call = getattr(self, method_name)
             # If the method is 'repeated_nested_cv', pass comm; otherwise, call without comm
-            if method == 'repeated_nested_cv' and comm is not None:
+            if method_name == 'repeated_nested_cv':
                 method_to_call(comm)
             else:
                 method_to_call()
@@ -339,6 +355,8 @@ class BaseMLAnalyzer(ABC):
         self.logger.log(f'    Max iter imputations: {self.var_cfg["analysis"]["imputation"]["max_iter"]}')
 
         self.logger.log("Parallelization params")
+        self.logger.log(f'    Use mpi4py to parallelize across nodes: {self.var_cfg["analysis"]["use_mpi4py"]}')
+        self.logger.log(f'    Split reps: {self.split_reps}')
         self.logger.log(f'    Current rank: {self.rank}')
         self.logger.log(f'    N jobs inner_cv: {self.var_cfg["analysis"]["parallelize"]["inner_cv_n_jobs"]}')
         self.logger.log(f'    N jobs shap: {self.var_cfg["analysis"]["parallelize"]["shap_n_jobs"]}')
@@ -985,9 +1003,13 @@ class BaseMLAnalyzer(ABC):
         return combination_to_index, feature_to_index, len(combinations)
 
     def repeated_nested_cv(self, comm=None):
-        # Initialize MPI
-        rank = comm.Get_rank()
-        size = comm.Get_size()
+        if comm:
+            rank = comm.Get_rank()
+            size = comm.Get_size()
+        else:
+            rank = 0
+            size = 1
+
         print(f"Process {rank} of {size} is running")
         self.logger.log(f"Process {rank} of {size} is running")
 
@@ -995,13 +1017,20 @@ class BaseMLAnalyzer(ABC):
         y = self.y.copy()
         fix_random_state = self.var_cfg["analysis"]["random_state"]
 
-        # Distribute repetitions among processes
-        all_reps = list(range(self.num_reps))
-        my_reps = all_reps[rank::size]
-        print("my_reps:", my_reps)
-
-        print(f"    Rank {rank}: Handling repetitions {my_reps}")
-        self.logger.log(f"    [Rank {rank}] Handling repetitions {my_reps}")
+        # Determine repetitions to run
+        if comm:
+            all_reps = list(range(self.num_reps))
+            my_reps = all_reps[rank::size]
+            print(f"    Rank {rank}: Handling repetitions {my_reps}")
+            self.logger.log(f"    [Rank {rank}] Handling repetitions {my_reps}")
+        else:
+            # If not using MPI, run only the specified repetition or all if rep is None
+            if self.rep is not None:
+                my_reps = [self.rep]
+            else:
+                my_reps = list(range(self.num_reps))
+            print(f"    Running repetitions {my_reps}")
+            self.logger.log(f"    Running repetitions {my_reps}")
 
         results = []
         results_file_paths = []
@@ -1023,57 +1052,101 @@ class BaseMLAnalyzer(ABC):
                 dynamic_rs=dynamic_rs,
             )
 
-            # Unpack result and exclude ia_test_shap_values and ia_test_base_values
+            # Unpack result and exclude large arrays
             result_without_large_arrays = (
                 result[0],  # nested_scores_rep
                 result[1],  # ml_model_params
                 result[2],  # rep_shap_values
                 result[3],  # rep_base_values
                 result[4],  # rep_data
-                # Exclude result[5] (ia_test_shap_values) and result[6] (ia_test_base_values)
             )
 
-            # Append the filtered result to results
             results.append((rep, result_without_large_arrays))
+            shap_val_dct = {"shap_values": result[2], "base_values": result[3], "data": result[4]}
 
             print(f"    [Rank {rank}] Finished repetition {rep}")
             self.logger.log(f"    Rank {rank}: Finished repetition {rep}")
 
-            # Save IA values to files
+            # Save IA values to files -> Save always due to gb size
             file_name_ia_values = os.path.join(
-                self.spec_output_path, f"ia_values_rank{rank}_rep_{rep}.pkl"
+                self.spec_output_path, f"shap_ia_values_rank{rank}_rep_{rep}.pkl"
             )
             file_name_ia_base_values = os.path.join(
-                self.spec_output_path, f"ia_base_values_rank{rank}_rep_{rep}.pkl"
+                self.spec_output_path, f"shap_ia_base_values_rank{rank}_rep_{rep}.pkl"
             )
             with open(file_name_ia_values, "wb") as f:
                 pickle.dump(result[5], f)
             with open(file_name_ia_base_values, "wb") as f:
                 pickle.dump(result[6], f)
-            # Store file paths with their corresponding rep number
-            results_file_paths.append((rep, file_name_ia_values, file_name_ia_base_values))
 
-        # Gather results and file paths at the root process
-        all_results = comm.gather((results, results_file_paths), root=0)
+            # Save models to file
+            best_models_file = os.path.join(self.spec_output_path, f"best_models_rep_{rep}.pkl")
+            with open(best_models_file, "wb") as f:
+                pickle.dump(result[1], f)
 
-        if rank == 0:
-            # Unpack all_results
-            final_results = []
-            all_file_paths = []
-            for res, paths in all_results:
-                final_results.extend(res)
-                all_file_paths.extend(paths)
-            print(f"  [Rank {rank}] Collected all results")
-            self.logger.log(f"  [Rank {rank}] Collected all results")
+            if self.split_reps:  # Store results for single reps, if we use different jobs for different reps
 
-            # Process the final results
+                # Store file paths with their corresponding rep number
+                results_file_paths.append((rep, file_name_ia_values, file_name_ia_base_values))
+
+                nested_scores_file = os.path.join(self.spec_output_path, f"cv_results_rep_{rep}.pkl")
+                with open(nested_scores_file, "w") as file:
+                    json.dump(nested_scores_file, file, indent=4)
+
+                best_models_file = os.path.join(self.spec_output_path, f"shap_values_rep_{rep}.pkl")
+                with open(best_models_file, "wb") as f:
+                    pickle.dump(shap_val_dct, f)
+
+        if comm:
+            # MPI case
+            all_results = comm.gather((results, results_file_paths), root=0)
+            if rank == 0:
+                # Process results
+                final_results = []
+                all_file_paths = []
+                for res, paths in all_results:
+                    final_results.extend(res)
+                    all_file_paths.extend(paths)
+                print(f"  [Rank {rank}] Collected all results")
+                self.logger.log(f"  [Rank {rank}] Collected all results")
+
+                # Process the final results
+                for rep, (
+                        nested_scores_rep,
+                        best_models,
+                        rep_shap_values,
+                        rep_base_values,
+                        rep_data,
+                ) in final_results:
+                    print(f"Processing rep {rep}")
+                    self.best_models[f"rep_{rep}"] = best_models
+                    self.shap_results["shap_values"][f"rep_{rep}"] = rep_shap_values
+                    self.shap_results["base_values"][f"rep_{rep}"] = rep_base_values
+                    self.shap_results["data"][f"rep_{rep}"] = rep_data
+                    self.repeated_nested_scores[f"rep_{rep}"] = nested_scores_rep
+
+                # Load the large arrays from the file paths
+                for rep, ia_values_path, ia_base_values_path in all_file_paths:
+                    with open(ia_values_path, "rb") as f:
+                        rep_shap_ia_values_test = pickle.load(f)
+                    with open(ia_base_values_path, "rb") as f:
+                        rep_shap_ia_base_values = pickle.load(f)
+
+                    self.shap_ia_results["shap_ia_values"][f"rep_{rep}"] = rep_shap_ia_values_test
+                    self.shap_ia_results["base_values"][f"rep_{rep}"] = rep_shap_ia_base_values
+
+                for rep in range(len(self.repeated_nested_scores)):
+                    print(f"scores for rep {rep}: ", self.repeated_nested_scores[f"rep_{rep}"])
+        else:
+            # Non-MPI case  # TODO does this makes sense? looks like repetition
+            # Process results
             for rep, (
                     nested_scores_rep,
                     best_models,
                     rep_shap_values,
                     rep_base_values,
                     rep_data,
-            ) in final_results:
+            ) in results:
                 print(f"Processing rep {rep}")
                 self.best_models[f"rep_{rep}"] = best_models
                 self.shap_results["shap_values"][f"rep_{rep}"] = rep_shap_values
@@ -1082,7 +1155,7 @@ class BaseMLAnalyzer(ABC):
                 self.repeated_nested_scores[f"rep_{rep}"] = nested_scores_rep
 
             # Load the large arrays from the file paths
-            for rep, ia_values_path, ia_base_values_path in all_file_paths:
+            for rep, ia_values_path, ia_base_values_path in results_file_paths:
                 with open(ia_values_path, "rb") as f:
                     rep_shap_ia_values_test = pickle.load(f)
                 with open(ia_base_values_path, "rb") as f:
@@ -1093,62 +1166,44 @@ class BaseMLAnalyzer(ABC):
 
             for rep in range(len(self.repeated_nested_scores)):
                 print(f"scores for rep {rep}: ", self.repeated_nested_scores[f"rep_{rep}"])
-        else:
-            pass  # Other ranks do nothing further
 
     def store_analysis_results(self):
-        """This function stores the prediction results and the SHAP values / Shap interaction values as .JSON files."""
-        if self.rank == 0:
+        """This function stores the prediction results and the SHAP values / SHAP interaction values."""
+        if self.rank == 0 and not self.split_reps:  # TODO Does this makes sense?
             os.makedirs(self.spec_output_path, exist_ok=True)
             print(self.spec_output_path)
 
+            # Determine the current repetition
+            rep = self.rep if self.rep is not None else "all"
+
             # CV results
-            cv_results = self.repeated_nested_scores
+            #cv_results = self.repeated_nested_scores
             cv_results_filename = os.path.join(
                 self.spec_output_path,
-                self.var_cfg["analysis"]["output_filenames"]["performance"]
+                f"{self.performance_name}_rep_{rep}.json"
             )
             with open(cv_results_filename, "w") as file:
-                json.dump(cv_results, file, indent=4)
+                json.dump(self.repeated_nested_scores, file, indent=4)
 
             # SHAP values
-            shap_values = self.shap_results
-            shap_values["feature_names"] = self.X.columns.tolist()
+            # shap_values = self.shap_results
+            self.shap_results["feature_names"] = self.X.columns.tolist()
             shap_values_filename = os.path.join(
                 self.spec_output_path,
-                self.var_cfg["analysis"]["output_filenames"]["shap_values"]
+                f"{self.shap_value_name}_rep_{rep}.pkl"
             )
             with open(shap_values_filename, 'wb') as f:
-                pickle.dump(shap_values, f)
+                pickle.dump(self.shap_results, f)
 
-            # SHAP IA values
-            if self.shap_ia_results_reps_imps:  # this may stay on the cluster due to sample size
-                shap_ia_values_for_cluster = self.shap_ia_results_reps_imps
-                shap_ia_values_filename_cluster = os.path.join(
-                    self.spec_output_path,
-                    self.var_cfg["analysis"]["output_filenames"]["shap_ia_values_for_cluster"]
-                )
-                with open(shap_ia_values_filename_cluster, "wb") as file:
-                    pickle.dump(shap_ia_values_for_cluster, file)
-
-            if self.shap_ia_results_processed:
-                shap_ia_values_for_local = self.shap_ia_results_processed
-                shap_ia_values_filename_local = os.path.join(
-                    self.spec_output_path,
-                    self.var_cfg["analysis"]["output_filenames"]["shap_ia_values_for_local"]
-                )
-                with open(shap_ia_values_filename_local, "wb") as file:
-                    pickle.dump(shap_ia_values_for_local, file)
-
-            # Lin model coefficients
+            # Linear model coefficients
             if self.lin_model_coefs:
-                lin_model_coefs = self.lin_model_coefs
+                # lin_model_coefs = self.lin_model_coefs
                 lin_model_coefs_filename = os.path.join(
                     self.spec_output_path,
-                    self.var_cfg["analysis"]["output_filenames"]["lin_model_coefs"]
+                    f"{self.lin_model_coefs_name}_rep_{rep}.json"
                 )
                 with open(lin_model_coefs_filename, "w") as file:
-                    json.dump(lin_model_coefs, file, indent=4)
+                    json.dump(self.lin_model_coefs, file, indent=4)
 
     def get_average_coefficients(self):
         """Gets the coefficients of linear models of the predictions, implemented in the linear model subclass."""
