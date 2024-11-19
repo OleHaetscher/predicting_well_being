@@ -20,6 +20,9 @@ class DescriptiveStatistics:
         self.name_mapping = name_mapping
         self.esm_id_col_dct = self.fix_cfg["esm_based"]["other_esm_columns"][0]["item_names"]
 
+        self.full_data_path = os.path.join(self.var_cfg['analysis']["path_to_preprocessed_data"], "full_data")
+        self.state_data_base_path = self.var_cfg['analysis']["path_to_preprocessed_data"]
+
     def create_m_sd_feature_table(self):
         """
         This method creates a table containing the mean (M) and standard deviation (SD) for continuous variables,
@@ -30,8 +33,8 @@ class DescriptiveStatistics:
             final_table: pd.DataFrame containing the formatted table in APA style.
         """
         # TODO: Per Sample or in total? Currently total
-        path_to_full_data = os.path.join(self.var_cfg['analysis']["path_to_preprocessed_data"], "full_data")
-        full_df = self.data_loader.read_pkl(path_to_full_data)
+        # path_to_full_data = os.path.join(self.var_cfg['analysis']["path_to_preprocessed_data"], "full_data")
+        full_df = self.data_loader.read_pkl(self.full_data_path)
         results = []
         feature_cats = ['pl', 'srmc', 'sens', 'mac']
 
@@ -317,6 +320,149 @@ class DescriptiveStatistics:
         corr_B = pd.DataFrame(corr_B, index=variables_to_correlate, columns=variables_to_correlate)
 
         return corr_W, corr_B, ICC1_dict, ICC2_dict
+
+    def compute_rel(self):
+        """
+        This function computes the reliability of the well-being measures
+
+        Returns:
+
+        """
+        trait_df, state_df_dct =  self.prepare_rel_data()
+        path_to_full_data = os.path.join(self.var_cfg['analysis']["path_to_preprocessed_data"], "full_data")
+        full_df = self.data_loader.read_pkl(path_to_full_data)
+        crit_cols = [col[5:] for col in full_df.columns if col.startswith('crit')]
+
+        for crit in crit_cols:
+            if "trait" in crit:
+                continue  # focus on state data first
+            elif "state" in crit:
+                rel = self.compute_split_half_rel(df_dct=state_df_dct, construct=crit)
+                print(f"Rel {crit}: {rel}")
+            else:
+                raise ValueError("Unknown criterium ")
+
+    def prepare_rel_data(self):
+        """
+
+        Returns:
+            tuple(pd.DataFrame, dict): trait and state df processed for reliability analysis
+        """
+
+        # state data
+        state_dfs = {}
+        for dataset in self.var_cfg["general"]["datasets_to_be_included"]:
+            timestamp_col = self.var_cfg["preprocessing"]["esm_timestamp_col"][dataset]
+            id_col = self.var_cfg["preprocessing"]["esm_id_col"][dataset]
+
+            path_to_state_data = os.path.join(self.state_data_base_path, f"wb_items_{dataset}")
+            state_df = self.data_loader.read_pkl(path_to_state_data)
+
+            # Ensure timestamp is in datetime format
+            state_df[timestamp_col] = pd.to_datetime(state_df[timestamp_col])
+
+            # Create idx_measurement_per_person
+            state_df['idx_measurement_per_person'] = state_df.sort_values(by=timestamp_col).groupby(id_col).cumcount()
+            state_df["joint_user_id"] = state_df[id_col].apply(lambda x: f"{dataset}_{x}")
+            state_df = state_df.sort_values([id_col, "idx_measurement_per_person"])
+            columns_to_select = ["state_pa", "state_na", "state_wb", "idx_measurement_per_person", "joint_user_id"]
+            state_dfs[dataset] = state_df[state_df.columns.intersection(columns_to_select)]
+
+        # trait data
+        full_df = self.data_loader.read_pkl(self.full_data_path)
+        full_df_filtered = full_df[["crit_trait_wb", "crit_trait_pa", "crit_trait_na"]]
+        # TODO: I need single items for trait rel? -> Change preprocessor
+
+        return full_df_filtered, state_dfs
+
+    def compute_split_half_rel(self,
+                               df_dct: dict[pd.DataFrame],
+                               construct: str,
+                               user_id_col: str = "joint_user_id",
+                               measurement_idx_col: str = "idx_measurement_per_person",
+                               method: str = "odd_even",
+                               correlation_method: str = "spearman") -> float:
+        """
+        Computes the split-half reliability by summing the "construct" values for even and odd indices,
+        then calculating the correlation of these sums across users.
+
+        Args:
+            df (pd.DataFrame): DataFrame containing the data.
+            construct (str): The name of the column representing the construct.
+            user_id_col (str): The column representing unique user IDs, default is "joint_user_id".
+            measurement_idx_col (str): The column representing measurement indices for each person.
+            method (str): The method for splitting the data, default is "odd_even".
+            correlation_method (str): The method for calculating correlation ("pearson" or "spearman"). Default is "pearson".
+
+        Returns:
+            float: weighted_mean_rel
+        """
+        rel_dct = {}
+
+        for dataset, df in df_dct.items():
+            # Check if data is present
+            if construct not in df.columns: #this may happen
+                print(f"The construct '{construct}' is not a column in the DataFrame for dataset {dataset}.")
+                continue
+            if user_id_col not in df.columns:
+                raise ValueError(f"The column '{user_id_col}' is not in the DataFrame for dataset {dataset}.")
+            if measurement_idx_col not in df.columns:
+                raise ValueError(f"The DataFrame for dataset {dataset} must have the column {measurement_idx_col}.")
+
+            # Initialize lists to store the summed construct values for even and odd measurements per user
+            odd_means = []
+            even_means = []
+            # Group by user_id_col and compute the sum of construct values for odd and even indices
+            for user_id, group in df.groupby(user_id_col):
+                # Sum the construct values for odd and even indices
+                odd_mean = group[group[measurement_idx_col] % 2 == 1][construct].mean()
+                even_mean = group[group[measurement_idx_col] % 2 == 0][construct].mean()
+                odd_means.append(odd_mean)
+                even_means.append(even_mean)
+
+            # Convert to pandas Series to calculate correlation
+            odd_means_series = pd.Series(odd_means)
+            even_means_series = pd.Series(even_means)
+
+            correlation = odd_means_series.corr(even_means_series, method=correlation_method)
+
+            # Calculate the split-half reliability using the Spearman-Brown formula
+            reliability = 2 * correlation / (1 + correlation)
+            # reliability = correlation
+            rel_dct[dataset] = reliability
+            print(f"rel for dataset {dataset}: {np.round(reliability, 3)}")
+
+        weighted_mean_rel = self.compute_weighted_mean_rel(df_dct=df_dct, rel_dct=rel_dct, user_id_col=user_id_col)
+        print(f"Weighted mean reliability for {construct} across datasets: {np.round(weighted_mean_rel, 3)}")
+
+        return weighted_mean_rel
+
+
+    @staticmethod
+    def compute_weighted_mean_rel(df_dct: dict, rel_dct: dict, user_id_col: str) -> float:
+        """
+        This function computes the mean reliability across samples, weighted by sample size
+
+        Args:
+            df_dct:
+            rel_dct:
+            user_id_col:
+
+        Returns:
+            float: weighted rel
+
+        """
+        # Calculate the weighted mean reliability
+        total_unique_users = 0
+        weighted_sum_reliability = 0
+        for dataset, reliability in rel_dct.items():
+            # Count unique users in the current dataset
+            unique_user_count = df_dct[dataset][user_id_col].nunique()
+            # Accumulate weighted reliability and user counts
+            weighted_sum_reliability += reliability * unique_user_count
+            total_unique_users += unique_user_count
+        weighted_mean_rel = weighted_sum_reliability / total_unique_users if total_unique_users > 0 else np.nan
+        return weighted_mean_rel
 
 
 

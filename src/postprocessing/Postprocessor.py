@@ -77,19 +77,24 @@ class Postprocessor:
 
         # These are the operations to condense the results into one file (.e.g., of the coefficients
         if "condense_results" in self.methods_to_apply:
-            self.extract_fitting_times(base_dir=self.base_result_dir, output_dir=self.processed_output_path)
+            #self.extract_fitting_times(base_dir=self.base_result_dir, output_dir=self.processed_output_path)
             metrics_dict, data_points = self.extract_metrics(self.processed_output_path, self.metric)
             coefficients_dict, coefficient_points = self.extract_coefficients(self.processed_output_path)
             self.create_df_table(data_points, self.metric, self.processed_output_path)
             self.create_coefficients_dataframe(coefficient_points, self.processed_output_path)
 
+        if "create_descriptives" in self.methods_to_apply:
+            # pass
+            rel = self.descriptives_creator.compute_rel()
+            #self.descriptives_creator.create_m_sd_feature_table()
+            #self.descriptives_creator.create_wb_item_statistics()
+
+        if "create_cv_results_plots" in self.methods_to_apply:
+            self.plotter.plot_figure_2(data_to_plot=metrics_dict, rel=.95)
+
         if "create_shap_plots" in self.methods_to_apply:
             # self.shap_processor.prepare_shap_plot_data()
             self.plotter.plot_shap_beeswarm_plots(prepare_data_func=self.shap_processor.prepare_data)
-
-        if "create_descriptives" in self.methods_to_apply:
-            self.descriptives_creator.create_m_sd_feature_table()
-            self.descriptives_creator.create_wb_item_statistics()
 
         if "conduct_significance_tests" in self.methods_to_apply:
             self.significance_testing.significance_testing(dct=self.cv_result_dct.copy())
