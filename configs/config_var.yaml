@@ -10,11 +10,27 @@ general:
 
 preprocessing:
   path_to_raw_data: "../data/raw"
-  store_data: true  # only final data
+  store_data: false  # only final data
   path_to_preprocessed_data: "../data/preprocessed"
   min_num_esm_measures: 5  # 5
   nrows: 999999 # only for descriptives
   need_inverse_coding: ["cocout", "emotions", "pia", "zpid", "cocoms"]  # all except cocoesm, do not change
+
+  esm_id_col:
+    cocoesm: participant
+    cocoms: original_id
+    cocout: id
+    emotions: id # id_for_merging in new dataset, there are currently lacking variables
+    pia: id
+    zpid: user_id
+
+  esm_timestamp_col:
+    emotions: created_esm
+    zpid: questionnaireStartedTimestamp_corrected # notificationTimestamp_corrected
+    cocout: StartDateConvert_esm
+    pia: created
+    cocoesm: created_individual_esm
+    cocoms: questionnaireStartedTimestamp
 
   years_of_data_collection:
     cocoesm: [ 2021, 2022]
@@ -126,16 +142,16 @@ analysis:
   no_control_lst: ["pl", "srmc", "sens", "mac", "all_in"] # we do not run control analyses for these combinations
 
   params: # adjusted by SLURM
-    prediction_model: randomforestregressor  # elasticnet, randomforestregressor
+    prediction_model: elasticnet  # elasticnet, randomforestregressor
     crit: state_wb  # state_wb, state_pa, state_na, trait_wb, trait_na, trait_pa
-    feature_combination: sens_fs # pl, srmc, sens, mac, pl_srmc, pl_sens, pl_srmc_sens, pl_mac, pl_srmc_mac, all_in
+    feature_combination: mac # pl, srmc, sens, mac, pl_srmc, pl_sens, pl_srmc_sens, pl_mac, pl_srmc_mac, all_in
     samples_to_include: selected  # all, selected, control
 
   cv:
     num_inner_cv: 3  # 10
     verbose_inner_cv: 0
     num_outer_cv: 3 # 10
-    num_reps: 1  # 10
+    num_reps: 3  # 10
     id_grouping_col: other_unique_id
     cache_pipe: false  # not improving performance
     warm_start: false  # not improving performance
@@ -199,7 +215,7 @@ analysis:
     joblib_backend: "threading"  # threading; for pc2, use threading, loky may crash in multi-node settings
 
   shap_ia_values:
-    comp_shap_ia_values: false # true
+    comp_shap_ia_values: true # true
     interaction_index: "k-SII"
     min_order: 0  # 0; min interaction order, always choose 0
     max_order: 3  # 3; max interaction order, one correspond to the normal SHAP values
@@ -219,19 +235,20 @@ postprocessing:
     # performance based
     #- process_cv_results
     #- process_lin_model_coefs
-    #- condense_results
+    - condense_results
+    #- create_descriptives
+    - create_cv_results_plots
     # shap based, may need to change "raw_results_path" and "processed_results_path"
     #- process_shap_values
-    - create_shap_plots
-    #- conduct_significance_tests
-    #- create_descriptives
+    #- create_shap_plots
+
 
   # Currently, because of the big amounts of data, we may have separated raw dirs
   # raw: cv: "../results/cluster_results_only_cv_raw" , shap:
   # proc: cv: "../results/cluster_results_only_cv_proc" , shap: "../results/cluster_results_shap_merged" or
 
-  raw_results_path: "../results/cluster_results_only_cv_raw"  # BASE RESULT DIR FOR RAW RESULTS  # shap or cv
-  processed_results_path: "../results/cluster_results_shap_merged"  # "# BASE RESULT DIR FOR PROCESSED RESULTS  # shap or cv
+  raw_results_path: "../results/results_merged_onlycv"  # BASE RESULT DIR FOR RAW RESULTS  # shap or cv
+  processed_results_path: "C:/Users/lokal_o_haet01/Documents/git_repos/coco_wb_ml_code/results/cluster_results_only_cv_proc"   #"../results/cluster_results_only_cv_proc  # cluster_results_only_cv_proc"  # "# BASE RESULT DIR FOR PROCESSED RESULTS  # shap or cv
 
 
   #plots_base_dir: "../results/plots"
@@ -243,7 +260,7 @@ postprocessing:
     source_2: "../results/cluster_results_shap_oh"
     output_folder: "../results/cluster_results_shap_merged"
 
-  metric: r2
+  metric: spearman
 
 
   significance_tests:

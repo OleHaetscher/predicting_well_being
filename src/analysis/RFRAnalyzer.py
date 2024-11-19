@@ -121,23 +121,7 @@ class RFRAnalyzer(BaseMLAnalyzer):
         for idx, x in X_subset.iterrows():
             ia_values_obj = explainer.explain(x.values)
             ia_value_lst.append(ia_values_obj)
-        self.logger.log(f"Currently processing these indices: {X_subset.index[:3]} -> COMPLETED")
-
-        ## remove later -> simple test for correct feature assignment
-        # check first and last feature for first row
-        #for test_idx in [1,2,3]:
-            # Extract the string index from X_subset for the given test index
-            #sample_index = X_subset.index[test_idx]
-
-            # Extract the features at columns 0 and 88 for the row corresponding to test_idx
-            #feature_name_0 = X_subset.columns[0]  # Column name for index 0
-            #feature_name_88 = X_subset.columns[88]  # Column name for index 88
-
-
-            #test_val_1 = ia_value_lst[test_idx].dict_values[(0,)]
-            #test_val_2 = ia_value_lst[test_idx].dict_values[(88,)]
-            #print(f"shap_ia_val for {feature_name_0} and sample {sample_index}: {test_val_1}")
-            #print(f"shap_ia_val for {feature_name_88} and sample {sample_index}: {test_val_2}")
+        self.logger.log(f"SHAP IA computations for indices {X_subset.index[:3]} COMPLETED")
 
         return ia_value_lst
 
@@ -160,7 +144,7 @@ class RFRAnalyzer(BaseMLAnalyzer):
         Returns:
 
         """
-        if self.rank == 0 and any(self.shap_ia_results.values()):  # use rank that collectd the results
+        if self.rank == 0 and self.var_cfg["analysis"]["shap_ia_values"]["comp_shap_ia_values"]:
 
             ia_values_agg_reps_imps, base_value_agg_reps_imps = self.agg_ia_values_across_reps(
                 ia_value_dct=self.shap_ia_results["shap_ia_values"],

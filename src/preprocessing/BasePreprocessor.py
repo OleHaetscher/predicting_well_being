@@ -1132,7 +1132,7 @@ class BasePreprocessor(ABC):
         Returns:
             pd.DataFrame
         """
-        cols = [self.raw_esm_id_col]
+        cols = [self.raw_esm_id_col, self.esm_timestamp]
         affect_states_dct = self.get_state_affect_dct()
         cols.extend([item for sublist in affect_states_dct.values() for item in sublist])
         df_wb_items = df_states[cols]

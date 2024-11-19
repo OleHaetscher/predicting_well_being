@@ -250,7 +250,7 @@ class BaseMLAnalyzer(ABC):
         df_filtered_crit_na = df_filtered.dropna(subset=[crit_col])
         self.rows_dropped_crit_na = len(df_filtered) - len(df_filtered_crit_na)
 
-        #df_filtered_crit_na = df_filtered_crit_na.sample(n=100, random_state=self.var_cfg["analysis"]["random_state"])  # just for testing
+        df_filtered_crit_na = df_filtered_crit_na.sample(n=60, random_state=self.var_cfg["analysis"]["random_state"])  # just for testing
         self.df = df_filtered_crit_na
 
     def select_features(self):
@@ -343,6 +343,7 @@ class BaseMLAnalyzer(ABC):
         self.logger.log(f'    N jobs inner_cv: {self.var_cfg["analysis"]["parallelize"]["inner_cv_n_jobs"]}')
         self.logger.log(f'    N jobs shap: {self.var_cfg["analysis"]["parallelize"]["shap_n_jobs"]}')
         self.logger.log(f'    N jobs imputation runs: {self.var_cfg["analysis"]["parallelize"]["imputation_runs_n_jobs"]}')
+        self.logger.log(f'    Compute shap IA values: {self.var_cfg["analysis"]["shap_ia_values"]["comp_shap_ia_values"]}')
         if self.var_cfg["analysis"]["shap_ia_values"]["comp_shap_ia_values"]:
             self.logger.log(f'    N jobs shap_ia_values: {self.var_cfg["analysis"]["parallelize"]["shap_ia_values_n_jobs"]}')
 
@@ -537,7 +538,7 @@ class BaseMLAnalyzer(ABC):
                     cv=inner_cv,
                     scoring=scoring_inner_cv,
                     refit=True,
-                    verbose=self.var_cfg["analysis"]["cv"]["verbose_inner_cv"],
+                    verbose=5,  # self.var_cfg["analysis"]["cv"]["verbose_inner_cv"],
                     error_score="raise",
                     n_jobs=self.var_cfg["analysis"]["parallelize"]["inner_cv_n_jobs"],
                 )
@@ -997,6 +998,7 @@ class BaseMLAnalyzer(ABC):
         # Distribute repetitions among processes
         all_reps = list(range(self.num_reps))
         my_reps = all_reps[rank::size]
+        print("my_reps:", my_reps)
 
         print(f"    Rank {rank}: Handling repetitions {my_reps}")
         self.logger.log(f"    [Rank {rank}] Handling repetitions {my_reps}")
@@ -1032,7 +1034,7 @@ class BaseMLAnalyzer(ABC):
             )
 
             # Append the filtered result to results
-            results.append(result_without_large_arrays)
+            results.append((rep, result_without_large_arrays))
 
             print(f"    [Rank {rank}] Finished repetition {rep}")
             self.logger.log(f"    Rank {rank}: Finished repetition {rep}")
@@ -1065,15 +1067,14 @@ class BaseMLAnalyzer(ABC):
             self.logger.log(f"  [Rank {rank}] Collected all results")
 
             # Process the final results
-            for rep_idx, (
+            for rep, (
                     nested_scores_rep,
                     best_models,
                     rep_shap_values,
                     rep_base_values,
                     rep_data,
-            ) in enumerate(final_results):
-                rep = my_reps[rep_idx]  # Get the correct rep number
-
+            ) in final_results:
+                print(f"Processing rep {rep}")
                 self.best_models[f"rep_{rep}"] = best_models
                 self.shap_results["shap_values"][f"rep_{rep}"] = rep_shap_values
                 self.shap_results["base_values"][f"rep_{rep}"] = rep_base_values
