@@ -1092,7 +1092,7 @@ class BaseMLAnalyzer(ABC):
 
                 nested_scores_file = os.path.join(self.spec_output_path, f"cv_results_rep_{rep}.json")
                 with open(nested_scores_file, "w") as file:
-                    json.dump(nested_scores_file, file, indent=4)
+                    json.dump(result[0], file, indent=4)
 
                 best_models_file = os.path.join(self.spec_output_path, f"shap_values_rep_{rep}.pkl")
                 with open(best_models_file, "wb") as f:
