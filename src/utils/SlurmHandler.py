@@ -31,7 +31,7 @@ class SlurmHandler:
         parser.add_argument("--parallelize_inner_cv", type=self.str2bool, help="Parallelize inner CV, Bool")
         parser.add_argument("--parallelize_shap_ia_values", type=self.str2bool, help="Parallelize SHAP IA values, Bool")
         parser.add_argument("--parallelize_shap", type=self.str2bool, help="Parallelize SHAP calculations, Bool")
-        parser.add_argument("--use_mpi", type=self.str2bool, help="Use mpi4py, Bool")
+        # parser.add_argument("--use_mpi", type=self.str2bool, help="Use mpi4py, Bool")
         parser.add_argument("--split_reps", type=self.str2bool, help="Split repetitions into separate jobs, Bool")
 
         # Add integer argument for repetitions
@@ -80,7 +80,7 @@ class SlurmHandler:
                 continue
             updated = False
             # Update 'general' section
-            if arg_name in ["use_mpi", "split_reps"]:
+            if arg_name in ["split_reps"]:
                 var_cfg["analysis"][arg_name] = arg_value
                 updated = True
             # Update 'params' section
