@@ -1068,16 +1068,17 @@ class BaseMLAnalyzer(ABC):
             self.logger.log(f"    Rank {rank}: Finished repetition {rep}")
 
             # Save IA values to files -> Save always due to gb size
-            file_name_ia_values = os.path.join(
-                self.spec_output_path, f"shap_ia_values_rank{rank}_rep_{rep}.pkl"
-            )
-            file_name_ia_base_values = os.path.join(
-                self.spec_output_path, f"shap_ia_base_values_rank{rank}_rep_{rep}.pkl"
-            )
-            with open(file_name_ia_values, "wb") as f:
-                pickle.dump(result[5], f)
-            with open(file_name_ia_base_values, "wb") as f:
-                pickle.dump(result[6], f)
+            if self.var_cfg["analysis"]["shap_ia_values"]["comp_shap_ia_values"]:
+                file_name_ia_values = os.path.join(
+                    self.spec_output_path, f"shap_ia_values_rank{rank}_rep_{rep}.pkl"
+                )
+                file_name_ia_base_values = os.path.join(
+                    self.spec_output_path, f"shap_ia_base_values_rank{rank}_rep_{rep}.pkl"
+                )
+                with open(file_name_ia_values, "wb") as f:
+                    pickle.dump(result[5], f)
+                with open(file_name_ia_base_values, "wb") as f:
+                    pickle.dump(result[6], f)
 
             # Save models to file
             best_models_file = os.path.join(self.spec_output_path, f"best_models_rep_{rep}.pkl")
@@ -1085,11 +1086,11 @@ class BaseMLAnalyzer(ABC):
                 pickle.dump(result[1], f)
 
             if self.split_reps:  # Store results for single reps, if we use different jobs for different reps
+                if self.var_cfg["analysis"]["shap_ia_values"]["comp_shap_ia_values"]:
+                    # Store file paths with their corresponding rep number
+                    results_file_paths.append((rep, file_name_ia_values, file_name_ia_base_values))
 
-                # Store file paths with their corresponding rep number
-                results_file_paths.append((rep, file_name_ia_values, file_name_ia_base_values))
-
-                nested_scores_file = os.path.join(self.spec_output_path, f"cv_results_rep_{rep}.pkl")
+                nested_scores_file = os.path.join(self.spec_output_path, f"cv_results_rep_{rep}.json")
                 with open(nested_scores_file, "w") as file:
                     json.dump(nested_scores_file, file, indent=4)
 
