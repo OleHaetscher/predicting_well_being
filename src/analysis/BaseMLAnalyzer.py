@@ -1167,7 +1167,7 @@ class BaseMLAnalyzer(ABC):
                 for rep in range(len(self.repeated_nested_scores)):
                     print(f"scores for rep {rep}: ", self.repeated_nested_scores[f"rep_{rep}"])
         else:
-            # Non-MPI case  # TODO does this makes sense? looks like repetition
+            # Non-MPI case
             # Process results
             for rep, (
                     nested_scores_rep,
@@ -1193,12 +1193,16 @@ class BaseMLAnalyzer(ABC):
                 self.shap_ia_results["shap_ia_values"][f"rep_{rep}"] = rep_shap_ia_values_test
                 self.shap_ia_results["base_values"][f"rep_{rep}"] = rep_shap_ia_base_values
 
-            for rep in range(len(self.repeated_nested_scores)):
-                print(f"scores for rep {rep}: ", self.repeated_nested_scores[f"rep_{rep}"])
+            try:
+                for rep in range(len(self.repeated_nested_scores)):
+                    print(f"scores for rep {rep}: ", self.repeated_nested_scores[f"rep_{rep}"])
+            except:
+                print("I do not contain all repetitions")
+                self.logger.log("I do not contain all repetitions")
 
     def store_analysis_results(self):
         """This function stores the prediction results and the SHAP values / SHAP interaction values."""
-        if self.rank == 0 and not self.split_reps:  # TODO Does this makes sense?
+        if self.rank == 0 and not self.split_reps:
             os.makedirs(self.spec_output_path, exist_ok=True)
             print(self.spec_output_path)
 
