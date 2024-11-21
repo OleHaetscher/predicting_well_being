@@ -33,7 +33,7 @@ from src.analysis.ShuffledGroupKFold import ShuffledGroupKFold
 from src.utils.DataLoader import DataLoader
 from src.utils.Logger import Logger
 from src.utils.Timer import Timer
-from mpi4py import MPI
+# from mpi4py import MPI  # TODO REMOVE THIS
 
 pd.options.mode.chained_assignment = None  # default='warn'
 pd.set_option("future.no_silent_downcasting", True)
