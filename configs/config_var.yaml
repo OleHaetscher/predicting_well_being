@@ -86,7 +86,7 @@ analysis:
   path_to_preprocessed_data: "../data/preprocessed"
   random_state: 42
 
-  use_mpi4py: true  # Change Backend to LOKY, if FALSE
+  use_mpi4py: false  # Change Backend to LOKY, if FALSE
   split_reps: false  # this makes only sense if use_mpi4py is False
 
   methods_to_apply:
