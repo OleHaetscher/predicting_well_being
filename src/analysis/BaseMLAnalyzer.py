@@ -266,7 +266,7 @@ class BaseMLAnalyzer(ABC):
         df_filtered_crit_na = df_filtered.dropna(subset=[crit_col])
         self.rows_dropped_crit_na = len(df_filtered) - len(df_filtered_crit_na)
 
-        df_filtered_crit_na = df_filtered_crit_na.sample(n=60, random_state=self.var_cfg["analysis"]["random_state"])  # just for testing
+        # df_filtered_crit_na = df_filtered_crit_na.sample(n=60, random_state=self.var_cfg["analysis"]["random_state"])  # just for testing
         self.df = df_filtered_crit_na
 
     def select_features(self):
@@ -799,7 +799,21 @@ class BaseMLAnalyzer(ABC):
                 represent samples that were in the train set in the current outer fold are all zero.
                 Only defined if calc_ia_values is specific in the var_cfg and model == 'rfr', None otherwise
         """
-        X_test_scaled = pipeline.named_steps["preprocess"].transform(X_test)
+        X_test_scaled = pipeline.named_steps["preprocess"].transform(X_test)  # scaler
+
+        if "feature_selection" in pipeline.named_steps:  # feature sizes must match, conditionally apply fs
+            X_test_scaled = pipeline.named_steps["feature_selection"].transform(X_test)
+            original_feature_names = X_test.columns  # Feature names before selection
+            selected_feature_names = X_test_scaled.columns if isinstance(X_test_scaled, pd.DataFrame) else pipeline.named_steps[
+                "feature_selection"].selected_features_
+            # Find the intersection and get the indices in the original dataset
+            feature_indices = [original_feature_names.get_loc(name) for name in selected_feature_names if
+                               name in original_feature_names]
+            for i in feature_indices:  # for testing
+                print(i)
+        else:
+            feature_indices = None
+
         (
             shap_values_test,
             base_values_test,
@@ -832,7 +846,8 @@ class BaseMLAnalyzer(ABC):
             num_test_indices[num_cv_],
             # num_cv_,
             shap_ia_values_arr,
-            shap_ia_base_values_arr
+            shap_ia_base_values_arr,
+            feature_indices,
         )
 
     def calculate_shap_ia_values(self, X_scaled: pd.DataFrame, pipeline: Pipeline, combo_index_mapping: dict):
@@ -894,7 +909,7 @@ class BaseMLAnalyzer(ABC):
         num_test_indices = [test for train, test in outer_cv.split(X, y, groups=groups)]
         # all_features = X.columns
 
-        # Set up the array to store the results -> 3D arrays (rows x features x imputations)
+        # Set up the array to store the results -> 3D arrays (rows x features x imputations), also for feature selection
         # base values may vary across samples
         rep_shap_values = np.zeros((X.shape[0], X.shape[1], self.num_imputations), dtype=np.float32)
         rep_base_values = np.zeros((X.shape[0], self.num_imputations), dtype=np.float32)  # we get different base values per fold
@@ -926,11 +941,23 @@ class BaseMLAnalyzer(ABC):
                     test_idx,
                     _,
                     _,
+                    feature_indices
             ) in enumerate(fold_results):
+                # TODO: Test
                 # Aggregate results for the current fold and imputation
-                rep_shap_values[test_idx, :, num_imputation] += shap_values_template.astype(np.float32)
-                rep_base_values[test_idx, num_imputation] += base_values_template.flatten().astype(np.float32)
-                rep_data[test_idx, :, num_imputation] += X_test_scaled.astype(np.float32)
+                if "feature_selection" in pipelines[num_cv_][num_imputation].named_steps:  # we have only a feature subset
+                    print(np.shape(rep_shap_values))
+                    print(np.shape(shap_values_template))
+                    print(len(feature_indices))
+                    rep_shap_values[np.ix_(test_idx, feature_indices, [num_imputation])] += shap_values_template.astype(np.float32)[..., np.newaxis]
+                    rep_base_values[test_idx, num_imputation] += base_values_template.flatten().astype(np.float32)
+                    print(np.shape(rep_data))
+                    print(np.shape(X_test_scaled))
+                    rep_data[np.ix_(test_idx, feature_indices, [num_imputation])] += X_test_scaled.astype(np.float32).to_numpy()[..., np.newaxis]
+                else:  # we have all features
+                    rep_shap_values[test_idx, :, num_imputation] += shap_values_template.astype(np.float32)
+                    rep_base_values[test_idx, num_imputation] += base_values_template.flatten().astype(np.float32)
+                    rep_data[test_idx, :, num_imputation] += X_test_scaled.astype(np.float32)
 
         # We need to divide the base values, because we get base_values in every outer fold
         rep_base_values = rep_base_values / self.num_outer_cv
@@ -951,7 +978,8 @@ class BaseMLAnalyzer(ABC):
                         test_idx,
                         shap_ia_values_arr,
                         shap_ia_base_values_arr,
-                ) in enumerate(fold_results):
+                        _
+                ) in enumerate(fold_results):  # TODO Adding feature selection here may be way more complex.. leave out
                     ia_test_shap_values[test_idx, :, num_imputation] += shap_ia_values_arr
                     ia_test_base_values[test_idx, num_imputation] += shap_ia_base_values_arr
 

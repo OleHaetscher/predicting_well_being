@@ -42,11 +42,12 @@ class ShapProcessor:
         Returns:
 
         """
+        # TODO: We need to adjust this for new filenames
         # Traverse the directory structure
         for root, dirs, files in os.walk(self.base_result_dir):
-            if 'shap_values.pkl' in files:
+            if 'shap_values_rep_all.pkl' in files:  # shap_values.pkl
                 rel_path = os.path.relpath(root, self.base_result_dir)
-                shap_values_path = os.path.join(root, 'shap_values.pkl')
+                shap_values_path = os.path.join(root, 'shap_values_rep_all.pkl') # shap_values.pkl
                 shap_values = self.data_loader.read_pkl(shap_values_path)
                 shap_values["feature_names"] = self.process_feature_names(
                     feature_names=shap_values["feature_names"].copy(),
@@ -232,7 +233,7 @@ class ShapProcessor:
         # Iterate over the keys of interest
         for key in ["shap_values", "data", "base_values"]:
             # Collect the arrays across repetitions
-            values = np.array([shap_value_dct[key][f'rep_{i}'] for i in range(10)])
+            values = np.array([shap_value_dct[key][f'rep_{i}'] for i in range(10)])  # TODO set in config, not hardcode
 
             # Calculate mean and standard deviation across repetitions and imputations
             if key in ["shap_values", "data"]:

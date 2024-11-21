@@ -1,7 +1,7 @@
 general:
   datasets_to_be_included: [ cocoesm, cocoms, cocout, emotions, pia, zpid ] # cocoesm, cocoms, cocout, emotions, pia, zpid
-  log_dir: "../logs/test_fs"  # only for preprocessing
-  log_name: test_fs
+  log_dir: "../logs/bugfix"  # only for preprocessing
+  log_name: bugfix
 
   steps:
     preprocessing: false
@@ -136,7 +136,7 @@ analysis:
     # 4 all_in
     all_in_nnse: [ cocoesm, cocout, cocoms, emotions, pia, zpid ]
 
-    # Sensing with feature selection # TODO: Check feature/ sample filtering
+    # Sensing with feature selection
     sens_fs: [zpid, cocoms]
     pl_sens_fs: [zpid, cocoms]
     pl_srmc_sens_fs: [ cocoms ]
@@ -145,9 +145,9 @@ analysis:
   no_control_lst: ["pl", "srmc", "sens", "mac", "all_in"] # we do not run control analyses for these combinations
 
   params: # adjusted by SLURM
-    prediction_model: randomforestregressor  # elasticnet, randomforestregressor
-    crit: trait_pa  # state_wb, state_pa, state_na, trait_wb, trait_na, trait_pa
-    feature_combination: srmc # pl, srmc, sens, mac, pl_srmc, pl_sens, pl_srmc_sens, pl_mac, pl_srmc_mac, all_in
+    prediction_model: elasticnet  # elasticnet, randomforestregressor
+    crit: state_wb  # state_wb, state_pa, state_na, trait_wb, trait_na, trait_pa
+    feature_combination: sens_fs # pl, srmc, sens, mac, pl_srmc, pl_sens, pl_srmc_sens, pl_mac, pl_srmc_mac, all_in
     samples_to_include: selected  # all, selected, control
 
   cv:
@@ -192,19 +192,19 @@ analysis:
 
   model_hyperparameters:
     elasticnet:  # verify
-      model__regressor__alpha: [0.1, 1, 10]
-      model__regressor__l1_ratio: [0, 0.5, 1]
-      #model__regressor__alpha: [0.00001, 0.0001, 0.001, 0.01, 0.1, 1, 10, 100, 1000, 10000, 100000]
-      #model__regressor__l1_ratio: [0, 0.1, 0.2, 0.3, 0.4, 0.4, 0.6, 0.7, 0.8, 0.9, 1]
-      #model__regressor__max_iter: [ 1000, 10000 ]
-      #model__regressor__tol: [0.1, 0.01, 0.001, 0.0001]
+      #model__regressor__alpha: [0.1, 1]
+      #model__regressor__l1_ratio: [0.5]
+      model__regressor__alpha: [0.00001, 0.0001, 0.001, 0.01, 0.1, 1, 10, 100, 1000, 10000, 100000]
+      model__regressor__l1_ratio: [0, 0.1, 0.2, 0.3, 0.4, 0.4, 0.6, 0.7, 0.8, 0.9, 1]
+      model__regressor__max_iter: [ 1000, 10000 ]
+      model__regressor__tol: [0.1, 0.01, 0.001, 0.0001]
     randomforestregressor:
-      model__regressor__max_depth: [ 4,5,6,7,8 ]
-      model__regressor__max_features: [ 0.2 ]
-      #model__regressor__n_estimators: [ 100, 500 ]
-      #model__regressor__max_features: [ 0.25, 0.5, 0.75]
-      #model__regressor__max_depth: [4, 6, 8, 10, 12]
-      #model__regressor__min_samples_split: [5, 10, 15, 20]
+      #model__regressor__max_depth: [ 4,5,6,7,8 ]
+      #model__regressor__max_features: [ 0.2 ]
+      model__regressor__n_estimators: [ 100, 500 ]
+      model__regressor__max_features: [ 0.25, 0.5, 0.75]
+      model__regressor__max_depth: [4, 6, 8, 10, 12]
+      model__regressor__min_samples_split: [5, 10, 15, 20]
 
   parallelize:
     parallelize_shap: true
@@ -250,8 +250,11 @@ postprocessing:
   # raw: cv: "../results/cluster_results_only_cv_raw" , shap:
   # proc: cv: "../results/cluster_results_only_cv_proc" , shap: "../results/cluster_results_shap_merged" or
 
-  raw_results_path: "../results/results_merged_onlycv"  # BASE RESULT DIR FOR RAW RESULTS  # shap or cv
-  processed_results_path: "C:/Users/lokal_o_haet01/Documents/git_repos/coco_wb_ml_code/results/cluster_results_only_cv_proc"   #"../results/cluster_results_only_cv_proc  # cluster_results_only_cv_proc"  # "# BASE RESULT DIR FOR PROCESSED RESULTS  # shap or cv
+  # "../results/results_merged_onlycv"
+  raw_results_path: "../results/results_merged_onlycv"  # BASE RESULT DIR FOR RAW RESULTS  # shap or cv test_fs_shap
+
+  # "C:/Users/lokal_o_haet01/Documents/git_repos/coco_wb_ml_code/results/cluster_results_only_cv_proc"
+  processed_results_path: "C:/Users/lokal_o_haet01/Documents/git_repos/coco_wb_ml_code/results/cluster_results_only_cv_proc"  #"../results/cluster_results_only_cv_proc  # cluster_results_only_cv_proc"  # "# BASE RESULT DIR FOR PROCESSED RESULTS  # shap or cv
 
 
   #plots_base_dir: "../results/plots"

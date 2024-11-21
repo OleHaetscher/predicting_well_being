@@ -49,9 +49,6 @@ class PearsonFeatureSelector(BaseEstimator, TransformerMixin):
             # Select features with absolute correlation above the threshold
             selected_features = abs_correlations[abs_correlations >= self.correlation_threshold].index.tolist()
 
-        # Remove afterwards
-        print(selected_features)
-
         # Store selected target features along with non-target features
         self.selected_features_ = selected_features + [col for col in X.columns if not col.startswith(self.target_prefix)]
 
@@ -73,3 +70,26 @@ class PearsonFeatureSelector(BaseEstimator, TransformerMixin):
 
         # Return only the selected features
         return X[self.selected_features_]
+
+    def get_support(self, indices=False):
+        """
+        Get the mask or indices of selected features.
+
+        Args:
+            indices (bool): If True, return the indices of selected features.
+                            If False, return a boolean mask of the selected features.
+
+        Returns:
+            np.ndarray: Indices or boolean mask of the selected features.
+        """
+        if self.selected_features_ is None:
+            raise RuntimeError("You must fit the selector before getting support.")
+
+        feature_indices = [i for i, col in enumerate(self.selected_features_)]
+        if indices:
+            return feature_indices
+        else:
+            mask = [False] * len(self.selected_features_)
+            for idx in feature_indices:
+                mask[idx] = True
+            return mask
