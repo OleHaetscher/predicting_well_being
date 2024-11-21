@@ -1108,29 +1108,29 @@ class BaseMLAnalyzer(ABC):
                 with open(file_name_ia_base_values, "wb") as f:
                     pickle.dump(result[6], f)
 
+                # Store file paths with their corresponding rep number
+                results_file_paths.append((rep, file_name_ia_values, file_name_ia_base_values))
+
             # Save models to file
             best_models_file = os.path.join(self.spec_output_path, f"best_models_rep_{rep}.pkl")
             with open(best_models_file, "wb") as f:
                 pickle.dump(result[1], f)
 
             if self.split_reps:  # Store results for single reps, if we use different jobs for different reps
-                if self.var_cfg["analysis"]["shap_ia_values"]["comp_shap_ia_values"]:
-                    # Store file paths with their corresponding rep number
-                    results_file_paths.append((rep, file_name_ia_values, file_name_ia_base_values))
 
                 nested_scores_file = os.path.join(self.spec_output_path, f"cv_results_rep_{rep}.json")
                 with open(nested_scores_file, "w") as file:
                     json.dump(result[0], file, indent=4)
 
-                best_models_file = os.path.join(self.spec_output_path, f"shap_values_rep_{rep}.pkl")
-                with open(best_models_file, "wb") as f:
+                shap_values_file = os.path.join(self.spec_output_path, f"shap_values_rep_{rep}.pkl")
+                with open(shap_values_file, "wb") as f:
                     pickle.dump(shap_val_dct, f)
 
         if comm:
             # MPI case
             all_results = comm.gather((results, results_file_paths), root=0)
             if rank == 0:
-                # Process results
+                # Collect all results into final_results and all_file_paths
                 final_results = []
                 all_file_paths = []
                 for res, paths in all_results:
@@ -1138,23 +1138,32 @@ class BaseMLAnalyzer(ABC):
                     all_file_paths.extend(paths)
                 print(f"  [Rank {rank}] Collected all results")
                 self.logger.log(f"  [Rank {rank}] Collected all results")
+        else:
+            # Non-MPI case
+            # Assign results and results_file_paths directly
+            final_results = results
+            all_file_paths = results_file_paths
 
-                # Process the final results
-                for rep, (
-                        nested_scores_rep,
-                        best_models,
-                        rep_shap_values,
-                        rep_base_values,
-                        rep_data,
-                ) in final_results:
-                    print(f"Processing rep {rep}")
-                    self.best_models[f"rep_{rep}"] = best_models
-                    self.shap_results["shap_values"][f"rep_{rep}"] = rep_shap_values
-                    self.shap_results["base_values"][f"rep_{rep}"] = rep_base_values
-                    self.shap_results["data"][f"rep_{rep}"] = rep_data
-                    self.repeated_nested_scores[f"rep_{rep}"] = nested_scores_rep
+        # Process results (only on rank 0 for MPI case)
+        if not comm or (comm and rank == 0):
+            # Process the final results
+            for rep, (
+                    nested_scores_rep,
+                    best_models,
+                    rep_shap_values,
+                    rep_base_values,
+                    rep_data,
+            ) in final_results:
+                # If we do not split across reps, we keep it as before, even when not using mpi4py
+                print(f"Processing rep {rep}")
+                self.best_models[f"rep_{rep}"] = best_models
+                self.shap_results["shap_values"][f"rep_{rep}"] = rep_shap_values
+                self.shap_results["base_values"][f"rep_{rep}"] = rep_base_values
+                self.shap_results["data"][f"rep_{rep}"] = rep_data
+                self.repeated_nested_scores[f"rep_{rep}"] = nested_scores_rep
 
-                # Load the large arrays from the file paths
+            # Load the large arrays from the file paths
+            if self.var_cfg["analysis"]["shap_ia_values"]["comp_shap_ia_values"]:
                 for rep, ia_values_path, ia_base_values_path in all_file_paths:
                     with open(ia_values_path, "rb") as f:
                         rep_shap_ia_values_test = pickle.load(f)
@@ -1164,39 +1173,10 @@ class BaseMLAnalyzer(ABC):
                     self.shap_ia_results["shap_ia_values"][f"rep_{rep}"] = rep_shap_ia_values_test
                     self.shap_ia_results["base_values"][f"rep_{rep}"] = rep_shap_ia_base_values
 
-                for rep in range(len(self.repeated_nested_scores)):
-                    print(f"scores for rep {rep}: ", self.repeated_nested_scores[f"rep_{rep}"])
-        else:
-            # Non-MPI case
-            # Process results
-            for rep, (
-                    nested_scores_rep,
-                    best_models,
-                    rep_shap_values,
-                    rep_base_values,
-                    rep_data,
-            ) in results:
-                print(f"Processing rep {rep}")
-                self.best_models[f"rep_{rep}"] = best_models
-                self.shap_results["shap_values"][f"rep_{rep}"] = rep_shap_values
-                self.shap_results["base_values"][f"rep_{rep}"] = rep_base_values
-                self.shap_results["data"][f"rep_{rep}"] = rep_data
-                self.repeated_nested_scores[f"rep_{rep}"] = nested_scores_rep
-
-            # Load the large arrays from the file paths
-            for rep, ia_values_path, ia_base_values_path in results_file_paths:
-                with open(ia_values_path, "rb") as f:
-                    rep_shap_ia_values_test = pickle.load(f)
-                with open(ia_base_values_path, "rb") as f:
-                    rep_shap_ia_base_values = pickle.load(f)
-
-                self.shap_ia_results["shap_ia_values"][f"rep_{rep}"] = rep_shap_ia_values_test
-                self.shap_ia_results["base_values"][f"rep_{rep}"] = rep_shap_ia_base_values
-
             try:
                 for rep in range(len(self.repeated_nested_scores)):
                     print(f"scores for rep {rep}: ", self.repeated_nested_scores[f"rep_{rep}"])
-            except:
+            except Exception as e:
                 print("I do not contain all repetitions")
                 self.logger.log("I do not contain all repetitions")
 

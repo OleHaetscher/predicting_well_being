@@ -134,8 +134,7 @@ class RFRAnalyzer(BaseMLAnalyzer):
         # Ensure that it is not run per repetition when repetitions are run independently
         # So, we can check if MPI is used and rank == 0, or if MPI is not used and we're running a dedicated postprocessing step
         if not self.split_reps:
-            if self.rank == 0 and self.var_cfg["analysis"]["shap_ia_values"][
-                "comp_shap_ia_values"]:
+            if self.rank == 0 and self.var_cfg["analysis"]["shap_ia_values"]["comp_shap_ia_values"]:
                 # Initialize dictionaries to collect results across repetitions
                 ia_values_all_reps = {}
                 base_values_all_reps = {}
@@ -158,6 +157,7 @@ class RFRAnalyzer(BaseMLAnalyzer):
                         base_values_all_reps[f"rep_{rep}"] = shap_ia_results_reps_imps["base_values"]
                     else:
                         print(f"Warning: SHAP IA values file for repetition {rep} not found.")
+                        self.logger.log(f"Warning: SHAP IA values file for repetition {rep} not found.")
                         continue
 
                 # Now proceed with aggregation across repetitions and imputations
