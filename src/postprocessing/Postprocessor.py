@@ -1,7 +1,9 @@
 import copy
 import json
 import os
+import pickle
 import re
+from collections import defaultdict
 from datetime import datetime
 import numpy as np
 
@@ -60,6 +62,13 @@ class Postprocessor:
         """
         self.create_correction_mapping()
 
+        if "merge_reps" in self.methods_to_apply:  # If we run single analysis per rep on the cluster
+            #self.merge_cv_results_across_reps()
+            #self.merge_lin_model_coefs_across_reps()
+            self.merge_shap_values_across_reps()
+            #self.process_shap_ia_values()
+
+
         # These are the costly operations that condenses the inforfmation of the full cluster results
         if "process_cv_results" in self.methods_to_apply:
             self.process_cv_results()
@@ -98,6 +107,164 @@ class Postprocessor:
 
         if "conduct_significance_tests" in self.methods_to_apply:
             self.significance_testing.significance_testing(dct=self.cv_result_dct.copy())
+
+    def merge_cv_results_across_reps(self):
+        """
+        This function loads the cv_results obtained for individual reps and creates a new file that contains all reps.
+        The result of this function should be equivalent to the cluster results if we did not split the reps on the
+        cluster. Thus, a .json file in this format:
+        {
+            "rep_0": {
+                "outer_fold_0": {
+                    "imp_0": {
+                        "r2": 0.3218946246385005,
+                        "neg_mean_squared_error": -0.2943621131072718,
+                        "spearman": 0.5529809570410639
+                    }
+                }
+        We stored the results in the same folder under "cv_results.json"
+        """
+        # Traverse the base directory
+        for root, dirs, files in os.walk(self.base_result_dir):
+            # Initialize an empty dictionary to hold results for the current subdirectory
+            all_results = {}
+
+            # Iterate through the files in the current directory
+            for file_name in files:
+                if file_name.startswith("cv_results_rep_") and file_name.endswith(".json"):
+                    # Build the full path to the file
+                    file_path = os.path.join(root, file_name)
+                    # Load the JSON file
+                    with open(file_path, 'r') as f:
+                        rep_results = json.load(f)
+                    # Extract the rep key from the file name (e.g., "rep_0" from "cv_results_rep_0.json")
+                    rep_key = file_name.replace("cv_results_", "").replace(".json", "")
+                    # Add to the all_results dictionary
+                    all_results[rep_key] = rep_results
+
+            # If results were found, save them in "cv_results.json" in the current subdirectory
+            if all_results:
+                output_file = os.path.join(root, "cv_results.json")
+                with open(output_file, 'w') as f:
+                    json.dump(all_results, f, indent=4)
+
+                print(f"Merged cv_results saved to {output_file}")
+
+    def merge_lin_model_coefs_across_reps(self):
+        """
+        This function loads the best_models_rep_*.pkl files from subdirectories, extracts coefficients for each repetition,
+        and stores the merged results as JSON in the corresponding subdirectory.
+
+        The resulting file should look like this:
+
+        {
+            "rep_0": {
+                "outer_fold_0": {
+                    "imputation_0": {
+                        "srmc_number_responses": x,
+                        "srmc_percentage_responses": y,
+        """
+
+        # Traverse the base directory
+        for root, dirs, files in os.walk(self.base_result_dir):
+            if os.path.basename(root) == "randomforestregressor":
+                continue
+            # Initialize a dictionary to store coefficients for the current subdirectory
+            coefs_dict = defaultdict(lambda: defaultdict(lambda: defaultdict(dict)))
+
+            # Iterate through files in the current directory
+            for file_name in files:
+                if file_name.startswith("best_models_rep_") and file_name.endswith(".pkl"):
+                    # Build the full path to the file
+                    file_path = os.path.join(root, file_name)
+
+                    # Extract the rep key from the file name (e.g., "rep_0" from "best_models_rep_0.pkl")
+                    rep_key = file_name.replace("best_models_", "").replace(".pkl", "")
+
+                    # Load the pickle file
+                    with open(file_path, "rb") as f:
+                        best_models_rep = pickle.load(f)
+
+                    # Process each outer fold and imputation
+                    for outer_fold_idx, outer_fold in enumerate(best_models_rep):
+                        for imputation_idx, model in enumerate(outer_fold):
+                            coefs_sub_dict = dict(zip(model.feature_names_in_, model.coef_))
+
+                            # Sort coefficients by absolute value (optional)
+                            sorted_coefs_sub_dict = dict(
+                                sorted(coefs_sub_dict.items(), key=lambda item: abs(item[1]), reverse=True)
+                            )
+
+                            # Store in the dictionary
+                            coefs_dict[rep_key][f"outer_fold_{outer_fold_idx}"][f"imputation_{imputation_idx}"] = sorted_coefs_sub_dict
+
+            # If coefficients were collected, save them in a JSON file in the current subdirectory
+            if coefs_dict:
+                # Convert defaultdict to regular dict for JSON serialization
+                regular_dict = self.defaultdict_to_dict(coefs_dict)
+
+                # Save to "lin_model_coefs.json" in the current subdirectory
+                output_file = os.path.join(root, "lin_model_coefficients.json")
+                with open(output_file, 'w') as f:
+                    json.dump(regular_dict, f, indent=4)
+
+                print(f"Merged linear model coefficients saved to {output_file}")
+
+    def merge_shap_values_across_reps(self):
+        """
+        Merge shap_values_rep_*.pkl files into a single file structured like shap_values.pkl.
+        The merged file includes the combined shap_values, base_values, and data for all reps.
+        The resulting file should have the following structure
+        {
+           "shap_values":
+                {
+                "rep_0": ndarray[n_samples, n_features, n_imputations],
+            "base_values": ...
+
+        """
+        test_dir = "../results/res_1111_oh_shap/pl_mac/selected/state_wb/randomforestregressor/shap_values.pkl"
+        # Load the pickle file
+        with open(test_dir, "rb") as f:
+            shap_example = pickle.load(f)
+
+        # Initialize the merged dictionary
+        merged_shap_values = {
+            "shap_values": defaultdict(dict),
+            "base_values": defaultdict(dict),
+            "data": defaultdict(dict),
+        }
+
+        # Traverse the base directory for shap_values_rep_*.pkl files
+        for root, dirs, files in os.walk(self.base_result_dir):
+            for file_name in files:
+                if file_name.startswith("shap_values_rep_") and file_name.endswith(".pkl"):
+                    # Build the full path to the file
+                    file_path = os.path.join(root, file_name)
+
+                    # Extract the repetition key (e.g., "rep_0" from "shap_values_rep_0.pkl")
+                    rep_key = file_name.replace("shap_values_", "").replace(".pkl", "")
+
+                    # Load the pickle file
+                    with open(file_path, "rb") as f:
+                        shap_example = pickle.load(f)
+
+                    # Merge shap_values, base_values, and data for the current repetition
+                    merged_shap_values["shap_values"][rep_key] = shap_example["shap_values"]
+                    merged_shap_values["base_values"][rep_key] = shap_example["base_values"]
+                    merged_shap_values["data"][rep_key] = shap_example["data"]
+                    # TODO Add feature names
+
+        # Convert defaultdict to dict for serialization
+        merged_shap_values["shap_values"] = dict(merged_shap_values["shap_values"])
+        merged_shap_values["base_values"] = dict(merged_shap_values["base_values"])
+        merged_shap_values["data"] = dict(merged_shap_values["data"])
+
+        # Save the merged shap_values.pkl file
+        output_file = os.path.join(self.base_result_dir, "shap_values.pkl")
+        with open(output_file, "wb") as f:
+            pickle.dump(merged_shap_values, f)
+
+        print(f"Merged shap_values saved to {output_file}")
 
     def create_correction_mapping(self):
         """
@@ -571,6 +738,11 @@ class Postprocessor:
             raise ValueError(f"Result type '{result_type}' not recognized, must be 'performance' or 'lin_model_coefs'")
         except Exception as e:
             raise RuntimeError(f"An error occurred while storing the results: {e}")
+
+    def defaultdict_to_dict(self, dct):
+        if isinstance(dct, defaultdict):
+            dct = {k: self.defaultdict_to_dict(v) for k, v in dct.items()}
+        return dct
 
 
 

@@ -266,7 +266,7 @@ class BaseMLAnalyzer(ABC):
         df_filtered_crit_na = df_filtered.dropna(subset=[crit_col])
         self.rows_dropped_crit_na = len(df_filtered) - len(df_filtered_crit_na)
 
-        # df_filtered_crit_na = df_filtered_crit_na.sample(n=60, random_state=self.var_cfg["analysis"]["random_state"])  # just for testing
+        df_filtered_crit_na = df_filtered_crit_na.sample(n=60, random_state=self.var_cfg["analysis"]["random_state"])  # just for testing
         self.df = df_filtered_crit_na
 
     def select_features(self):
@@ -1090,7 +1090,8 @@ class BaseMLAnalyzer(ABC):
             )
 
             results.append((rep, result_without_large_arrays))
-            shap_val_dct = {"shap_values": result[2], "base_values": result[3], "data": result[4]}
+            shap_val_dct = {"shap_values": result[2], "base_values": result[3], "data": result[4],
+                            "feature_names": self.X.columns.tolist()}
 
             print(f"    [Rank {rank}] Finished repetition {rep}")
             self.logger.log(f"    Rank {rank}: Finished repetition {rep}")
