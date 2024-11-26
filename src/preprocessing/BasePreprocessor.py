@@ -417,6 +417,8 @@ class BasePreprocessor(ABC):
         for cat in cat_list:
             for entry in specific_cfg[cat]:
                 if "item_names" in entry:
+                    if entry["name"] == "pa_state":
+                        print()
                     item_names = entry['item_names'].get(self.dataset)
                     align_mapping = entry.get('align_scales_mapping', {}).get(self.dataset)
                     if item_names and align_mapping:

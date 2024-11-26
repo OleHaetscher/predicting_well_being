@@ -117,8 +117,21 @@ class ShapProcessor:
 
         print(f"Merging complete. Results stored in {merged_folder}")
 
-    def prepare_data(self, model_to_plot: str, crit_to_plot: str, samples_to_include: str):
-        print("XXX")
+    def prepare_data(self, model_to_plot: str, crit_to_plot: str, samples_to_include: str, custom_affordances: dict = None):
+        """
+        Prepares the data for SHAP visualization. Allows using custom sample inclusion
+        values for specific feature combinations as specified in custom_affordances.
+
+        Args:
+            model_to_plot (str): The model name to filter by.
+            crit_to_plot (str): The criterion name to filter by.
+            samples_to_include (str): Default samples to include.
+            custom_affordances (dict): Dictionary with feature combinations as keys and
+                                       custom samples_to_include values as values.
+                                       e.g., {"sens": "selected", "mac": "selected"}
+        Returns:
+            dict: Nested dictionary with SHAP explanation objects.
+        """
         # Initialize the root result dictionary with nested defaultdicts
         result_dct = self.nested_dict()
 
@@ -133,8 +146,17 @@ class ShapProcessor:
                 if len(parts) == 4:
                     predictor_combination, samples, crit, model = parts
 
+                    # Possibility to mix up
+                    if custom_affordances:
+                        if predictor_combination in custom_affordances:
+                            effective_samples_to_include = custom_affordances[predictor_combination]
+                        else:
+                            effective_samples_to_include = samples_to_include
+                    else:
+                        effective_samples_to_include = samples_to_include
+
                     # Only load if all filters match
-                    if crit == crit_to_plot and samples == samples_to_include and model == model_to_plot:
+                    if crit == crit_to_plot and samples == effective_samples_to_include and model == model_to_plot:
                         # Get the path to the shap_values file
                         shap_values_path = os.path.join(root, 'shap_values_processed.pkl')
                         # Load the shap_values using the data loader

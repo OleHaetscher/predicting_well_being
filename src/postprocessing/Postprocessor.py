@@ -3,18 +3,21 @@ import json
 import os
 import pickle
 import re
+import shutil
 from collections import defaultdict
 from datetime import datetime
 import numpy as np
+
+import pandas as pd
+import os
+import seaborn as sns
+import matplotlib.pyplot as plt
 
 from src.postprocessing.ResultPlotter import ResultPlotter
 from src.postprocessing.ShapProcessor import ShapProcessor
 from src.postprocessing.SignificanceTesting import SignificanceTesting
 from src.postprocessing.DescriptiveStatistics import DescriptiveStatistics
 from src.utils.DataLoader import DataLoader
-
-import pandas as pd
-
 from src.utils.Logger import Logger
 
 
@@ -62,12 +65,22 @@ class Postprocessor:
         """
         self.create_correction_mapping()
 
+        if "merge_cluster_results" in self.methods_to_apply:
+            self.merge_folders(source1=self.var_cfg["postprocessing"]["merge_cluster_results"]["source_1"],
+                               source2=self.var_cfg["postprocessing"]["merge_cluster_results"]["source_2"],
+                               merged_folder=self.var_cfg["postprocessing"]["merge_cluster_results"]["output_folder"]
+                               )
+
         if "merge_reps" in self.methods_to_apply:  # If we run single analysis per rep on the cluster
-            #self.merge_cv_results_across_reps()
-            #self.merge_lin_model_coefs_across_reps()
+            self.merge_cv_results_across_reps()
+            self.merge_lin_model_coefs_across_reps()
             self.merge_shap_values_across_reps()
             #self.process_shap_ia_values()
 
+        if "check_crit_dist" in self.methods_to_apply:
+            self.check_crit_distribution_sample()
+            self.check_crit_distribution_country()
+            # self.check_crit_distribution_by_year()
 
         # These are the costly operations that condenses the inforfmation of the full cluster results
         if "process_cv_results" in self.methods_to_apply:
@@ -99,7 +112,7 @@ class Postprocessor:
             #self.descriptives_creator.create_wb_item_statistics()
 
         if "create_cv_results_plots" in self.methods_to_apply:
-            self.plotter.plot_figure_2(data_to_plot=metrics_dict, rel=.95)
+            self.plotter.plot_figure_2(data_to_plot=metrics_dict, rel=rel)
 
         if "create_shap_plots" in self.methods_to_apply:
             # self.shap_processor.prepare_shap_plot_data()
@@ -107,6 +120,249 @@ class Postprocessor:
 
         if "conduct_significance_tests" in self.methods_to_apply:
             self.significance_testing.significance_testing(dct=self.cv_result_dct.copy())
+
+    def merge_folders(self, source1: str, source2: str, merged_folder: str):
+        """
+        This is used to merge folders with processed shap_values to account for data from different sources. We do this
+        here as copying the unprocessed shap values may consume to much storage
+
+        Args:
+            source1:
+            source2:
+            merged_folder:
+
+        """
+        # Create the merged folder if it doesn't exist
+        os.makedirs(merged_folder, exist_ok=True)
+
+        # Step 1: Copy all contents from source1 into merged_folder
+        for root, dirs, files in os.walk(source1):
+            # Get relative path for the current directory
+            rel_path = os.path.relpath(root, source1)
+            target_dir = os.path.join(merged_folder, rel_path)
+
+            # Create directories as needed in the target location
+            os.makedirs(target_dir, exist_ok=True)
+
+            # Copy files to the merged folder
+            for file in files:
+                src_file = os.path.join(root, file)
+                dest_file = os.path.join(target_dir, file)
+                shutil.copy2(src_file, dest_file)
+
+        # Step 2: Process files from source2
+        for root, dirs, files in os.walk(source2):
+            rel_path = os.path.relpath(root, source2)
+            target_dir = os.path.join(merged_folder, rel_path)
+
+            for file in files:
+                src_file = os.path.join(root, file)
+                dest_file = os.path.join(target_dir, file)
+
+                # Check if it's a log file
+                if "log" in file:
+                    os.makedirs(target_dir, exist_ok=True)
+                    shutil.copy2(src_file, dest_file)
+                else:
+                    # Check for .json and .pkl files in case of conflicts
+                    if os.path.isfile(dest_file) and (file.endswith(".json") or file.endswith(".pkl")):
+                        # Conflict detected; keeping version from source1
+                        print(f"Conflict detected for {os.path.relpath(dest_file, merged_folder)}. Keeping version from {source1}.")
+                    else:
+                        # Copy file from source2 if no conflict or if it's a new file
+                        os.makedirs(target_dir, exist_ok=True)
+                        shutil.copy2(src_file, dest_file)
+
+        print(f"Merging complete. Results stored in {merged_folder}")
+
+    def check_crit_distribution_sample(self):
+        """
+        This function calculates the mean (M) and standard deviation (SD)
+        of the criteria across all samples and visualizes them in single
+        plots per criterion.
+        """
+
+        # Load the data
+        df = pd.read_pickle(os.path.join(self.var_cfg["preprocessing"]["path_to_preprocessed_data"], "full_data"))
+
+        # Defragment the DataFrame to avoid performance issues
+        df = df.copy()
+
+        # Define samples and criteria
+        samples = ["cocoesm", "cocout", "cocoms", "emotions", "pia", "zpid"]
+        criteria = ["crit_state_pa", "crit_state_na", "crit_state_wb"]
+
+        # Initialize a list to collect results
+        results = []
+
+        for sample in samples:
+            # Filter rows where the index starts with the sample name
+            sample_df = df[df.index.astype(str).str.startswith(sample)]
+
+            for criterion in criteria:
+                # Check if the criterion exists in the sample_df
+                if criterion in sample_df.columns:
+                    # Calculate mean and SD for the sample
+                    mean_value = sample_df[criterion].mean()
+                    std_value = sample_df[criterion].std()
+
+                    # Append results as a dictionary
+                    results.append({
+                        'sample': sample,
+                        'criterion': criterion,
+                        'mean': mean_value,
+                        'std': std_value
+                    })
+                else:
+                    print(f"Criterion '{criterion}' not found in sample '{sample}'. Skipping.")
+
+        # Create a DataFrame from the results
+        result_df = pd.DataFrame(results)
+
+        # Visualization: One plot for each criterion
+        for criterion in criteria:
+            # Filter data for the current criterion
+            criterion_data = result_df[result_df['criterion'] == criterion]
+
+            # Plot
+            plt.figure(figsize=(8, 5))
+            plt.bar(criterion_data['sample'], criterion_data['mean'], yerr=criterion_data['std'], capsize=5)
+            plt.title(f"Mean and SD of {criterion}")
+            plt.ylabel("Mean Value")
+            plt.xlabel("Sample")
+            plt.xticks(rotation=45)
+            plt.tight_layout()
+            plt.show()
+        print()
+
+    def check_crit_distribution_country(self):
+        """
+        This function calculates the mean (M) and standard deviation (SD)
+        of the criteria across countries (Germany, US, Other) and visualizes
+        them in single plots per criterion.
+        """
+
+        # Load the data
+        df = pd.read_pickle(os.path.join(self.var_cfg["preprocessing"]["path_to_preprocessed_data"], "full_data"))
+
+        # Defragment the DataFrame to avoid performance issues
+        df = df.copy()
+
+        # Map countries to 'Germany', 'US', and 'Other'
+        df['country_grouped'] = df['other_country'].apply(
+            lambda x: x.lower() if x.lower() in ['germany', 'usa'] else 'other'
+        )
+
+        # Define criteria
+        criteria = ["crit_state_pa", "crit_state_na", "crit_state_wb"]
+
+        # Initialize a list to collect results
+        results = []
+
+        for criterion in criteria:
+            # Check if the criterion exists in the DataFrame
+            if criterion in df.columns:
+                # Group by country and calculate mean and SD
+                stats = df.groupby('country_grouped')[criterion].agg(['mean', 'std']).reset_index()
+                stats['criterion'] = criterion  # Add the criterion name to the results
+
+                # Append to results
+                results.append(stats)
+            else:
+                print(f"Criterion '{criterion}' not found in the DataFrame. Skipping.")
+
+        # Create a DataFrame from the results
+        if results:
+            result_df = pd.concat(results, ignore_index=True)
+        else:
+            print("No data available for the specified criteria.")
+            return None
+
+        # Visualization: One plot for each criterion
+        for criterion in criteria:
+            # Filter data for the current criterion
+            criterion_data = result_df[result_df['criterion'] == criterion]
+
+            # Plot
+            plt.figure(figsize=(8, 5))
+            plt.bar(criterion_data['country_grouped'], criterion_data['mean'],
+                    yerr=criterion_data['std'], capsize=5)
+            plt.title(f"Mean and SD of {criterion} by Country")
+            plt.ylabel("Mean Value")
+            plt.xlabel("Country")
+            plt.tight_layout()
+            plt.show()
+
+        # Return the DataFrame with mean and SD
+        return result_df
+
+    def check_crit_distribution_by_year(self):
+        """
+        This function calculates the mean (M) and standard deviation (SD)
+        of the criteria across all years and visualizes them in single
+        plots per criterion. Samples with multiple years in 'other_years_of_participation'
+        are excluded.
+        """
+
+        # Load the data
+        df = pd.read_pickle(os.path.join(self.var_cfg["preprocessing"]["path_to_preprocessed_data"], "full_data"))
+
+        # Defragment the DataFrame to avoid performance issues
+        df = df.copy()
+
+        # Define criteria
+        criteria = ["crit_state_pa", "crit_state_na", "crit_state_wb"]
+
+        # Filter out rows where 'other_years_of_participation' contains multiple years
+        df = df[
+            df['other_years_of_participation'].apply(lambda x: isinstance(x, (int, float)) or (isinstance(x, str) and x.isdigit()))]
+
+        # Convert 'other_years_of_participation' to numeric for grouping
+        df['other_years_of_participation'] = pd.to_numeric(df['other_years_of_participation'])
+
+        # Initialize a list to collect results
+        results = []
+
+        # Group by year
+        grouped = df.groupby('other_years_of_participation')
+
+        for year, group in grouped:
+            for criterion in criteria:
+                # Check if the criterion exists in the group
+                if criterion in group.columns:
+                    # Calculate mean and SD for the year
+                    mean_value = group[criterion].mean()
+                    std_value = group[criterion].std()
+
+                    # Append results as a dictionary
+                    results.append({
+                        'year': year,
+                        'criterion': criterion,
+                        'mean': mean_value,
+                        'std': std_value
+                    })
+                else:
+                    print(f"Criterion '{criterion}' not found for year '{year}'. Skipping.")
+
+        # Create a DataFrame from the results
+        result_df = pd.DataFrame(results)
+
+        # Visualization: One plot for each criterion
+        for criterion in criteria:
+            # Filter data for the current criterion
+            criterion_data = result_df[result_df['criterion'] == criterion]
+
+            # Plot
+            plt.figure(figsize=(8, 5))
+            plt.bar(criterion_data['year'].astype(str), criterion_data['mean'], yerr=criterion_data['std'], capsize=5)
+            plt.title(f"Mean and SD of {criterion} by Year")
+            plt.ylabel("Mean Value")
+            plt.xlabel("Year")
+            plt.xticks(rotation=45)
+            plt.tight_layout()
+            plt.show()
+        print()
+
 
     def merge_cv_results_across_reps(self):
         """
@@ -222,6 +478,7 @@ class Postprocessor:
             "base_values": ...
 
         """
+        # TODO Improve
         test_dir = "../results/res_1111_oh_shap/pl_mac/selected/state_wb/randomforestregressor/shap_values.pkl"
         # Load the pickle file
         with open(test_dir, "rb") as f:
@@ -543,7 +800,7 @@ class Postprocessor:
         """
         results_dict = {}  # Initialize the dictionary to store results
         try:
-            results_file_name = self.result_filenames[result_type]
+            results_file_name = f'{self.result_filenames[result_type]}.json'
         except KeyError:
             raise ValueError(f"Result type {result_type} not recognized, must be 'performance' or 'lin_model_coefs'")
 
@@ -706,7 +963,7 @@ class Postprocessor:
             # Extract the raw filename and derive the key and processed filename
             results_raw_filename = self.var_cfg["analysis"]["output_filenames"][result_type]
             results_key = results_raw_filename.split('.')[0]
-            results_proc = f"proc_{results_raw_filename}"  # JSON file extension
+            results_proc = f"proc_{results_raw_filename}.json"  # JSON file extension
 
             # Define the base directory where the results will be stored
             base_output_dir = self.processed_output_path

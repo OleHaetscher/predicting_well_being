@@ -1,12 +1,12 @@
 general:
-  datasets_to_be_included: [ cocoesm, cocoms, cocout, emotions, pia, zpid ] # cocoesm, cocoms, cocout, emotions, pia, zpid
+  datasets_to_be_included: [ cocout ] # cocoesm, cocoms, cocout, emotions, pia, zpid
   log_dir: "../logs/bugfix"  # only for preprocessing
   log_name: bugfix
 
   steps:
     preprocessing: false
-    analysis: true
-    postprocessing: false
+    analysis: false
+    postprocessing: true
 
 preprocessing:
   path_to_raw_data: "../data/raw"
@@ -147,7 +147,7 @@ analysis:
   params: # adjusted by SLURM
     prediction_model: elasticnet  # elasticnet, randomforestregressor
     crit: state_wb  # state_wb, state_pa, state_na, trait_wb, trait_na, trait_pa
-    feature_combination: sens_fs # pl, srmc, sens, mac, pl_srmc, pl_sens, pl_srmc_sens, pl_mac, pl_srmc_mac, all_in
+    feature_combination: srmc # pl, srmc, sens, mac, pl_srmc, pl_sens, pl_srmc_sens, pl_mac, pl_srmc_mac, all_in
     samples_to_include: selected  # all, selected, control
 
   cv:
@@ -192,12 +192,12 @@ analysis:
 
   model_hyperparameters:
     elasticnet:  # verify
-      #model__regressor__alpha: [0.1, 1]
-      #model__regressor__l1_ratio: [0.5]
-      model__regressor__alpha: [0.00001, 0.0001, 0.001, 0.01, 0.1, 1, 10, 100, 1000, 10000, 100000]
-      model__regressor__l1_ratio: [0, 0.1, 0.2, 0.3, 0.4, 0.4, 0.6, 0.7, 0.8, 0.9, 1]
-      model__regressor__max_iter: [ 1000, 10000 ]
-      model__regressor__tol: [0.1, 0.01, 0.001, 0.0001]
+      model__regressor__alpha: [0.1, 1]
+      model__regressor__l1_ratio: [0.5]
+      #model__regressor__alpha: [0.00001, 0.0001, 0.001, 0.01, 0.1, 1, 10, 100, 1000, 10000, 100000]
+      #model__regressor__l1_ratio: [0, 0.1, 0.2, 0.3, 0.4, 0.4, 0.6, 0.7, 0.8, 0.9, 1]
+      #model__regressor__max_iter: [ 1000, 10000 ]
+      #model__regressor__tol: [0.1, 0.01, 0.001, 0.0001]
     randomforestregressor:
       #model__regressor__max_depth: [ 4,5,6,7,8 ]
       #model__regressor__max_features: [ 0.2 ]
@@ -221,7 +221,7 @@ analysis:
     comp_shap_ia_values: false # true
     interaction_index: "k-SII"
     min_order: 0  # 0; min interaction order, always choose 0
-    max_order: 3  # 3; max interaction order, one correspond to the normal SHAP values
+    max_order: 2  # 3; max interaction order, one correspond to the normal SHAP values
     num_samples: 100  # 100
 
   output_path: "../results/local_tests"
@@ -235,13 +235,17 @@ analysis:
 
 postprocessing:
   methods:
-    # performance based
+    ##### Summarizing results
+    #- merge_cluster_results
+    #- merge_reps
+    #- check_crit_dist
+    ##### performance based
     #- process_cv_results
     #- process_lin_model_coefs
     - condense_results
-    #- create_descriptives
+    - create_descriptives
     - create_cv_results_plots
-    # shap based, may need to change "raw_results_path" and "processed_results_path"
+    ##### shap based, may need to change "raw_results_path" and "processed_results_path"
     #- process_shap_values
     #- create_shap_plots
 
@@ -251,14 +255,19 @@ postprocessing:
   # proc: cv: "../results/cluster_results_only_cv_proc" , shap: "../results/cluster_results_shap_merged" or
 
   # "../results/results_merged_onlycv"
-  raw_results_path: "../results/results_merged_onlycv"  # BASE RESULT DIR FOR RAW RESULTS  # shap or cv test_fs_shap
+  raw_results_path: "../results/cluster_results_merged_2611"  # BASE RESULT DIR FOR RAW RESULTS  # shap or cv test_fs_shap
 
-  # "C:/Users/lokal_o_haet01/Documents/git_repos/coco_wb_ml_code/results/cluster_results_only_cv_proc"
-  processed_results_path: "C:/Users/lokal_o_haet01/Documents/git_repos/coco_wb_ml_code/results/cluster_results_only_cv_proc"  #"../results/cluster_results_only_cv_proc  # cluster_results_only_cv_proc"  # "# BASE RESULT DIR FOR PROCESSED RESULTS  # shap or cv
+  # "C:/Users/lokal_o_haet01/Documents/git_repos/coco_wb_ml_code/results/  a) cluster_results_only_cv_proc" b) cluster_results_shap_merged
+  processed_results_path: "C:/Users/lokal_o_haet01/Documents/git_repos/coco_wb_ml_code/results/cluster_results_merged_2611_proc"  #"../results/cluster_results_only_cv_proc  # cluster_results_only_cv_proc"  # "# BASE RESULT DIR FOR PROCESSED RESULTS  # shap or cv
 
 
   #plots_base_dir: "../results/plots"
   #tables_base_dir: "../results/plots"
+  merge_cluster_results:
+    merge_folders: true
+    source_1: "../results/res_js_pc2_2611"
+    source_2: "../results/res_oh_pc2_2611"
+    output_folder: "../results/cluster_results_merged_2611"
 
   shap_processing:
     merge_folders: true  # do merge folders from different cluster accounts
@@ -281,18 +290,37 @@ postprocessing:
     plots:
       - importance_plot
       - beeswarm_plot
+    feature_combo_name_mapping:
+      pl: "Person-level"
+      srmc: "ESM"
+      sens: "Sensing"
+      mac: "Macro-level"
+      pl_srmc: "Person-level + ESM"
+      pl_sens: "Person-level + Sensing"
+      pl_srmc_sens: "Person-level + ESM + Sensing"
+      pl_mac: "Person-level + Macro-level"
+      pl_srmc_mac: "Person-level + ESM + Macro-level"
+
+    cv_result_plot:
+      crit: [ state_wb ]
+      samples_to_include: [ selected ]
+
     shap_importance_plot:  # could define dpi, etc as well here
 
       # This should be lists
-      prediction_model: [elasticnet, randomforestregressor]  # elasticnet, randomforestregressor
-      crit: [state_wb, trait_wb]
-      samples_to_include: [selected, all]
+      prediction_model: [randomforestregressor]  # elasticnet, randomforestregressor
+      crit: [state_wb]
+      samples_to_include: [selected]
 
-      num_to_display: 8
+      num_to_display: 6
 
-      first_col: ["pl", "srmc", "sens", "mac"]
-      second_col: ["pl_srmc", "pl_sens", "pl_srmc_sens", "pl_mac"]
-      third_col: ["pl_srmc_mac", "pl_nnse", "pl_srmc_nnse", "pl_mac_nnse"]
+      # first_col: ["pl", "srmc", "sens", "mac"]
+      # second_col: ["pl_srmc", "pl_sens", "pl_srmc_sens", "pl_mac"]
+      # third_col: ["pl_srmc_mac"]
+      first_col: ["pl", "srmc", "sens"]
+      second_col: ["mac", "pl_srmc", "pl_sens"]
+      third_col: ["pl_mac", "pl_srmc_sens", "pl_srmc_mac"]
+
 
 
 

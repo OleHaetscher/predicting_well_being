@@ -333,14 +333,18 @@ class DescriptiveStatistics:
         full_df = self.data_loader.read_pkl(path_to_full_data)
         crit_cols = [col[5:] for col in full_df.columns if col.startswith('crit')]
 
+        rel_dct = {}
         for crit in crit_cols:
             if "trait" in crit:
                 continue  # focus on state data first
             elif "state" in crit:
                 rel = self.compute_split_half_rel(df_dct=state_df_dct, construct=crit)
+                rel_dct[crit] = rel
                 print(f"Rel {crit}: {rel}")
             else:
                 raise ValueError("Unknown criterium ")
+        return rel_dct["state_wb"]
+
 
     def prepare_rel_data(self):
         """
@@ -380,60 +384,88 @@ class DescriptiveStatistics:
                                construct: str,
                                user_id_col: str = "joint_user_id",
                                measurement_idx_col: str = "idx_measurement_per_person",
-                               method: str = "odd_even",
+                               method: str = "individual_halves",
                                correlation_method: str = "spearman") -> float:
         """
-        Computes the split-half reliability by summing the "construct" values for even and odd indices,
-        then calculating the correlation of these sums across users.
+        Computes the split-half reliability by splitting the data according to the specified method,
+        then calculating the correlation of these halves across users.
 
         Args:
-            df (pd.DataFrame): DataFrame containing the data.
+            df_dct (dict of pd.DataFrame): Dictionary of DataFrames containing the data.
             construct (str): The name of the column representing the construct.
             user_id_col (str): The column representing unique user IDs, default is "joint_user_id".
             measurement_idx_col (str): The column representing measurement indices for each person.
-            method (str): The method for splitting the data, default is "odd_even".
-            correlation_method (str): The method for calculating correlation ("pearson" or "spearman"). Default is "pearson".
+            method (str): The method for splitting the data, could be "odd_even" or "individual_halves".
+            correlation_method (str): The method for calculating correlation ("pearson" or "spearman"). Default is "spearman".
 
         Returns:
-            float: weighted_mean_rel
+            float: Weighted mean reliability across datasets.
         """
         rel_dct = {}
 
         for dataset, df in df_dct.items():
             # Check if data is present
-            if construct not in df.columns: #this may happen
+            if construct not in df.columns:  # This may happen
                 print(f"The construct '{construct}' is not a column in the DataFrame for dataset {dataset}.")
                 continue
             if user_id_col not in df.columns:
                 raise ValueError(f"The column '{user_id_col}' is not in the DataFrame for dataset {dataset}.")
             if measurement_idx_col not in df.columns:
-                raise ValueError(f"The DataFrame for dataset {dataset} must have the column {measurement_idx_col}.")
+                raise ValueError(f"The DataFrame for dataset {dataset} must have the column '{measurement_idx_col}'.")
 
-            # Initialize lists to store the summed construct values for even and odd measurements per user
-            odd_means = []
-            even_means = []
-            # Group by user_id_col and compute the sum of construct values for odd and even indices
+            # Initialize lists to store the summed construct values for the two halves
+            first_half_means = []
+            second_half_means = []
+
+            # Group by user_id_col and compute the sum of construct values for each half
             for user_id, group in df.groupby(user_id_col):
-                # Sum the construct values for odd and even indices
-                odd_mean = group[group[measurement_idx_col] % 2 == 1][construct].mean()
-                even_mean = group[group[measurement_idx_col] % 2 == 0][construct].mean()
-                odd_means.append(odd_mean)
-                even_means.append(even_mean)
+                group = group.sort_values(by=measurement_idx_col)  # Ensure measurements are ordered correctly
+
+                if method == "odd_even":
+                    # Sum the construct values for odd and even indices
+                    odd_mean = group[group[measurement_idx_col] % 2 == 1][construct].mean()
+                    even_mean = group[group[measurement_idx_col] % 2 == 0][construct].mean()
+                    first_half_means.append(odd_mean)
+                    second_half_means.append(even_mean)
+                elif method == "individual_halves":
+                    # Split the measurements into two halves
+                    n = len(group)
+                    half = n // 2
+                    first_half = group.iloc[:half]
+                    second_half = group.iloc[half:]
+
+                    first_half_mean = first_half[construct].mean()
+                    second_half_mean = second_half[construct].mean()
+
+                    first_half_means.append(first_half_mean)
+                    second_half_means.append(second_half_mean)
+                else:
+                    raise ValueError(f"Unknown method '{method}'. Use 'odd_even' or 'individual_halves'.")
 
             # Convert to pandas Series to calculate correlation
-            odd_means_series = pd.Series(odd_means)
-            even_means_series = pd.Series(even_means)
+            first_half_series = pd.Series(first_half_means)
+            second_half_series = pd.Series(second_half_means)
 
-            correlation = odd_means_series.corr(even_means_series, method=correlation_method)
+            # Drop NaN pairs (cases where a user might have NaN in one of the halves)
+            valid_idx = (~first_half_series.isna()) & (~second_half_series.isna())
+            first_half_series = first_half_series[valid_idx]
+            second_half_series = second_half_series[valid_idx]
 
-            # Calculate the split-half reliability using the Spearman-Brown formula
-            reliability = 2 * correlation / (1 + correlation)
-            # reliability = correlation
+            # Check if we have enough data to compute correlation
+            if len(first_half_series) < 2:
+                print(f"Not enough data to compute correlation for dataset {dataset}.")
+                reliability = np.nan
+            else:
+                correlation = first_half_series.corr(second_half_series, method=correlation_method)
+
+                # Calculate the split-half reliability using the Spearman-Brown formula
+                reliability = 2 * correlation / (1 + correlation) if correlation is not None else np.nan
+
             rel_dct[dataset] = reliability
-            print(f"rel for dataset {dataset}: {np.round(reliability, 3)}")
+            print(f"Reliability for dataset {dataset}: {np.round(reliability, 3)}")
 
         weighted_mean_rel = self.compute_weighted_mean_rel(df_dct=df_dct, rel_dct=rel_dct, user_id_col=user_id_col)
-        print(f"Weighted mean reliability for {construct} across datasets: {np.round(weighted_mean_rel, 3)}")
+        print(f"Weighted mean reliability for '{construct}' across datasets: {np.round(weighted_mean_rel, 3)}")
 
         return weighted_mean_rel
 

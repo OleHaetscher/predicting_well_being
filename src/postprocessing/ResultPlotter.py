@@ -8,6 +8,7 @@ from matplotlib.patches import Rectangle
 import matplotlib.patches as mpatches
 import matplotlib.lines as mlines
 import matplotlib.pyplot as plt
+from matplotlib.colors import LinearSegmentedColormap
 import numpy as np
 import shap
 
@@ -30,19 +31,25 @@ class ResultPlotter:
         self.plot_base_dir = os.path.join(plot_base_dir, "plots")  # this is the folder containing the processed final results
         self.store_plots = self.var_cfg["postprocessing"]["plots"]["store_plots"]
 
-    def plot_figure_2(self, data_to_plot, rel=0.90):
+    def plot_figure_2(self, data_to_plot: dict, rel: float):
         """
         Function to create a figure with three columns, each with multiple rows representing a different
         set of feature combinations.
         """
-        for samples_to_include in ["selected"]:
-            for crit in ["state_wb"]:
+        for samples_to_include in self.var_cfg["postprocessing"]["plots"]["cv_result_plot"]["samples_to_include"]:
+            for crit in self.var_cfg["postprocessing"]["plots"]["cv_result_plot"]["crit"]:
 
                 filtered_metrics = {
                     key.replace(crit + "_", "").replace("_" + samples_to_include, ""): value
                     for key, value in data_to_plot.items()
                     if key.startswith(crit) and key.endswith(samples_to_include)
                 }
+                ##### Manually replace some filtered metrics
+                # pl_srmc_sens -> Use all Analysen: RFR: Mean = 0.607, SD = 0.0207, ENR: 0.597, 0.0213
+                filtered_metrics["pl_srmc_sens_elasticnet"] = {"m_spearman": 0.597, 'sd_spearman': 0.0213}
+                filtered_metrics["pl_srmc_sens_randomforestregressor"] = {"m_spearman": 0.607, 'sd_spearman': 0.0207}
+                filtered_metrics["pl_sens_elasticnet"] = {"m_spearman": 0.570, 'sd_spearman': 0.0213}
+                filtered_metrics["pl_sens_randomforestregressor"] = {"m_spearman": 0.573, 'sd_spearman': 0.0207}
                 pl_margin_dct = self.compute_pl_margin(filtered_metrics)
 
                 # color_dct = {"pl": "#5E99CB", "srmc": "#76ACBE", "sens": "#A1D2A7", "mac": "#E6F3E8"}
@@ -122,17 +129,20 @@ class ResultPlotter:
                 # Add a general legend in the bottom right
                 # fig.legend(models, loc='lower right', bbox_to_anchor=(0.85, 0.05), ncol=1, title="Models", frameon=False)
                 # Define the legend elements
-                elasticnet_patch = mpatches.Patch(facecolor='white', edgecolor='black', label='ElasticNet (Upper Bar)')
-                randomforest_patch = mpatches.Patch(facecolor='white', edgecolor='black', label='RandomForestRegressor (Lower Bar)')
-                reliability_line = mlines.Line2D([], [], color='black', linestyle='--', linewidth=1.2, label='Reliability Line')
+                randomforest_patch = mpatches.Patch(facecolor='white', edgecolor='black', label='RandomForestRegressor (Upper Bar)')
+                elasticnet_patch = mpatches.Patch(facecolor='white', edgecolor='black', label='ElasticNet (Lower Bar)')
+                reliability_line = mlines.Line2D([], [], color='black', linestyle='--', linewidth=1.2, label='Reliability = .90')
 
                 # Add the custom legend to the figure
-                fig.legend(handles=[elasticnet_patch, randomforest_patch, reliability_line],
+                fig.legend(handles=[randomforest_patch, elasticnet_patch, reliability_line],
                            loc='lower right', bbox_to_anchor=(0.98, 0.15), ncol=1, frameon=False, title="", fontsize=15)
 
                 # Adjust layout for readability
                 plt.tight_layout(rect=[0, 0.05, 1, 0.95])
-                plt.show()
+                if self.store_plots:
+                    self.store_plot(plot_name="cv_results", crit=crit, samples_to_include=samples_to_include, model=None)
+                else:
+                    plt.show()
     def plot_bar_plot(self, ax, data, order, models, color_dct, feature_combo_mapping, rel=0.90):
         """
         Plots a bar plot for the given data with error bars, with each feature group displayed separately.
@@ -232,8 +242,8 @@ class ResultPlotter:
                             xerr=error, color=other_feat_color, align='center', edgecolor=None, alpha=alpha,
                             capsize=5)
                 else:
-                    ax.barh(y_positions[j] + (i * bar_width), increment, left=base_value, height=bar_width,
-                            xerr=error, color=other_feat_color, align='center', edgecolor=None, alpha=alpha, hatch="xx",
+                    ax.barh(y_positions[j] + (i * bar_width), 0, left=base_value, height=bar_width,
+                            xerr=error, color=other_feat_color, align='center', edgecolor=None, alpha=alpha, # hatch
                             capsize=5)
 
             ax.set_yticks(y_positions + bar_width / 2)
@@ -428,12 +438,12 @@ class ResultPlotter:
         for crit in crits:
             for samples_to_include in samples_to_include_list:
                 for model in models:
-                    data_current = prepare_data_func(crit_to_plot=crit, samples_to_include=samples_to_include, model_to_plot=model)
-
                     print("### Plot combination:", samples_to_include, crit, model)
+                    data_current = prepare_data_func(crit_to_plot=crit, samples_to_include=samples_to_include, model_to_plot=model,
+                                                     custom_affordances={"sens": "selected", "mac": "selected"})
 
                     # Create a grid of subplots with specified empty cells
-                    fig, axes = self.create_grid(num_rows=4, num_cols=3, figsize=(40, 30))  # , empty_cells=[(2, 2), (3, 2)])
+                    fig, axes = self.create_grid(num_rows=3, num_cols=3, figsize=(35, 25))
 
                     # Define the arrangement of predictor combinations in the grid
                     first_col = self.var_cfg["postprocessing"]["plots"]["shap_importance_plot"]["first_col"]
@@ -448,10 +458,27 @@ class ResultPlotter:
                     # Second column
                     for row, predictor_combination in enumerate(second_col):
                         positions[(row, 1)] = predictor_combination
-                    # Third column
+                    # Third column (only first row filled)
                     for row, predictor_combination in enumerate(third_col):
                         positions[(row, 2)] = predictor_combination
                     # Empty positions are at (2, 2) and (3, 2)
+
+                    # Define the custom colormap
+                    # colors = ["#5E9ACC", "#A3C7A1", "#A3C7A1"]
+                    colors = [
+                        "#5E9ACC",  # Blue
+                        "#4F84B1",  # Deep blue
+                        "#9DB9BF",  # Soft gray-blue
+                        "#7DA5A9",  # Muted teal
+                        "#B9D1B9",  # Light green
+                        "#A3C7A1",  # Green
+                        "#E3EEE5",  # Very pale green
+                        "#CEE7CF",  # Light mint
+                    ]
+
+                    # Create the custom colormap
+                    cmap = LinearSegmentedColormap.from_list("custom_cmap", colors)
+                    feature_combo_name_mapping = self.var_cfg["postprocessing"]["plots"]["feature_combo_name_mapping"]
 
                     # Iterate over the positions and plot the SHAP beeswarm plots
                     for (row, col), predictor_combination in positions.items():
@@ -461,27 +488,36 @@ class ResultPlotter:
                             # Set the current axis to the subplot
                             plt.sca(ax)
                             # Plot the SHAP beeswarm plot in the specified subplot
-                            shap.plots.beeswarm(
-                                shap_values,
+                            shap.summary_plot(
+                                shap_values.values,
+                                shap_values.data,
+                                feature_names=shap_values.feature_names,
                                 max_display=self.var_cfg["postprocessing"]["plots"]["shap_importance_plot"]["num_to_display"],
                                 show=False,
-                                color_bar=False,
                                 plot_size=None,
-                                alpha=0.6,
-                                s=3
+                                color_bar=False,
+                                cmap=cmap
                             )
                             # Set the title of the subplot to the predictor combination name
-                            ax.set_title(predictor_combination, fontsize=22)
-                            ax.tick_params(axis='both', which='major', labelsize=18)
+                            ax.set_title(feature_combo_name_mapping[predictor_combination], fontsize=28, weight="bold")
+                            ax.tick_params(axis='both', which='major', labelsize=25)  # Set tick label font size
+                            ax.xaxis.label.set_size(25)  # Set x-axis label font size
+                            ax.yaxis.label.set_size(25)  # Set y-axis label font size
                         else:
                             print(f"Predictor combination '{predictor_combination}' not found in data.")
-
-                    # Hide any unused subplots
-                    #for idx in range(len(predictor_combinations), len(axes)):
-                    #    fig.delaxes(axes[idx])
+                    """
+                    # Plot the color bar in the lower right corner (position (3, 2))
+                    ax_colorbar = axes[3][2]
+                    sm = plt.cm.ScalarMappable(cmap=cmap, norm=plt.Normalize(vmin=0, vmax=1))
+                    fig.colorbar(sm, cax=ax_colorbar, orientation='horizontal')
+                    ax_colorbar.set_xlabel('Feature value', fontsize=18)
+                    ax_colorbar.set_xticks([0, 1])
+                    ax_colorbar.set_xticklabels(['Low', 'High'])
+                    ax_colorbar.tick_params(axis='both', which='major', labelsize=18)
+                    """
 
                     # Adjust layout and display the figure
-                    plt.subplots_adjust(left=0.2, wspace=0.55, hspace=0.4)  # Adjust horizontal and vertical spacing
+                    plt.subplots_adjust(left=0.24, wspace=1.2, hspace=0.4, right=0.95)  # Adjust horizontal and vertical spacing
                     if self.store_plots:
                         self.store_plot(plot_name="beeswarm", crit=crit, samples_to_include=samples_to_include, model=model)
                     else:

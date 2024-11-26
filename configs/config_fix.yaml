@@ -1516,10 +1516,7 @@ esm_based:
         cocoesm: [state_pa1, state_pa2, state_pa3]
         cocoms: [state_pa1, state_pa2, state_pa3]
       align_scales:
-        align_scales_mapping:
-          #zpid:
-          #  min: { 5: 1 }
-          #  max: { 0: 6 }
+        align_scales_mapping:  # TODO:
           cocout:
             min: {1: 1}
             max: {4: 6}
@@ -1537,9 +1534,6 @@ esm_based:
         cocoms: [state_na1, state_na2, state_na3]
       align_scales:
         align_scales_mapping:
-          zpid:
-            min: { 5: 1 }
-            max: { 0: 6 }
           cocout:
             min: { 1: 1 }
             max: { 4: 6 }
