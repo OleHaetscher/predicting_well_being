@@ -9,6 +9,7 @@ import sys
 import threading
 from abc import ABC, abstractmethod
 from itertools import product
+from typing import Callable
 
 import numpy as np
 import pandas as pd
@@ -20,8 +21,9 @@ from sklearn.base import clone
 from sklearn.compose import TransformedTargetRegressor
 from sklearn.metrics import (
     make_scorer,
-    get_scorer,
+    get_scorer, accuracy_score,
 )
+from sklearn.model_selection import ParameterGrid
 from sklearn.model_selection import GridSearchCV
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import LabelEncoder, StandardScaler
@@ -123,7 +125,7 @@ class BaseMLAnalyzer(ABC):
         self.repeated_nested_cv = self.timer._decorator(self.repeated_nested_cv)
         self.nested_cv = self.timer._decorator(self.nested_cv)
         self.summarize_shap_values_outer_cv = self.timer._decorator(self.summarize_shap_values_outer_cv)
-        self.impute_datasets_for_fold = self.timer._decorator(self.impute_datasets_for_fold)
+        # self.impute_datasets_for_fold = self.timer._decorator(self.impute_datasets_for_fold)
         self.clocked_grid_search_fit = self.timer._decorator(self.clocked_grid_search_fit)
 
         self.calculate_shap_ia_values = self.timer._decorator(self.calculate_shap_ia_values)
@@ -266,7 +268,12 @@ class BaseMLAnalyzer(ABC):
         df_filtered_crit_na = df_filtered.dropna(subset=[crit_col])
         self.rows_dropped_crit_na = len(df_filtered) - len(df_filtered_crit_na)
 
-        # df_filtered_crit_na = df_filtered_crit_na.sample(n=60, random_state=self.var_cfg["analysis"]["random_state"])  # just for testing
+        # Sample for testing, if defined in the config
+        if self.var_cfg["analysis"]["tests"]["sample"]:
+            sample_size = self.var_cfg["analysis"]["tests"]["sample_size"]
+            df_filtered_crit_na = df_filtered_crit_na.sample(n=sample_size,
+                                                             random_state=self.var_cfg["analysis"]["random_state"])
+
         self.df = df_filtered_crit_na
 
     def select_features(self):
@@ -285,7 +292,7 @@ class BaseMLAnalyzer(ABC):
                 feature_prefix_lst = ["pl", "srmc", "sens", "mac"]
                 if self.samples_to_include == "selected":
                     self.logger.log(f"    WARNING: No selected analysis needed for {self.feature_combination}, stop computations")
-                    sys.exit(0)  # Exit cleanly with status code 0
+                    sys.exit(0)
 
         elif self.samples_to_include == "control":
             feature_prefix_lst = ["pl"]
@@ -293,7 +300,7 @@ class BaseMLAnalyzer(ABC):
             no_control_lst = self.var_cfg["analysis"]["no_control_lst"]
             if self.feature_combination in no_control_lst:
                 self.logger.log(f"    WARNING: No control analysis needed for {self.feature_combination}, stop computations")
-                sys.exit(0)  # Exit cleanly with status code 0
+                sys.exit(0)
         else:
             raise ValueError(f"Invalid value #{self.samples_to_include}# for attr samples_to_include")
 
@@ -539,14 +546,34 @@ class BaseMLAnalyzer(ABC):
             assert (X_train.index == y_train.index).all(), "Indices between train data differ"
             assert (X_test.index == y_test.index).all(), "Indices between test data differ"
             assert len(set(X_train[self.id_grouping_col]).intersection(set(X_test[self.id_grouping_col]))) == 0, \
-                "Grouping did not work as expected"
+                "Grouping in outer_cv did not work as expected"
 
-            print("now imputing dataset")
-            # Create imputed datasets and save the test datasets for SHAP computations
-            X_train_imputed_sublst, X_test_imputed_sublst = self.impute_datasets_for_fold(X_train=X_train, X_test=X_test)
-            X_test_imputed_lst.append(X_test_imputed_sublst)
-
+            print(f"now imputing datasets for fold {cv_idx}")
+            imputed_datasets = self.impute_datasets(X_train_outer_cv=X_train,
+                                                    X_test_outer_cv=X_test,
+                                                    y_train_outer_cv=y_train,
+                                                    inner_cv=inner_cv,
+                                                    num_imputations=self.num_imputations,
+                                                    groups=X_train[self.id_grouping_col],
+                                                    n_jobs=1  # TODO
+                                                    )
             scoring_inner_cv = get_scorer(self.var_cfg["analysis"]["scoring_metric"]["inner_cv_loop"]["name"])
+
+            ##### We may need to perform manual gridsearch
+            param_grid = list(ParameterGrid(self.hyperparameter_grid))
+
+            for num_imp in range(self.num_imputations):
+                grid_search_results = self.manual_grid_search(
+                    imputed_datasets=imputed_datasets[num_imp],
+                    y=y_train,
+                    param_grid=param_grid,
+                    scorer=scoring_inner_cv,
+                    inner_cv=inner_cv
+                )
+
+
+
+
 
             # Perform GridSearchCV for each imputation and aggregate results
             for imputed_idx in range(self.num_imputations):
@@ -628,6 +655,208 @@ class BaseMLAnalyzer(ABC):
             ia_base_values, # mean across imps
         )
 
+    def manual_grid_search(self,
+                           imputed_datasets: dict[dict[pd.DataFrame]],
+                           y: pd.Series,
+                           inner_cv: ShuffledGroupKFold,
+                           param_grid: list,
+                           scorer: Callable
+                           )
+        """
+        This method does mimics the behavior of GridSearchCV, but we can use the former imputed datasets and
+        validate that the indices are correct (and we may also have more customizable output logs as opposed
+        to the GridSearchCV chaos)
+
+        Args:
+            imputed_datasets:
+            y:
+            inner_cv:
+            num_imp:
+
+        Returns:
+
+        """
+        param_grid = list(ParameterGrid(self.hyperparameter_grid))
+        best_score = -np.inf
+        best_params = None
+        all_results = []
+
+        for params in param_grid:
+            param_results = []
+            for fold in range(inner_cv.get_n_splits()):
+                fold_name = f"inner_fold_{fold}"
+                X_full = imputed_datasets[fold_name]
+                y_full = y.loc[X_full.index]
+
+                # Get train and validation indices
+                # Assuming you have stored these indices during imputation
+                train_idx = X_full['train_indices']
+                val_idx = X_full['val_indices']
+
+                # Prepare data
+                X_train = X_full.loc[train_idx].drop(columns=self.meta_vars + [self.id_grouping_col], errors='ignore')
+                y_train = y_full.loc[train_idx]
+                X_val = X_full.loc[val_idx].drop(columns=self.meta_vars + [self.id_grouping_col], errors='ignore')
+                y_val = y_full.loc[val_idx]
+
+                model = clone(self.pipeline)
+                model.set_params(**params)
+
+                model.fit(X_train, y_train)
+                y_pred = model.predict(X_val)
+                score = accuracy_score(y_val, y_pred)
+
+                param_results.append(score)
+
+            avg_score = np.mean(param_results)
+            all_results.append({
+                'params': params,
+                'score': avg_score
+            })
+
+            if avg_score > best_score:
+                best_score = avg_score
+                best_params = params
+
+        nested_scores_outer_fold_imp = {
+            'all_results': all_results,
+            'best_params': best_params,
+            'best_score': best_score
+        }
+
+        return nested_scores_outer_fold_imp
+
+    def impute_datasets(self,
+                        X_train_outer_cv: pd.DataFrame,
+                        X_test_outer_cv: pd.DataFrame,
+                        y_train_outer_cv: pd.Series,
+                        inner_cv: ShuffledGroupKFold,
+                        groups: pd.Series,
+                        num_imputations: int,
+                        n_jobs: int):
+        """
+        This function imputes the data in one outer_fold for all imputations (5) for the inner_cv (10 train / val splits)
+        and the outer cv (refit the imputer on the full training data and transform the test data).
+        To use all available CPUs, we parallelize the imputations of single datasets.
+        We store the datasets to impute in a dict (for the outer_cv, we use fold_0 as a dummy)
+
+        For the inner_folds, we simply recreate the features before splitting, as the same splits will be executed
+        by the GridSearchCV.
+        For the outer_fold, we return only X_test (as we will not use X_train anymore, but only the inner_cv specific datasets)
+
+        Args:
+            X_train_outer_cv: pd.DataFrame,
+            X_test_outer_cv: pd.DataFrame,
+            y_train_outer_cv: pd.Series,
+            inner_cv: ShuffledGroupKFold,
+            groups: pd.Series,
+            num_imputations: int,
+            n_jobs: int,
+
+        Returns:
+            dict[dict[pd.DataFrame]: Dict containing the imputed dataset(s) for the trainig or the test data
+        """
+        dct = {}
+
+        # Get inner_cv data
+        for fold, (train_idx, val_idx) in enumerate(inner_cv.split(X_train_outer_cv, y_train_outer_cv, groups=groups)):
+            self.logger.log(f"first three val indices: {val_idx[:3]}")
+            print(f"first three val indices: {val_idx[:3]}")
+            # Convert indices and select data
+            train_indices = X_train_outer_cv.index[train_idx]
+            val_indices = X_train_outer_cv.index[val_idx]
+            X_train_inner_cv, X_val = X_train_outer_cv.loc[train_indices], X_train_outer_cv.loc[val_indices]
+            X_train_copy, X_val_or_test_copy = X_train_outer_cv.loc[train_indices].copy(), X_train_outer_cv.loc[val_indices].copy()
+
+            dct[f"inner_fold_{fold}"] = [X_train_inner_cv, X_val, X_train_copy, X_val_or_test_copy]
+
+        # Get outer cv data     # TODO: Remove grouping column from test set
+        X_train_outer_cv_copy = X_train_outer_cv.copy()
+        X_test_outer_cv_copy = X_test_outer_cv.copy()
+        if self.id_grouping_col in X_train_outer_cv.columns:
+            X_train_outer_cv = X_train_outer_cv.drop(self.id_grouping_col, axis=1)
+        if self.id_grouping_col in X_test_outer_cv.columns:
+            X_test_outer_cv = X_test_outer_cv.drop(self.id_grouping_col, axis=1)
+        dct["outer_fold"] = [X_train_outer_cv, X_test_outer_cv, X_train_outer_cv_copy, X_test_outer_cv_copy]
+
+        # Define tasks for parallel processing
+        tasks = []
+        result_dct = {}
+        for num_imp in range(num_imputations):
+            result_dct[num_imp] = {}
+            for fold, (X_train, X_val_or_test, X_train_copy, X_val_or_test_copy) in dct.items():
+                result_dct[num_imp][fold] = {}
+                tasks.append((fold, num_imp, X_train, X_val_or_test, X_train_copy, X_val_or_test_copy))
+
+        # Parallel processing
+        results = Parallel(
+            n_jobs=n_jobs,
+            backend=self.joblib_backend
+        )(
+            delayed(self.impute_single_dataset)
+            (fold, num_imp, X_train, X_val_or_test, X_train_copy, X_val_or_test_copy)
+            for fold, num_imp, X_train, X_val_or_test, X_train_copy, X_val_or_test_copy
+            in tasks
+        )
+
+        # Fill result_dct with results
+        for task_idx, (fold, num_imp, _, _, _, _) in enumerate(tasks):
+            # Extract the corresponding result from the parallel results
+            X_train_result, X_val_or_test_result = results[task_idx]
+
+            # For inner folds, concatenate and reorder based on X_train_outer_cv.index
+            result_dct[num_imp][fold] = (
+                pd.concat([X_train_result, X_val_or_test_result], axis=0)
+                .reindex(X_train_outer_cv.index) if fold.startswith("inner")
+                else [X_train_result, X_val_or_test_result]
+            )
+
+        return result_dct
+
+    # Define the parallel imputation function
+    def impute_single_dataset(self, fold, num_imp, X_train, X_val_or_test, X_train_copy, X_val_or_test_copy):
+        """
+        Impute a single dataset based on fold and imputation number.
+
+        Args:
+            fold: The fold identifier, may be "inner_fold_x", or "outer_fold"
+            num_imp: The specific imputation iteration.
+            X_train: Training dataset.
+            X_val_or_test: Validation dataset or Test dataset, depending on "fold"
+            X_train_copy: Copy of training datasets that contains the grouping_id_col
+            X_val_or_test_copy: Copy of the validation of test datasets that contains the group_id_col
+
+        Returns:
+
+        """
+        # Clone the imputer, log indices
+        imputer = clone(self.imputer)
+        self.logger.log(f"    Starting to impute dataset {fold} imputation number {num_imp}")
+        self.logger.log(f"      first val indices are {X_val_or_test_copy.index[:3]}")
+        self.log_thread()
+
+        # Fit the imputer on the training data and transform training and test data
+        imputer.fit(X=X_train, num_imputation=num_imp)  # I need num_imp for different random seeds
+        self.logger.log(f"    Number of Cols with NaNs in X_train: {len(X_train.columns[X_train.isna().any()])}")
+        X_train_imputed = imputer.transform(X=X_train, num_imputation=num_imp)
+        self.logger.log(f"    Number of Cols with NaNs in X_test: {len(X_train.columns[X_val_or_test.isna().any()])}")
+        X_val_test_imputed = imputer.transform(X=X_val_or_test, num_imputation=num_imp)
+
+        # Remove meta cols
+        X_train_imputed = X_train_imputed.drop(columns=[col for col in self.meta_vars if col in X_val_test_imputed.columns])
+        X_val_test_imputed = X_val_test_imputed.drop(columns=[col for col in self.meta_vars if col in X_val_test_imputed.columns])
+
+        # Concatenate non-numeric columns if necessary (grouping_col, we need this for the splits in the analysis)
+        if self.id_grouping_col not in X_train_imputed.columns:
+            X_train_imputed = pd.concat([X_train_imputed, X_train_copy[self.id_grouping_col]], axis=1)
+        if self.id_grouping_col not in X_val_test_imputed.columns:
+            X_val_test_imputed = pd.concat([X_val_test_imputed, X_val_or_test_copy[self.id_grouping_col]], axis=1)
+
+        assert self.check_for_nan(X_train_imputed, dataset_name="X_train_imputed"), "There are NaN values in X_train_imputed!"
+        assert self.check_for_nan(X_val_test_imputed, dataset_name="X_test_imputed"), "There are NaN values in X_test_imputed!"
+
+        return X_train_imputed, X_val_test_imputed
+
     def clocked_grid_search_fit(self, grid_search: GridSearchCV, X_train: pd.DataFrame, y_train: pd.Series, groups: pd.Series):
         """
         Clocked version of gridsearch.fit
@@ -646,70 +875,6 @@ class BaseMLAnalyzer(ABC):
                               n_jobs=self.var_cfg["analysis"]["parallelize"]["inner_cv_n_jobs"]):
             grid_search.fit(X_train, y_train, groups=groups)
         return grid_search
-
-    def impute_datasets_for_fold(self, X_train: pd.DataFrame, X_test: pd.DataFrame):
-        """
-        This function creates num_imputations datasets in parallel using joblib.
-
-        Args:
-            X_train: Training data
-            X_test: Test data
-
-        Returns:
-            tuple(list[pd.DataFrame], list[pd.DataFrame]): tuple containing a list of imputed train and test datasets
-                that both have lengths of self.num_imputations
-        """
-        # Drop grouping column, but keep country column
-        X_train_copy = X_train.copy()
-        if self.id_grouping_col in X_train.columns:
-            X_train = X_train.drop(self.id_grouping_col, axis=1)
-        if self.id_grouping_col in X_test.columns:
-            X_test = X_test.drop(self.id_grouping_col, axis=1)
-
-        imputation_runs_n_jobs = self.var_cfg["analysis"]["parallelize"]["imputation_runs_n_jobs"]
-        print(imputation_runs_n_jobs)
-        # Run the imputation in parallel
-        results = Parallel(
-            n_jobs=imputation_runs_n_jobs,
-            backend=self.joblib_backend)(
-            delayed(self.impute_single_dataset)(i, X_train_copy, X_train, X_test) for i in range(self.num_imputations)
-        )
-
-        # Unpack the results
-        X_train_imputed_sublst, X_test_imputed_sublst = zip(*results)
-        return list(X_train_imputed_sublst), list(X_test_imputed_sublst)
-
-    # Define the parallel imputation function
-    def impute_single_dataset(self, i, X_train_copy, X_train, X_test):
-        # Clone the imputer and scaler to avoid shared state
-        imputer = clone(self.imputer)
-
-        # Fit the imputer on the training data
-        self.logger.log(f"    Starting to impute dataset number {i}")
-        self.log_thread()
-        imputer.fit(X=X_train, num_imputation=i)
-        # Transform both training and test data
-        self.logger.log(f"    Number of Cols with NaNs in X_train: {len(X_train.columns[X_train.isna().any()])}")
-        X_train_imputed = imputer.transform(X=X_train, num_imputation=i)
-        self.logger.log(f"    Number of Cols with NaNs in X_test: {len(X_train.columns[X_test.isna().any()])}")
-        X_test_imputed = imputer.transform(X=X_test, num_imputation=i)
-
-        # Remove meta cols
-        X_test_imputed = X_test_imputed.drop(columns=[col for col in self.meta_vars if col in X_test_imputed.columns])
-
-        # Concatenate non-numeric columns if necessary
-        if self.id_grouping_col not in X_train_imputed.columns:
-            X_train_imputed = pd.concat([X_train_imputed, X_train_copy[self.id_grouping_col]], axis=1)
-
-        assert self.check_for_nan(X_train_imputed, dataset_name="X_train_imputed"), "There are NaN values in X_train_imputed!"
-        assert self.check_for_nan(X_test_imputed, dataset_name="X_test_imputed"), "There are NaN values in X_test_imputed!"
-
-        # Check if data is equal
-        data_hash_train = hashlib.md5(X_train_imputed.to_csv().encode()).hexdigest()
-        data_hash_test = hashlib.md5(X_test_imputed.to_csv().encode()).hexdigest()
-        self.logger.log(f"    Num {i} X_train data hash: {data_hash_train}")
-        self.logger.log(f"    Num {i} X_train data hash: {data_hash_test}")
-        return X_train_imputed, X_test_imputed
 
     def check_for_nan(self, df, dataset_name=""):
         """
