@@ -382,7 +382,6 @@ class BasePreprocessor(ABC):
         else:
             return cell_value
 
-
     def dataset_specific_trait_processing(self, df_traits: pd.DataFrame) -> pd.DataFrame:
         """
         This method may be adjusted in specific subclasses that need dataset-specific processing
@@ -1423,11 +1422,15 @@ class BasePreprocessor(ABC):
             if self.dataset in wb_items[0]["item_names"]:
                 pa_items = wb_items[0]["item_names"][self.dataset]
                 df[f'{criterion_type}_pa'] = df[pa_items].mean(axis=1)
+                self.logger.log(f"    M {criterion_type}_pa: {np.mean(df[f'{criterion_type}_pa'], 3)}")
+                self.logger.log(f"    SD {criterion_type}_pa: {np.std(df[f'{criterion_type}_pa'], 3)}")
 
             # na
             if self.dataset in wb_items[1]["item_names"]:
                 na_items = wb_items[1]["item_names"][self.dataset]
                 df[f'{criterion_type}_na'] = df[na_items].mean(axis=1)
+                self.logger.log(f"    M {criterion_type}_na: {np.mean(df[f'{criterion_type}_na'], 3)}")
+                self.logger.log(f"    SD {criterion_type}_na: {np.std(df[f'{criterion_type}_na'], 3)}")
 
             # wb
             scale_min = wb_items[1]["scale_endpoints"]["min"]
@@ -1443,6 +1446,9 @@ class BasePreprocessor(ABC):
             else:  # zpid
                 df[f'{criterion_type}_wb'] = df[f'{criterion_type}_pa']
                 df = df.drop(f'{criterion_type}_pa', axis=1)
+
+            self.logger.log(f"    M {criterion_type}_na: {np.mean(df[f'{criterion_type}_na'], 3)}")
+            self.logger.log(f"    SD {criterion_type}_na: {np.std(df[f'{criterion_type}_na'], 3)}")
         return df
 
     @staticmethod

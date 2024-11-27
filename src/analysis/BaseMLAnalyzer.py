@@ -8,7 +8,9 @@ import pickle
 import sys
 import threading
 from abc import ABC, abstractmethod
+from collections import defaultdict
 from itertools import product
+from types import SimpleNamespace
 from typing import Callable
 
 import numpy as np
@@ -527,6 +529,7 @@ class BaseMLAnalyzer(ABC):
         ml_pipelines = []
         ml_model_params = []
         nested_scores_rep = {}
+        pred_vs_true_dct = {}
         X_test_imputed_lst = []
 
         # Loop over outer cross-validation splits
@@ -535,6 +538,7 @@ class BaseMLAnalyzer(ABC):
             ml_pipelines_sublst = []
             ml_model_params_sublst = []
             nested_scores_rep[f"outer_fold_{cv_idx}"] = {}
+            pred_vs_true_dct[f"outer_fold_{cv_idx}"] = {}
 
             # Convert indices and select data
             train_indices = X.index[train_index]
@@ -555,72 +559,63 @@ class BaseMLAnalyzer(ABC):
                                                     inner_cv=inner_cv,
                                                     num_imputations=self.num_imputations,
                                                     groups=X_train[self.id_grouping_col],
-                                                    n_jobs=1  # TODO
+                                                    n_jobs=self.var_cfg["analysis"]["parallelize"]["imputation_runs_n_jobs"]
                                                     )
+            X_test_imputed_lst_for_fold = [
+                imputed_datasets[num_imp]["outer_fold"]["X_test_imputed"]
+                for num_imp in imputed_datasets
+            ]
+            X_test_imputed_lst.append(X_test_imputed_lst_for_fold)
+
             scoring_inner_cv = get_scorer(self.var_cfg["analysis"]["scoring_metric"]["inner_cv_loop"]["name"])
 
             ##### We may need to perform manual gridsearch
             param_grid = list(ParameterGrid(self.hyperparameter_grid))
 
             for num_imp in range(self.num_imputations):
+                nested_scores_rep[f"outer_fold_{cv_idx}"][f"imp_{num_imp}"] = {}
                 grid_search_results = self.manual_grid_search(
                     imputed_datasets=imputed_datasets[num_imp],
                     y=y_train,
                     param_grid=param_grid,
                     scorer=scoring_inner_cv,
-                    inner_cv=inner_cv
-                )
-
-
-
-
-
-            # Perform GridSearchCV for each imputation and aggregate results
-            for imputed_idx in range(self.num_imputations):
-                grid_search = GridSearchCV(
-                    estimator=self.pipeline,
-                    param_grid=self.hyperparameter_grid,
-                    cv=inner_cv,
-                    scoring=scoring_inner_cv,
-                    refit=True,
-                    verbose=5,  # self.var_cfg["analysis"]["cv"]["verbose_inner_cv"],
-                    error_score="raise",
+                    inner_cv=inner_cv,
                     n_jobs=self.var_cfg["analysis"]["parallelize"]["inner_cv_n_jobs"],
                 )
 
-                nested_scores_rep[f"outer_fold_{cv_idx}"][f"imp_{imputed_idx}"] = {}
-
-                # This would be cleaner with metadata routing, but this works ATM
-                groups = X_train_imputed_sublst[imputed_idx].pop(self.id_grouping_col)
-                X_train_current = X_train_imputed_sublst[imputed_idx]
-                X_test_current = X_test_imputed_sublst[imputed_idx]
-                le = LabelEncoder()
-                groups_numeric = le.fit_transform(groups)
-
-                # Check for meta-cols
-                X_train_current = X_train_current.drop(columns=[col for col in self.meta_vars if col in X_train_current.columns])
-
-                # Fit grid search and clock execution
-                grid_search = self.clocked_grid_search_fit(grid_search=grid_search,
-                                                           X_train=X_train_current,
-                                                           y_train=y_train,
-                                                           groups=groups_numeric)
+                best_model = grid_search_results['best_model']
+                best_params = grid_search_results['best_params']
 
                 # Append model (elasticnet) or model params (RFR)
                 if self.model_name == "elasticnet":
-                    ml_model_params_sublst.append(grid_search.best_estimator_.named_steps["model"].regressor_)
+                    ml_model_params_sublst.append(best_model.named_steps["model"].regressor_)
                 else:
-                    ml_model_params_sublst.append(grid_search.best_estimator_.named_steps["model"].regressor_.get_params())
-                ml_pipelines_sublst.append(grid_search.best_estimator_)
+                    ml_model_params_sublst.append(best_model.named_steps["model"].regressor_.get_params())
+                ml_pipelines_sublst.append(best_model)
 
                 # Evaluate the model on the imputed test set and store the metrics
-                scores = self.get_scores(grid_search, X_test_current, y_test)
+                X_test_current = imputed_datasets[num_imp]["outer_fold"]['X_test_imputed']
+                X_test_current = X_test_current.drop(columns=self.meta_vars + [self.id_grouping_col], errors='ignore')
+                y_test_current = y_test.loc[X_test_current.index]
+
+                scores = self.get_scores(
+                    grid_search=SimpleNamespace(best_estimator_=best_model),
+                    X_test=X_test_current,
+                    y_test=y_test_current
+                )
                 for metric, score in scores.items():
-                    nested_scores_rep[f"outer_fold_{cv_idx}"][f"imp_{imputed_idx}"][metric] = score
+                    nested_scores_rep[f"outer_fold_{cv_idx}"][f"imp_{num_imp}"][metric] = score
+
+                if self.var_cfg["analysis"]["store_pred_and_true"]:
+                    pred_vs_true_dct[f"outer_fold_{cv_idx}"][f"imp_{num_imp}"] = self.get_pred_and_true_crit(
+                        grid_search=SimpleNamespace(best_estimator_=best_model),
+                        X_test=X_test_current,
+                        y_test=y_test_current
+                    )
 
                 # Free up memory
-                del grid_search
-                del X_train_current, X_test_current
+                del best_model
+                del X_test_current
 
             ml_model_params.append(ml_model_params_sublst)
             ml_pipelines.append(ml_pipelines_sublst)
@@ -656,72 +651,87 @@ class BaseMLAnalyzer(ABC):
         )
 
     def manual_grid_search(self,
-                           imputed_datasets: dict[dict[pd.DataFrame]],
+                           imputed_datasets: dict,
                            y: pd.Series,
                            inner_cv: ShuffledGroupKFold,
                            param_grid: list,
-                           scorer: Callable
-                           )
+                           scorer: Callable,
+                           n_jobs: int):
         """
-        This method does mimics the behavior of GridSearchCV, but we can use the former imputed datasets and
-        validate that the indices are correct (and we may also have more customizable output logs as opposed
-        to the GridSearchCV chaos)
-
-        Args:
-            imputed_datasets:
-            y:
-            inner_cv:
-            num_imp:
-
-        Returns:
-
+        Mimics the behavior of GridSearchCV using pre-imputed datasets and allows parallelization across param_grid.
         """
-        param_grid = list(ParameterGrid(self.hyperparameter_grid))
-        best_score = -np.inf
-        best_params = None
-        all_results = []
-
-        for params in param_grid:
+        print()
+        # Function to evaluate a single parameter combination
+        def evaluate_param_combination(params, imputed_datasets, y, inner_cv, scorer, pipeline, meta_vars, id_grouping_col):
             param_results = []
             for fold in range(inner_cv.get_n_splits()):
                 fold_name = f"inner_fold_{fold}"
-                X_full = imputed_datasets[fold_name]
+                dataset = imputed_datasets[fold_name]
+                X_full = dataset['X_full']
                 y_full = y.loc[X_full.index]
 
-                # Get train and validation indices
-                # Assuming you have stored these indices during imputation
-                train_idx = X_full['train_indices']
-                val_idx = X_full['val_indices']
+                train_indices = dataset['train_indices']
+                val_indices = dataset['val_indices']
 
                 # Prepare data
-                X_train = X_full.loc[train_idx].drop(columns=self.meta_vars + [self.id_grouping_col], errors='ignore')
-                y_train = y_full.loc[train_idx]
-                X_val = X_full.loc[val_idx].drop(columns=self.meta_vars + [self.id_grouping_col], errors='ignore')
-                y_val = y_full.loc[val_idx]
+                X_train = X_full.loc[train_indices].drop(columns=meta_vars, errors='ignore')
+                y_train = y_full.loc[train_indices]
+                X_val = X_full.loc[val_indices].drop(columns=meta_vars, errors='ignore')
+                y_val = y_full.loc[val_indices]
 
-                model = clone(self.pipeline)
+                model = clone(pipeline)
                 model.set_params(**params)
 
                 model.fit(X_train, y_train)
-                y_pred = model.predict(X_val)
-                score = accuracy_score(y_val, y_pred)
+                score = scorer(model, X_val, y_val)
 
                 param_results.append(score)
 
             avg_score = np.mean(param_results)
-            all_results.append({
-                'params': params,
-                'score': avg_score
-            })
+            return {'params': params, 'score': avg_score}
 
-            if avg_score > best_score:
-                best_score = avg_score
-                best_params = params
+        # Use joblib's Parallel to evaluate param_grid in parallel
+        results = Parallel(
+            n_jobs=n_jobs,
+            backend=self.joblib_backend,
+            verbose=3,
+        )(
+            delayed(evaluate_param_combination)(
+                params,
+                imputed_datasets,
+                y,
+                inner_cv,
+                scorer,
+                self.pipeline,
+                self.meta_vars,
+                # self.id_grouping_col
+            ) for params in param_grid
+        )
+
+        # Find best score and parameters
+        best_result = max(results, key=lambda x: x['score'])
+        best_score = best_result['score']
+        best_params = best_result['params']
+
+        # Now fit the model on the entire training data using best_params
+        # Retrieve the 'outer_fold' data
+        outer_fold_data = imputed_datasets['outer_fold']
+        X_train_full = outer_fold_data['X_train_full']
+        y_train_full = y.loc[X_train_full.index]
+
+        # Prepare data
+        X_train_full = X_train_full.drop(columns=self.meta_vars + [self.id_grouping_col], errors='ignore')
+
+        # Fit the model
+        best_model = clone(self.pipeline)
+        best_model.set_params(**best_params)
+        best_model.fit(X_train_full, y_train_full)
 
         nested_scores_outer_fold_imp = {
-            'all_results': all_results,
+            'all_results': results,
             'best_params': best_params,
-            'best_score': best_score
+            'best_score': best_score,
+            'best_model': best_model
         }
 
         return nested_scores_outer_fold_imp
@@ -757,18 +767,19 @@ class BaseMLAnalyzer(ABC):
             dict[dict[pd.DataFrame]: Dict containing the imputed dataset(s) for the trainig or the test data
         """
         dct = {}
+        # TODO: I think I do not need the grouping column -> try
 
         # Get inner_cv data
         for fold, (train_idx, val_idx) in enumerate(inner_cv.split(X_train_outer_cv, y_train_outer_cv, groups=groups)):
             self.logger.log(f"first three val indices: {val_idx[:3]}")
-            print(f"first three val indices: {val_idx[:3]}")
+            print(f"first three val indices for fold {fold}: {val_idx[:3]}")
             # Convert indices and select data
             train_indices = X_train_outer_cv.index[train_idx]
             val_indices = X_train_outer_cv.index[val_idx]
             X_train_inner_cv, X_val = X_train_outer_cv.loc[train_indices], X_train_outer_cv.loc[val_indices]
             X_train_copy, X_val_or_test_copy = X_train_outer_cv.loc[train_indices].copy(), X_train_outer_cv.loc[val_indices].copy()
 
-            dct[f"inner_fold_{fold}"] = [X_train_inner_cv, X_val, X_train_copy, X_val_or_test_copy]
+            dct[f"inner_fold_{fold}"] = [X_train_inner_cv, X_val, X_train_copy, X_val_or_test_copy, train_indices, val_indices]
 
         # Get outer cv data     # TODO: Remove grouping column from test set
         X_train_outer_cv_copy = X_train_outer_cv.copy()
@@ -784,32 +795,45 @@ class BaseMLAnalyzer(ABC):
         result_dct = {}
         for num_imp in range(num_imputations):
             result_dct[num_imp] = {}
-            for fold, (X_train, X_val_or_test, X_train_copy, X_val_or_test_copy) in dct.items():
+            for fold, (X_train, X_val_or_test, X_train_copy, X_val_or_test_copy, *indices) in dct.items():
                 result_dct[num_imp][fold] = {}
-                tasks.append((fold, num_imp, X_train, X_val_or_test, X_train_copy, X_val_or_test_copy))
+                tasks.append((fold, num_imp, X_train, X_val_or_test, X_train_copy, X_val_or_test_copy, indices))
 
         # Parallel processing
+        print(n_jobs)
+        print(self.joblib_backend)
         results = Parallel(
             n_jobs=n_jobs,
-            backend=self.joblib_backend
+            backend=self.joblib_backend,
+            verbose=3
         )(
             delayed(self.impute_single_dataset)
             (fold, num_imp, X_train, X_val_or_test, X_train_copy, X_val_or_test_copy)
-            for fold, num_imp, X_train, X_val_or_test, X_train_copy, X_val_or_test_copy
-            in tasks
+            for fold, num_imp, X_train, X_val_or_test, X_train_copy, X_val_or_test_copy, _ in tasks
         )
 
         # Fill result_dct with results
-        for task_idx, (fold, num_imp, _, _, _, _) in enumerate(tasks):
+        for task_idx, (fold, num_imp, _, _, _, _, indices) in enumerate(tasks):
             # Extract the corresponding result from the parallel results
             X_train_result, X_val_or_test_result = results[task_idx]
 
-            # For inner folds, concatenate and reorder based on X_train_outer_cv.index
-            result_dct[num_imp][fold] = (
-                pd.concat([X_train_result, X_val_or_test_result], axis=0)
-                .reindex(X_train_outer_cv.index) if fold.startswith("inner")
-                else [X_train_result, X_val_or_test_result]
-            )
+            if fold.startswith("inner"):
+                # Concatenate and reorder using the original X_train_outer_cv index
+                recreated_df = pd.concat([X_train_result, X_val_or_test_result])
+                recreated_df = recreated_df.reindex(X_train_outer_cv.index)
+                train_indices, val_indices = indices
+                # Store the train_indices and val_indices
+                result_dct[num_imp][fold] = {
+                    'X_full': recreated_df,
+                    'train_indices': train_indices,
+                    'val_indices': val_indices
+                }
+            else:
+                # For "outer", store the results with keys
+                result_dct[num_imp][fold] = {
+                    'X_train_full': X_train_result,
+                    'X_test_imputed': X_val_or_test_result
+                }
 
         return result_dct
 
@@ -847,10 +871,11 @@ class BaseMLAnalyzer(ABC):
         X_val_test_imputed = X_val_test_imputed.drop(columns=[col for col in self.meta_vars if col in X_val_test_imputed.columns])
 
         # Concatenate non-numeric columns if necessary (grouping_col, we need this for the splits in the analysis)
-        if self.id_grouping_col not in X_train_imputed.columns:
-            X_train_imputed = pd.concat([X_train_imputed, X_train_copy[self.id_grouping_col]], axis=1)
-        if self.id_grouping_col not in X_val_test_imputed.columns:
-            X_val_test_imputed = pd.concat([X_val_test_imputed, X_val_or_test_copy[self.id_grouping_col]], axis=1)
+        # TODO: Try if I need the grouping_col -> If not, I do not need the copy neither
+        #if self.id_grouping_col not in X_train_imputed.columns:
+        #    X_train_imputed = pd.concat([X_train_imputed, X_train_copy[self.id_grouping_col]], axis=1)
+        #if self.id_grouping_col not in X_val_test_imputed.columns:
+        #    X_val_test_imputed = pd.concat([X_val_test_imputed, X_val_or_test_copy[self.id_grouping_col]], axis=1)
 
         assert self.check_for_nan(X_train_imputed, dataset_name="X_train_imputed"), "There are NaN values in X_train_imputed!"
         assert self.check_for_nan(X_val_test_imputed, dataset_name="X_test_imputed"), "There are NaN values in X_test_imputed!"
@@ -922,6 +947,35 @@ class BaseMLAnalyzer(ABC):
         }
 
         return scores
+
+    def get_pred_and_true_crit(self, grid_search, X_test, y_test):
+        """
+        This method generates a dictionary with sample indices as keys and tuples of predicted
+        and true criterion values as values. It ensures that any scaling or transformations
+        applied in the pipeline are handled appropriately.
+
+        Args:
+            grid_search: The trained grid search object with the best estimator.
+            X_test: Test features.
+            y_test: Test labels.
+
+        Returns:
+            pred_true_dict: A dictionary where keys are sample indices, and values are tuples
+                            (predicted_value, true_value).
+        """
+        # Ensure the best estimator is fitted
+        best_model = grid_search.best_estimator_
+
+        # Predict using the best model
+        y_pred = best_model.predict(X_test)
+
+        # Create the dictionary with sample indices
+        pred_true_dict = {
+            idx: (pred, true)
+            for idx, pred, true in zip(X_test.index, y_pred, y_test)
+        }
+
+        return pred_true_dict
 
     def compute_shap_for_fold(
         self,
@@ -1427,7 +1481,11 @@ class BaseMLAnalyzer(ABC):
         print("chunk_size:", chunk_size)
 
         # Compute SHAP values for chunks of the data in parallel
-        results = Parallel(n_jobs=n_jobs, verbose=0, backend=self.joblib_backend)(
+        results = Parallel(
+            n_jobs=n_jobs,
+            backend=self.joblib_backend,
+            verbose=3,
+        )(
             delayed(self.calculate_shap_for_chunk)(
                 explainer, X_scaled[i: i + chunk_size]
             )

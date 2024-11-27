@@ -1,12 +1,12 @@
 general:
   datasets_to_be_included: [ cocout ] # cocoesm, cocoms, cocout, emotions, pia, zpid
-  log_dir: "../logs/bugfix"  # only for preprocessing
-  log_name: bugfix
+  log_dir: "../logs/2611_rewrite"  # only for preprocessing
+  log_name: 2611_rewrite
 
   steps:
     preprocessing: false
-    analysis: false
-    postprocessing: true
+    analysis: true
+    postprocessing: false
 
 preprocessing:
   path_to_raw_data: "../data/raw"
@@ -88,6 +88,11 @@ analysis:
 
   use_mpi4py: false  # Change Backend to LOKY, if FALSE
   split_reps: false  # this makes only sense if use_mpi4py is False
+  store_pred_and_true: true
+
+  tests:
+    sample: true
+    sample_size: 60
 
   methods_to_apply:
     - select_samples
@@ -201,10 +206,10 @@ analysis:
     randomforestregressor:
       #model__regressor__max_depth: [ 4,5,6,7,8 ]
       #model__regressor__max_features: [ 0.2 ]
-      model__regressor__n_estimators: [ 100, 500 ]
-      model__regressor__max_features: [ 0.25, 0.5, 0.75]
-      model__regressor__max_depth: [4, 6, 8, 10, 12]
-      model__regressor__min_samples_split: [5, 10, 15, 20]
+      #model__regressor__n_estimators: [ 100, 500 ]
+      #model__regressor__max_features: [ 0.25, 0.5, 0.75]
+      #model__regressor__max_depth: [4, 6, 8, 10, 12]
+      #model__regressor__min_samples_split: [5, 10, 15, 20]
 
   parallelize:
     parallelize_shap: true
@@ -242,12 +247,12 @@ postprocessing:
     ##### performance based
     #- process_cv_results
     #- process_lin_model_coefs
-    - condense_results
-    - create_descriptives
-    - create_cv_results_plots
+    #- condense_results
+    #- create_descriptives
+    #- create_cv_results_plots
     ##### shap based, may need to change "raw_results_path" and "processed_results_path"
     #- process_shap_values
-    #- create_shap_plots
+    - create_shap_plots
 
 
   # Currently, because of the big amounts of data, we may have separated raw dirs
@@ -258,7 +263,7 @@ postprocessing:
   raw_results_path: "../results/cluster_results_merged_2611"  # BASE RESULT DIR FOR RAW RESULTS  # shap or cv test_fs_shap
 
   # "C:/Users/lokal_o_haet01/Documents/git_repos/coco_wb_ml_code/results/  a) cluster_results_only_cv_proc" b) cluster_results_shap_merged
-  processed_results_path: "C:/Users/lokal_o_haet01/Documents/git_repos/coco_wb_ml_code/results/cluster_results_merged_2611_proc"  #"../results/cluster_results_only_cv_proc  # cluster_results_only_cv_proc"  # "# BASE RESULT DIR FOR PROCESSED RESULTS  # shap or cv
+  processed_results_path: "C:/Users/lokal_o_haet01/Documents/git_repos/coco_wb_ml_code/results/cluster_results_shap_merged"  #"../results/cluster_results_only_cv_proc  # cluster_results_only_cv_proc"  # "# BASE RESULT DIR FOR PROCESSED RESULTS  # shap or cv
 
 
   #plots_base_dir: "../results/plots"
@@ -291,15 +296,15 @@ postprocessing:
       - importance_plot
       - beeswarm_plot
     feature_combo_name_mapping:
-      pl: "Person-level"
+      pl: "Personal" # "Person-level"
       srmc: "ESM"
       sens: "Sensing"
-      mac: "Macro-level"
-      pl_srmc: "Person-level + ESM"
-      pl_sens: "Person-level + Sensing"
-      pl_srmc_sens: "Person-level + ESM + Sensing"
-      pl_mac: "Person-level + Macro-level"
-      pl_srmc_mac: "Person-level + ESM + Macro-level"
+      mac: "Societal" # "Macro-level"
+      pl_srmc: "Personal + ESM"
+      pl_sens: "Personal + Sensing"
+      pl_srmc_sens: "Personal + ESM + Sensing"
+      pl_mac: "Personal + Societal"
+      pl_srmc_mac: "Personal + ESM + Societal"
 
     cv_result_plot:
       crit: [ state_wb ]

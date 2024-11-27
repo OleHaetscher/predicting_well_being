@@ -1515,11 +1515,10 @@ esm_based:
         pia: [happy, relaxed, enthusiastic]
         cocoesm: [state_pa1, state_pa2, state_pa3]
         cocoms: [state_pa1, state_pa2, state_pa3]
-      align_scales:
-        align_scales_mapping:  # TODO:
-          cocout:
-            min: {1: 1}
-            max: {4: 6}
+      align_scales_mapping:
+        cocout:
+          min: {1: 1}
+          max: {4: 6}
       scale_endpoints:
         min: 1
         max: 6
@@ -1532,11 +1531,10 @@ esm_based:
         pia:  [angry, sad, afraid]  # PreReg: afraid statt anxious
         cocoesm: [state_na1, state_na2, state_na3]
         cocoms: [state_na1, state_na2, state_na3]
-      align_scales:
-        align_scales_mapping:
-          cocout:
-            min: { 1: 1 }
-            max: { 4: 6 }
+      align_scales_mapping:
+        cocout:
+          min: { 1: 1 }
+          max: { 4: 6 }
       scale_endpoints:  # Recoding must be executed AFTER scale alignment
         min: 1
         max: 6

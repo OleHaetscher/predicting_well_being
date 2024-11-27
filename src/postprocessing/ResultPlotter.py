@@ -63,6 +63,8 @@ class ResultPlotter:
                 fig_groups = [["pl", "srmc", "sens", "mac"],  # Each row in this list is a single category
                               ["pl_srmc", "pl_sens", "pl_srmc_sens", "pl_mac"],
                               ["pl_srmc_mac", "all_in"]]
+                feature_combo_mapping = self.var_cfg["postprocessing"]["plots"]["feature_combo_name_mapping"]
+                """
                 feature_combo_mapping = {
                     "pl": "Person-level",
                     "srmc": "ESM",
@@ -81,6 +83,7 @@ class ResultPlotter:
                     "pl_srmc_sens_mac": "Person-level + ESM + Sensing + Macro-level",
                     "all_in": "All features"
                 }
+                """
 
                 significance_results_models = [[0.49, 0.03, 0.58, 0.39],
                                                 [0.49, 0.03, 0.58, 0.39],
