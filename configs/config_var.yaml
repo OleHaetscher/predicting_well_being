@@ -86,7 +86,7 @@ analysis:
 
   tests:
     sample: true
-    sample_size: 200
+    sample_size: 120
 
   methods_to_apply:
     - select_samples
@@ -144,9 +144,9 @@ analysis:
   no_control_lst: ["pl", "srmc", "sens", "mac", "all_in"] # we do not run control analyses for these combinations
 
   params: # adjusted by SLURM
-    prediction_model: elasticnet  # elasticnet, randomforestregressor
+    prediction_model: randomforestregressor  # elasticnet, randomforestregressor
     crit: wb_state  # wb_state, wb_trait, etc
-    feature_combination: pl_mac # pl, srmc, sens, mac, pl_srmc, pl_sens, pl_srmc_sens, pl_mac, pl_srmc_mac, all_in
+    feature_combination: srmc # pl, srmc, sens, mac, pl_srmc, pl_sens, pl_srmc_sens, pl_mac, pl_srmc_mac, all_in
     samples_to_include: all  # all, selected, control
 
   cv:
@@ -162,12 +162,6 @@ analysis:
     num_sensing_features: 21  # as number of srmc features
 
   crit_available: # not all criteria are available for all samples
-    #state_wb: [cocoesm, cocout, cocoms, emotions, pia, zpid]
-    #state_pa: [cocoesm, cocout, cocoms, emotions, pia]
-    #state_na: [cocoesm, cocout, cocoms, emotions, pia]
-    #trait_wb: [cocoesm, cocout, cocoms, pia, zpid]
-    #trait_pa: [cocoesm, cocout, cocoms, pia, zpid]
-    #trait_na: [cocoesm, cocout, cocoms, pia, zpid]
     wb_state: [ cocoesm, cocout, cocoms, emotions, pia, zpid ]
     pa_state: [ cocoesm, cocout, cocoms, emotions, pia ]
     na_state: [ cocoesm, cocout, cocoms, emotions, pia ]

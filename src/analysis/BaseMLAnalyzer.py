@@ -1319,7 +1319,7 @@ class BaseMLAnalyzer(ABC):
                 ia_values_mappings = {
                     "combo_index_mapping": self.combo_index_mapping.copy(),
                     "feature_index_mapping": self.feature_index_mapping.copy(),
-                    "num_combos": self.num_combos.copy()
+                    "num_combos": self.num_combos
                 }
                 file_name_ia_values_mappings = os.path.join(
                     self.spec_output_path, f"ia_values_mappings_rep_{rep}.pkl"
