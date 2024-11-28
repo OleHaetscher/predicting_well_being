@@ -104,7 +104,7 @@ if __name__ == "__main__":
             var_cfg_updated = slurm_handler.sanity_checks_cfg_cluster(var_cfg=var_cfg_updated)
             output_dir = args.output_path
             if not use_mpi and split_reps and args.rep is not None:
-                rep = args.rep  # TODO test this on the cluster -> only relevant for logging
+                rep = args.rep
             else:
                 rep = None
         else:

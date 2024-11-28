@@ -1,7 +1,7 @@
 general:
-  datasets_to_be_included: [ cocout ] # cocoesm, cocoms, cocout, emotions, pia, zpid
-  log_dir: "../logs/2611_rewrite"  # only for preprocessing
-  log_name: 2611_rewrite
+  datasets_to_be_included: [  cocoesm, cocoms, cocout, emotions, pia, zpid ] # cocoesm, cocoms, cocout, emotions, pia, zpid
+  log_dir: "../logs/new_data_2811"  # only for preprocessing, analysis logs are stored in the result folders
+  log_name: x
 
   steps:
     preprocessing: false
@@ -10,7 +10,7 @@ general:
 
 preprocessing:
   path_to_raw_data: "../data/raw"
-  store_data: false  # only final data
+  store_data: true  # stores the full preprocessed df
   path_to_preprocessed_data: "../data/preprocessed"
   min_num_esm_measures: 5  # 5
   nrows: 999999 # only for descriptives
@@ -20,13 +20,13 @@ preprocessing:
     cocoesm: participant
     cocoms: original_id
     cocout: id
-    emotions: id # id_for_merging in new dataset, there are currently lacking variables
+    emotions: id
     pia: id
     zpid: user_id
 
   esm_timestamp_col:
     emotions: created_esm
-    zpid: questionnaireStartedTimestamp_corrected # notificationTimestamp_corrected
+    zpid: questionnaireStartedTimestamp_corrected
     cocout: StartDateConvert_esm
     pia: created
     cocoesm: created_individual_esm
@@ -65,6 +65,7 @@ preprocessing:
     - education_level
     - state_pa
     - trait_pa
+    - trait_na
     - sleep_quality_mean
     - number_interactions_mean
     - gdp_capita
@@ -73,26 +74,19 @@ preprocessing:
     - productiveness
     - responsibility
 
-    number_of_features:  # TODO This does currently not match (but all categories were checked) Ignore for now
-      cocoesm: 149
-      cocoms: 96
-      cocout: 73
-      emotions: 56
-      pia: 42
-      zpid: 67
-
 analysis:
   load_data: true
   path_to_preprocessed_data: "../data/preprocessed"
   random_state: 42
 
+  # In the final version, we do not use mpi4py and always use split_reps!!!
   use_mpi4py: false  # Change Backend to LOKY, if FALSE
-  split_reps: false  # this makes only sense if use_mpi4py is False
+  split_reps: true  # this makes only sense if use_mpi4py is False
   store_pred_and_true: true
 
   tests:
     sample: true
-    sample_size: 60
+    sample_size: 200
 
   methods_to_apply:
     - select_samples
@@ -151,9 +145,9 @@ analysis:
 
   params: # adjusted by SLURM
     prediction_model: elasticnet  # elasticnet, randomforestregressor
-    crit: state_wb  # state_wb, state_pa, state_na, trait_wb, trait_na, trait_pa
-    feature_combination: srmc # pl, srmc, sens, mac, pl_srmc, pl_sens, pl_srmc_sens, pl_mac, pl_srmc_mac, all_in
-    samples_to_include: selected  # all, selected, control
+    crit: wb_state  # wb_state, wb_trait, etc
+    feature_combination: pl_mac # pl, srmc, sens, mac, pl_srmc, pl_sens, pl_srmc_sens, pl_mac, pl_srmc_mac, all_in
+    samples_to_include: all  # all, selected, control
 
   cv:
     num_inner_cv: 3  # 10
@@ -168,15 +162,21 @@ analysis:
     num_sensing_features: 21  # as number of srmc features
 
   crit_available: # not all criteria are available for all samples
-    state_wb: [cocoesm, cocout, cocoms, emotions, pia, zpid]
-    state_pa: [cocoesm, cocout, cocoms, emotions, pia]
-    state_na: [cocoesm, cocout, cocoms, emotions, pia]
-    trait_wb: [cocoesm, cocout, cocoms, pia, zpid]
-    trait_pa: [cocoesm, cocout, cocoms, pia, zpid]
-    trait_na: [cocoesm, cocout, cocoms, pia, zpid]
+    #state_wb: [cocoesm, cocout, cocoms, emotions, pia, zpid]
+    #state_pa: [cocoesm, cocout, cocoms, emotions, pia]
+    #state_na: [cocoesm, cocout, cocoms, emotions, pia]
+    #trait_wb: [cocoesm, cocout, cocoms, pia, zpid]
+    #trait_pa: [cocoesm, cocout, cocoms, pia, zpid]
+    #trait_na: [cocoesm, cocout, cocoms, pia, zpid]
+    wb_state: [ cocoesm, cocout, cocoms, emotions, pia, zpid ]
+    pa_state: [ cocoesm, cocout, cocoms, emotions, pia ]
+    na_state: [ cocoesm, cocout, cocoms, emotions, pia ]
+    wb_trait: [ cocoesm, cocout, cocoms, pia, zpid ]
+    pa_trait: [ cocoesm, cocout, cocoms, pia, zpid ]
+    na_trait: [ cocoesm, cocout, cocoms, pia, zpid ]
 
   imputation:
-    num_imputations: 5  # 5
+    num_imputations: 2 # 5
     max_iter: 1 # 40
     conv_thresh: 0.05  # 0.05  only RFR
     tree_max_depth: 10  # only RFR
@@ -204,8 +204,8 @@ analysis:
       #model__regressor__max_iter: [ 1000, 10000 ]
       #model__regressor__tol: [0.1, 0.01, 0.001, 0.0001]
     randomforestregressor:
-      #model__regressor__max_depth: [ 4,5,6,7,8 ]
-      #model__regressor__max_features: [ 0.2 ]
+      model__regressor__max_depth: [ 4, 6 ]
+      model__regressor__max_features: [ 0.2 ]
       #model__regressor__n_estimators: [ 100, 500 ]
       #model__regressor__max_features: [ 0.25, 0.5, 0.75]
       #model__regressor__max_depth: [4, 6, 8, 10, 12]
@@ -213,13 +213,13 @@ analysis:
 
   parallelize:
     parallelize_shap: true
-    shap_n_jobs: 5
+    shap_n_jobs: 1
     parallelize_inner_cv: true
-    inner_cv_n_jobs: 5
+    inner_cv_n_jobs: 1
     parallelize_shap_ia_values: true
-    shap_ia_values_n_jobs: 5
+    shap_ia_values_n_jobs: 1
     parallelize_imputation_runs: true # Cannot parallelize columns
-    imputation_runs_n_jobs: 5
+    imputation_runs_n_jobs: 1
     joblib_backend: "loky"  # threading; for pc2, use threading, loky may crash in multi-node settings
 
   shap_ia_values:

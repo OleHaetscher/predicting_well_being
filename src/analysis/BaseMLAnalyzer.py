@@ -18,7 +18,7 @@ import pandas as pd
 import shap
 import sklearn
 from joblib import Parallel, delayed, Memory, parallel_backend
-from scipy.stats import spearmanr
+from scipy.stats import spearmanr, pearsonr
 from sklearn.base import clone
 from sklearn.compose import TransformedTargetRegressor
 from sklearn.metrics import (
@@ -127,9 +127,8 @@ class BaseMLAnalyzer(ABC):
         self.repeated_nested_cv = self.timer._decorator(self.repeated_nested_cv)
         self.nested_cv = self.timer._decorator(self.nested_cv)
         self.summarize_shap_values_outer_cv = self.timer._decorator(self.summarize_shap_values_outer_cv)
-        # self.impute_datasets_for_fold = self.timer._decorator(self.impute_datasets_for_fold)
-        self.clocked_grid_search_fit = self.timer._decorator(self.clocked_grid_search_fit)
-
+        self.manual_grid_search = self.timer._decorator(self.manual_grid_search)
+        self.impute_datasets = self.timer._decorator(self.impute_datasets)
         self.calculate_shap_ia_values = self.timer._decorator(self.calculate_shap_ia_values)
 
         # Data
@@ -141,6 +140,7 @@ class BaseMLAnalyzer(ABC):
         # Results
         self.best_models = {}
         self.repeated_nested_scores = {}
+        self.pred_vs_true = {}
         self.shap_results = {'shap_values': {}, "base_values": {}, "data": {}}
         self.shap_ia_results = {'shap_ia_values': {}, "base_values": {}}
         self.shap_ia_results_reps_imps = {'shap_ia_values': {}, "base_values": {}}  # Store these only on the cluster due to big size
@@ -529,16 +529,22 @@ class BaseMLAnalyzer(ABC):
         ml_pipelines = []
         ml_model_params = []
         nested_scores_rep = {}
-        pred_vs_true_dct = {}
+        pred_vs_true_rep = {}
+        X_train_imputed_lst = []
         X_test_imputed_lst = []
 
         # Loop over outer cross-validation splits
         for cv_idx, (train_index, test_index) in enumerate(outer_cv.split(X, y, groups=X[self.id_grouping_col])):
+            self.logger.log("-----------------------------------")
+            self.logger.log("-----------------------------------")
+            self.logger.log("#########")
+            self.logger.log(f"Outer fold number {cv_idx}, going from 0 to {self.num_outer_cv - 1}")
+            self.logger.log("#########")
 
             ml_pipelines_sublst = []
             ml_model_params_sublst = []
             nested_scores_rep[f"outer_fold_{cv_idx}"] = {}
-            pred_vs_true_dct[f"outer_fold_{cv_idx}"] = {}
+            pred_vs_true_rep[f"outer_fold_{cv_idx}"] = {}
 
             # Convert indices and select data
             train_indices = X.index[train_index]
@@ -552,6 +558,7 @@ class BaseMLAnalyzer(ABC):
             assert len(set(X_train[self.id_grouping_col]).intersection(set(X_test[self.id_grouping_col]))) == 0, \
                 "Grouping in outer_cv did not work as expected"
 
+            # Impute datasets
             print(f"now imputing datasets for fold {cv_idx}")
             imputed_datasets = self.impute_datasets(X_train_outer_cv=X_train,
                                                     X_test_outer_cv=X_test,
@@ -561,15 +568,20 @@ class BaseMLAnalyzer(ABC):
                                                     groups=X_train[self.id_grouping_col],
                                                     n_jobs=self.var_cfg["analysis"]["parallelize"]["imputation_runs_n_jobs"]
                                                     )
+            # Store imputed datasets of outer folds for SHAP value calculations
+            X_train_imputed_lst_for_fold = [
+                imputed_datasets[num_imp]["outer_fold"]["X_train_for_test_full"]
+                for num_imp in imputed_datasets
+            ]
+            X_train_imputed_lst.append(X_train_imputed_lst_for_fold)
             X_test_imputed_lst_for_fold = [
                 imputed_datasets[num_imp]["outer_fold"]["X_test_imputed"]
                 for num_imp in imputed_datasets
             ]
             X_test_imputed_lst.append(X_test_imputed_lst_for_fold)
 
+            # Get scorers and grid
             scoring_inner_cv = get_scorer(self.var_cfg["analysis"]["scoring_metric"]["inner_cv_loop"]["name"])
-
-            ##### We may need to perform manual gridsearch
             param_grid = list(ParameterGrid(self.hyperparameter_grid))
 
             for num_imp in range(self.num_imputations):
@@ -582,9 +594,8 @@ class BaseMLAnalyzer(ABC):
                     inner_cv=inner_cv,
                     n_jobs=self.var_cfg["analysis"]["parallelize"]["inner_cv_n_jobs"],
                 )
-
                 best_model = grid_search_results['best_model']
-                best_params = grid_search_results['best_params']
+                # best_params = grid_search_results['best_params']
 
                 # Append model (elasticnet) or model params (RFR)
                 if self.model_name == "elasticnet":
@@ -607,7 +618,7 @@ class BaseMLAnalyzer(ABC):
                     nested_scores_rep[f"outer_fold_{cv_idx}"][f"imp_{num_imp}"][metric] = score
 
                 if self.var_cfg["analysis"]["store_pred_and_true"]:
-                    pred_vs_true_dct[f"outer_fold_{cv_idx}"][f"imp_{num_imp}"] = self.get_pred_and_true_crit(
+                    pred_vs_true_rep[f"outer_fold_{cv_idx}"][f"imp_{num_imp}"] = self.get_pred_and_true_crit(
                         grid_search=SimpleNamespace(best_estimator_=best_model),
                         X_test=X_test_current,
                         y_test=y_test_current
@@ -620,7 +631,7 @@ class BaseMLAnalyzer(ABC):
             ml_model_params.append(ml_model_params_sublst)
             ml_pipelines.append(ml_pipelines_sublst)
 
-        X_filtered = X.drop(columns=[col for col in self.meta_vars if col in X.columns])
+        X_filtered = X.drop(columns=self.meta_vars, errors="ignore")
         # Summarize SHAP values and return all results
         (
             rep_shap_values,
@@ -629,6 +640,7 @@ class BaseMLAnalyzer(ABC):
             ia_test_shap_values,
             ia_base_values,
         ) = self.summarize_shap_values_outer_cv(
+            X_train_imputed_lst=X_train_imputed_lst,
             X_test_imputed_lst=X_test_imputed_lst,
             X=X_filtered,
             y=y,
@@ -642,12 +654,13 @@ class BaseMLAnalyzer(ABC):
 
         return (
             nested_scores_rep,
+            pred_vs_true_rep,
             ml_model_params,
             rep_shap_values,
             rep_base_values,
             rep_data,
-            ia_test_shap_values, # mean across imps
-            ia_base_values, # mean across imps
+            ia_test_shap_values,  # mean across imps
+            ia_base_values,  # mean across imps
         )
 
     def manual_grid_search(self,
@@ -660,18 +673,19 @@ class BaseMLAnalyzer(ABC):
         """
         Mimics the behavior of GridSearchCV using pre-imputed datasets and allows parallelization across param_grid.
         """
-        print()
         # Function to evaluate a single parameter combination
-        def evaluate_param_combination(params, imputed_datasets, y, inner_cv, scorer, pipeline, meta_vars, id_grouping_col):
+        def evaluate_param_combination(params, imputed_datasets, y, inner_cv, scorer, pipeline, meta_vars):
             param_results = []
             for fold in range(inner_cv.get_n_splits()):
                 fold_name = f"inner_fold_{fold}"
                 dataset = imputed_datasets[fold_name]
-                X_full = dataset['X_full']
+                X_full = dataset['X_train_for_val_full']
                 y_full = y.loc[X_full.index]
 
                 train_indices = dataset['train_indices']
                 val_indices = dataset['val_indices']
+                # TODO Remove this, if once tested -> this would be repeated for all param combos
+                self.logger.log(f"first three val indices for fold {fold}: {val_indices[:3]}")
 
                 # Prepare data
                 X_train = X_full.loc[train_indices].drop(columns=meta_vars, errors='ignore')
@@ -716,7 +730,7 @@ class BaseMLAnalyzer(ABC):
         # Now fit the model on the entire training data using best_params
         # Retrieve the 'outer_fold' data
         outer_fold_data = imputed_datasets['outer_fold']
-        X_train_full = outer_fold_data['X_train_full']
+        X_train_full = outer_fold_data['X_train_for_test_full']
         y_train_full = y.loc[X_train_full.index]
 
         # Prepare data
@@ -759,61 +773,53 @@ class BaseMLAnalyzer(ABC):
             X_test_outer_cv: pd.DataFrame,
             y_train_outer_cv: pd.Series,
             inner_cv: ShuffledGroupKFold,
-            groups: pd.Series,
+            groups: pd.Series, grouping column that separates the same individuals
             num_imputations: int,
             n_jobs: int,
 
         Returns:
             dict[dict[pd.DataFrame]: Dict containing the imputed dataset(s) for the trainig or the test data
         """
-        dct = {}
-        # TODO: I think I do not need the grouping column -> try
+        data_dct = {}
 
-        # Get inner_cv data
+        # Inner CV data
+        # This is the last time we need the groups, as we store the indices resulting from the splits
         for fold, (train_idx, val_idx) in enumerate(inner_cv.split(X_train_outer_cv, y_train_outer_cv, groups=groups)):
-            self.logger.log(f"first three val indices: {val_idx[:3]}")
-            print(f"first three val indices for fold {fold}: {val_idx[:3]}")
             # Convert indices and select data
             train_indices = X_train_outer_cv.index[train_idx]
             val_indices = X_train_outer_cv.index[val_idx]
             X_train_inner_cv, X_val = X_train_outer_cv.loc[train_indices], X_train_outer_cv.loc[val_indices]
-            X_train_copy, X_val_or_test_copy = X_train_outer_cv.loc[train_indices].copy(), X_train_outer_cv.loc[val_indices].copy()
+            data_dct[f"inner_fold_{fold}"] = [X_train_inner_cv, X_val, train_indices, val_indices]
 
-            dct[f"inner_fold_{fold}"] = [X_train_inner_cv, X_val, X_train_copy, X_val_or_test_copy, train_indices, val_indices]
-
-        # Get outer cv data     # TODO: Remove grouping column from test set
-        X_train_outer_cv_copy = X_train_outer_cv.copy()
-        X_test_outer_cv_copy = X_test_outer_cv.copy()
-        if self.id_grouping_col in X_train_outer_cv.columns:
-            X_train_outer_cv = X_train_outer_cv.drop(self.id_grouping_col, axis=1)
-        if self.id_grouping_col in X_test_outer_cv.columns:
-            X_test_outer_cv = X_test_outer_cv.drop(self.id_grouping_col, axis=1)
-        dct["outer_fold"] = [X_train_outer_cv, X_test_outer_cv, X_train_outer_cv_copy, X_test_outer_cv_copy]
+        # Outer CV data
+        X_train_outer_cv = X_train_outer_cv.drop(self.id_grouping_col, axis=1, errors="ignore")
+        X_test_outer_cv = X_test_outer_cv.drop(self.id_grouping_col, axis=1, errors="ignore")
+        data_dct["outer_fold"] = [X_train_outer_cv, X_test_outer_cv]
 
         # Define tasks for parallel processing
         tasks = []
         result_dct = {}
         for num_imp in range(num_imputations):
             result_dct[num_imp] = {}
-            for fold, (X_train, X_val_or_test, X_train_copy, X_val_or_test_copy, *indices) in dct.items():
+            for fold, (X_train, X_val_or_test, *indices) in data_dct.items():  # X_train_copy, X_val_or_test_copy,
                 result_dct[num_imp][fold] = {}
-                tasks.append((fold, num_imp, X_train, X_val_or_test, X_train_copy, X_val_or_test_copy, indices))
+                tasks.append((fold, num_imp, X_train, X_val_or_test, indices))  # X_train_copy, X_val_or_test_copy,
 
         # Parallel processing
-        print(n_jobs)
-        print(self.joblib_backend)
+        # print(n_jobs)
+        # print(self.joblib_backend)
         results = Parallel(
             n_jobs=n_jobs,
             backend=self.joblib_backend,
             verbose=3
         )(
             delayed(self.impute_single_dataset)
-            (fold, num_imp, X_train, X_val_or_test, X_train_copy, X_val_or_test_copy)
-            for fold, num_imp, X_train, X_val_or_test, X_train_copy, X_val_or_test_copy, _ in tasks
+            (fold, num_imp, X_train, X_val_or_test)
+            for fold, num_imp, X_train, X_val_or_test, _ in tasks
         )
 
         # Fill result_dct with results
-        for task_idx, (fold, num_imp, _, _, _, _, indices) in enumerate(tasks):
+        for task_idx, (fold, num_imp, _, _, indices) in enumerate(tasks):
             # Extract the corresponding result from the parallel results
             X_train_result, X_val_or_test_result = results[task_idx]
 
@@ -822,23 +828,23 @@ class BaseMLAnalyzer(ABC):
                 recreated_df = pd.concat([X_train_result, X_val_or_test_result])
                 recreated_df = recreated_df.reindex(X_train_outer_cv.index)
                 train_indices, val_indices = indices
+
                 # Store the train_indices and val_indices
                 result_dct[num_imp][fold] = {
-                    'X_full': recreated_df,
+                    'X_train_for_val_full': recreated_df,
                     'train_indices': train_indices,
                     'val_indices': val_indices
                 }
             else:
                 # For "outer", store the results with keys
                 result_dct[num_imp][fold] = {
-                    'X_train_full': X_train_result,
+                    'X_train_for_test_full': X_train_result,
                     'X_test_imputed': X_val_or_test_result
                 }
 
         return result_dct
 
-    # Define the parallel imputation function
-    def impute_single_dataset(self, fold, num_imp, X_train, X_val_or_test, X_train_copy, X_val_or_test_copy):
+    def impute_single_dataset(self, fold, num_imp, X_train, X_val_or_test):
         """
         Impute a single dataset based on fold and imputation number.
 
@@ -847,16 +853,16 @@ class BaseMLAnalyzer(ABC):
             num_imp: The specific imputation iteration.
             X_train: Training dataset.
             X_val_or_test: Validation dataset or Test dataset, depending on "fold"
-            X_train_copy: Copy of training datasets that contains the grouping_id_col
-            X_val_or_test_copy: Copy of the validation of test datasets that contains the group_id_col
 
         Returns:
+            tuple(pd.DataFrame): X_train and X_val / X_test imputed
 
         """
         # Clone the imputer, log indices
         imputer = clone(self.imputer)
+        self.logger.log("--------------------------------------------------")
         self.logger.log(f"    Starting to impute dataset {fold} imputation number {num_imp}")
-        self.logger.log(f"      first val indices are {X_val_or_test_copy.index[:3]}")
+        self.logger.log(f"      first val indices are {X_val_or_test.index[:3]}")
         self.log_thread()
 
         # Fit the imputer on the training data and transform training and test data
@@ -866,40 +872,14 @@ class BaseMLAnalyzer(ABC):
         self.logger.log(f"    Number of Cols with NaNs in X_test: {len(X_train.columns[X_val_or_test.isna().any()])}")
         X_val_test_imputed = imputer.transform(X=X_val_or_test, num_imputation=num_imp)
 
-        # Remove meta cols
-        X_train_imputed = X_train_imputed.drop(columns=[col for col in self.meta_vars if col in X_val_test_imputed.columns])
-        X_val_test_imputed = X_val_test_imputed.drop(columns=[col for col in self.meta_vars if col in X_val_test_imputed.columns])
-
-        # Concatenate non-numeric columns if necessary (grouping_col, we need this for the splits in the analysis)
-        # TODO: Try if I need the grouping_col -> If not, I do not need the copy neither
-        #if self.id_grouping_col not in X_train_imputed.columns:
-        #    X_train_imputed = pd.concat([X_train_imputed, X_train_copy[self.id_grouping_col]], axis=1)
-        #if self.id_grouping_col not in X_val_test_imputed.columns:
-        #    X_val_test_imputed = pd.concat([X_val_test_imputed, X_val_or_test_copy[self.id_grouping_col]], axis=1)
+        # Remove meta cols if present in df
+        X_train_imputed = X_train_imputed.drop(columns=self.meta_vars, errors="ignore")
+        X_val_test_imputed = X_val_test_imputed.drop(columns=self.meta_vars, errors="ignore")
 
         assert self.check_for_nan(X_train_imputed, dataset_name="X_train_imputed"), "There are NaN values in X_train_imputed!"
         assert self.check_for_nan(X_val_test_imputed, dataset_name="X_test_imputed"), "There are NaN values in X_test_imputed!"
 
         return X_train_imputed, X_val_test_imputed
-
-    def clocked_grid_search_fit(self, grid_search: GridSearchCV, X_train: pd.DataFrame, y_train: pd.Series, groups: pd.Series):
-        """
-        Clocked version of gridsearch.fit
-
-        Args:
-            grid_search:
-            X_train:
-            y_train:
-            groups:
-
-        Returns:
-            GridSearchCV: Fitted gridsearch object
-        """
-        # Use threading backend for parallelization
-        with parallel_backend(backend=self.joblib_backend,
-                              n_jobs=self.var_cfg["analysis"]["parallelize"]["inner_cv_n_jobs"]):
-            grid_search.fit(X_train, y_train, groups=groups)
-        return grid_search
 
     def check_for_nan(self, df, dataset_name=""):
         """
@@ -931,7 +911,8 @@ class BaseMLAnalyzer(ABC):
         scoring_functions = {
             "neg_mean_squared_error": get_scorer("neg_mean_squared_error"),
             "r2": get_scorer("r2"),
-            "spearman": make_scorer(self.spearman_corr),  # Assuming self.spearman_corr is defined
+            "spearman": make_scorer(self.spearman_corr),
+            "pearson": make_scorer(self.pearson_corr)
         }
 
         scorers = {
@@ -980,12 +961,10 @@ class BaseMLAnalyzer(ABC):
     def compute_shap_for_fold(
         self,
         num_cv_,
-        # num_imputation,
         pipeline,
-        # index_mapping,
         num_test_indices,
+        X_train,
         X_test,
-        # all_features,
     ):
         """
         Parallelization implementation of the method "summarize_shap_values_outer_cv". This enables parallel SHAP
@@ -1018,6 +997,7 @@ class BaseMLAnalyzer(ABC):
                 represent samples that were in the train set in the current outer fold are all zero.
                 Only defined if calc_ia_values is specific in the var_cfg and model == 'rfr', None otherwise
         """
+        X_train_scaled = pipeline.named_steps["preprocess"].transform(X_train)  # scaler
         X_test_scaled = pipeline.named_steps["preprocess"].transform(X_test)  # scaler
 
         if "feature_selection" in pipeline.named_steps:  # feature sizes must match, conditionally apply fs
@@ -1036,7 +1016,9 @@ class BaseMLAnalyzer(ABC):
         (
             shap_values_test,
             base_values_test,
-        ) = self.calculate_shap_values(X_scaled=X_test_scaled, pipeline=pipeline)
+        ) = self.calculate_shap_values(X_train_scaled=X_train_scaled,
+                                       X_test_scaled=X_test_scaled,
+                                       pipeline=pipeline)
 
         if (
             self.model_name == "randomforestregressor"
@@ -1085,6 +1067,7 @@ class BaseMLAnalyzer(ABC):
         raise NotImplementedError("Subclasses should implement this method")
 
     def summarize_shap_values_outer_cv(self,
+                                       X_train_imputed_lst: list[list[pd.DataFrame]],
                                        X_test_imputed_lst: list[list[pd.DataFrame]],
                                        X: pd.DataFrame,
                                        y: pd.Series,
@@ -1122,11 +1105,9 @@ class BaseMLAnalyzer(ABC):
         """
         print('---------------------')
         print('Calculate SHAP values')
-        # Create a mapping from numerical indices to variable indices
-        index_mapping = dict(enumerate(X.index))
+
         # Get numerical indices of the samples in the outer cv
         num_test_indices = [test for train, test in outer_cv.split(X, y, groups=groups)]
-        # all_features = X.columns
 
         # Set up the array to store the results -> 3D arrays (rows x features x imputations), also for feature selection
         # base values may vary across samples
@@ -1140,11 +1121,9 @@ class BaseMLAnalyzer(ABC):
                 self.compute_shap_for_fold(
                     num_cv_=num_cv_,
                     pipeline=pipelines[num_cv_][num_imputation],
-                    # index_mapping=index_mapping,
                     num_test_indices=num_test_indices,
+                    X_train=X_train_imputed_lst[num_cv_][num_imputation],  # TODO
                     X_test=X_test_imputed_lst[num_cv_][num_imputation],
-                    # num_imputation=num_imputation,
-                    # all_features=all_features,
                 )
                 for num_imputation in range(self.num_imputations)
             ]
@@ -1291,7 +1270,8 @@ class BaseMLAnalyzer(ABC):
             self.logger.log(f"    Rank {rank} data hash: {data_hash}")
 
             dynamic_rs = fix_random_state + rep
-            result = self.nested_cv(
+            nested_scores_rep, pred_vs_true_rep, ml_model_params, rep_shap_values, rep_base_values, rep_data,\
+                rep_ia_values, rep_ia_base_values = self.nested_cv(
                 rep=rep,
                 X=X,
                 y=y,
@@ -1301,46 +1281,66 @@ class BaseMLAnalyzer(ABC):
 
             # Unpack result and exclude large arrays
             result_without_large_arrays = (
-                result[0],  # nested_scores_rep
-                result[1],  # ml_model_params
-                result[2],  # rep_shap_values
-                result[3],  # rep_base_values
-                result[4],  # rep_data
+                nested_scores_rep,
+                pred_vs_true_rep,
+                ml_model_params,
+                rep_shap_values,
+                rep_base_values,
+                rep_data,
             )
 
             results.append((rep, result_without_large_arrays))
-            shap_val_dct = {"shap_values": result[2], "base_values": result[3], "data": result[4],
-                            "feature_names": self.X.columns.tolist()}
+            shap_val_dct = {"shap_values": rep_shap_values,
+                            "base_values": rep_base_values,
+                            "data": rep_data,
+                            "feature_names": self.X.columns.tolist()
+                            }
 
             print(f"    [Rank {rank}] Finished repetition {rep}")
             self.logger.log(f"    Rank {rank}: Finished repetition {rep}")
 
-            # Save IA values to files -> Save always due to gb size
+            # Save IA values to files -> Save always due to file size
             if self.var_cfg["analysis"]["shap_ia_values"]["comp_shap_ia_values"]:
-                file_name_ia_values = os.path.join(
-                    self.spec_output_path, f"shap_ia_values_rank{rank}_rep_{rep}.pkl"
+                file_name_ia_values = os.path.join(  # TODO Test all this
+                    self.spec_output_path, f"shap_ia_values_rep_{rep}.pkl"  # Can I leave out the rank??? If not using mpi4py indeed
                 )
                 file_name_ia_base_values = os.path.join(
-                    self.spec_output_path, f"shap_ia_base_values_rank{rank}_rep_{rep}.pkl"
+                    self.spec_output_path, f"shap_ia_base_values_rep_{rep}.pkl"
                 )
                 with open(file_name_ia_values, "wb") as f:
-                    pickle.dump(result[5], f)
+                    pickle.dump(rep_ia_values, f)
                 with open(file_name_ia_base_values, "wb") as f:
-                    pickle.dump(result[6], f)
+                    pickle.dump(rep_ia_base_values, f)
 
                 # Store file paths with their corresponding rep number
                 results_file_paths.append((rep, file_name_ia_values, file_name_ia_base_values))
 
+                # Store also the mappings for the postprocessing
+                ia_values_mappings = {
+                    "combo_index_mapping": self.combo_index_mapping.copy(),
+                    "feature_index_mapping": self.feature_index_mapping.copy(),
+                    "num_combos": self.num_combos.copy()
+                }
+                file_name_ia_values_mappings = os.path.join(
+                    self.spec_output_path, f"ia_values_mappings_rep_{rep}.pkl"
+                )
+                with open(file_name_ia_values_mappings, "wb") as f:
+                    pickle.dump(ia_values_mappings, f)
+
             # Save models to file
             best_models_file = os.path.join(self.spec_output_path, f"best_models_rep_{rep}.pkl")
             with open(best_models_file, "wb") as f:
-                pickle.dump(result[1], f)
+                pickle.dump(ml_model_params, f)
 
             if self.split_reps:  # Store results for single reps, if we use different jobs for different reps
 
                 nested_scores_file = os.path.join(self.spec_output_path, f"cv_results_rep_{rep}.json")
                 with open(nested_scores_file, "w") as file:
-                    json.dump(result[0], file, indent=4)
+                    json.dump(nested_scores_rep, file, indent=4)
+
+                pred_vs_true_file = os.path.join(self.spec_output_path, f"pred_vs_true_rep_{rep}.json")
+                with open(pred_vs_true_file, "w") as file:
+                    json.dump(pred_vs_true_rep, file, indent=4)
 
                 shap_values_file = os.path.join(self.spec_output_path, f"shap_values_rep_{rep}.pkl")
                 with open(shap_values_file, "wb") as f:
@@ -1369,6 +1369,7 @@ class BaseMLAnalyzer(ABC):
             # Process the final results
             for rep, (
                     nested_scores_rep,
+                    pred_vs_true_rep,
                     best_models,
                     rep_shap_values,
                     rep_base_values,
@@ -1381,6 +1382,7 @@ class BaseMLAnalyzer(ABC):
                 self.shap_results["base_values"][f"rep_{rep}"] = rep_base_values
                 self.shap_results["data"][f"rep_{rep}"] = rep_data
                 self.repeated_nested_scores[f"rep_{rep}"] = nested_scores_rep
+                self.pred_vs_true[f"rep_{rep}"] = pred_vs_true_rep
 
             # Load the large arrays from the file paths
             if self.var_cfg["analysis"]["shap_ia_values"]["comp_shap_ia_values"]:
@@ -1410,7 +1412,6 @@ class BaseMLAnalyzer(ABC):
             rep = self.rep if self.rep is not None else "all"
 
             # CV results
-            #cv_results = self.repeated_nested_scores
             cv_results_filename = os.path.join(
                 self.spec_output_path,
                 f"{self.performance_name}_rep_{rep}.json"
@@ -1418,8 +1419,15 @@ class BaseMLAnalyzer(ABC):
             with open(cv_results_filename, "w") as file:
                 json.dump(self.repeated_nested_scores, file, indent=4)
 
+            # Pred vs true
+            pred_vs_true_filename = os.path.join(
+                self.spec_output_path,
+                f"pred_vs_true_rep_{rep}.json"
+            )
+            with open(pred_vs_true_filename, "w") as file:
+                json.dump(xx, file, indent=4)  # TODO:
+
             # SHAP values
-            # shap_values = self.shap_results
             self.shap_results["feature_names"] = self.X.columns.tolist()
             shap_values_filename = os.path.join(
                 self.spec_output_path,
@@ -1430,7 +1438,6 @@ class BaseMLAnalyzer(ABC):
 
             # Linear model coefficients
             if self.lin_model_coefs:
-                # lin_model_coefs = self.lin_model_coefs
                 lin_model_coefs_filename = os.path.join(
                     self.spec_output_path,
                     f"{self.lin_model_coefs_name}_rep_{rep}.json"
@@ -1446,7 +1453,7 @@ class BaseMLAnalyzer(ABC):
         """Aggregates shap interaction values, implemented in the RFR subclass."""
         pass
 
-    def calculate_shap_values(self, X_scaled, pipeline):
+    def calculate_shap_values(self, X_train_scaled, X_test_scaled, pipeline):
         """
         This function calculates tree-based SHAP values for a given analysis setting. This includes applying the
         preprocessing steps that were applied in the pipeline (e.g., scaling).
@@ -1455,7 +1462,8 @@ class BaseMLAnalyzer(ABC):
         Further, it calculates the SHAP interaction values based on the TreeExplainer, if specified
 
         Args:
-            X: df, features for the machine learning analysis according to the current specification
+            X_train_scaled: Scaöed train dataset, we need this as background data for the linear shap analyzer
+            X_test_scaled: Scaled test dataset where we compute the SHAP values for
             pipeline: Sklearn Pipeline object containing the steps of the ml-based prediction (i.e., preprocessing
                 and estimation using the prediction model).
 
@@ -1468,8 +1476,11 @@ class BaseMLAnalyzer(ABC):
         # X_processed = pipeline.named_steps["preprocess"].transform(X)  # Still need this for scaling
 
         print(self.var_cfg["analysis"]["parallelize"]["shap_n_jobs"])
-        if self.model_name == "elasticnet":
-            explainer = shap.LinearExplainer(pipeline.named_steps["model"].regressor_, X_scaled)
+        if self.model_name == "elasticnet":  # TODO Test this -> Check runtime
+            n_samples = len(X_train_scaled)
+            explainer = shap.LinearExplainer(model=pipeline.named_steps["model"].regressor_,
+                                             masker=X_train_scaled,
+                                             n_samples=n_samples)
         elif self.model_name == "randomforestregressor":
             explainer = shap.explainers.Tree(pipeline.named_steps["model"].regressor_)
         else:
@@ -1477,7 +1488,7 @@ class BaseMLAnalyzer(ABC):
 
         # Compute SHAP values for chunks of the data
         n_jobs = self.var_cfg["analysis"]["parallelize"]["shap_n_jobs"]
-        chunk_size = X_scaled.shape[0] // n_jobs + (X_scaled.shape[0] % n_jobs > 0)
+        chunk_size = X_test_scaled.shape[0] // n_jobs + (X_test_scaled.shape[0] % n_jobs > 0)
         print("chunk_size:", chunk_size)
 
         # Compute SHAP values for chunks of the data in parallel
@@ -1487,9 +1498,9 @@ class BaseMLAnalyzer(ABC):
             verbose=3,
         )(
             delayed(self.calculate_shap_for_chunk)(
-                explainer, X_scaled[i: i + chunk_size]
+                explainer, X_test_scaled[i: i + chunk_size]
             )
-            for i in range(0, X_scaled.shape[0], chunk_size)
+            for i in range(0, X_test_scaled.shape[0], chunk_size)
         )
 
         # Collect and combine results from all chunks
@@ -1532,6 +1543,10 @@ class BaseMLAnalyzer(ABC):
         y_pred = y_pred_raw
         rank_corr, _ = spearmanr(y_true, y_pred)
         return rank_corr
+
+    @staticmethod
+    def pearson_corr(y_true, y_pred):
+        return pearsonr(y_true, y_pred)[0]  # Return only the correlation coefficient
 
     def log_thread(self):
         """
