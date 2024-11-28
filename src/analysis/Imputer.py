@@ -314,9 +314,8 @@ class Imputer(BaseEstimator, TransformerMixin):
         individual_df_imputed = self.fitted_individual_scaler.inverse_transform(individual_df_imputed_scaled)
 
         df = df.drop(columns=individual_var_cols)
-        df = pd.concat([df, individual_df_imputed], axis=1, join="outer")
-        # TODO changing the order would fix the feature assignment issue, leave this for now and fix after the results were obtained
-        # df = pd.concat([individual_df_imputed, df], axis=1, join="outer")
+        # Former problem is fixed -> feature order is valid in combined analyses
+        df = pd.concat([individual_df_imputed, df], axis=1, join="outer")
 
         return df
 
