@@ -34,6 +34,7 @@ NUM_REPS=10           # Adjust as needed
 BASE_MINUTES=2000
 CPUS_PER_TASK=10     # Fixed number of CPUs per analysis
 NUM_NODES=1          # If set to 1, no multi-node analysis happens
+PARTITION="normal"   # palma: normal / long, pc2: normal / express
 
 # Memory specification based on COMP_SHAP_IA_VALUES
 if [ "$COMP_SHAP_IA_VALUES" == "true" ]; then
@@ -125,7 +126,7 @@ for crit in "${CRITERIA[@]}"; do
 #SBATCH --nodes=$NUM_NODES
 #SBATCH --ntasks-per-node=$NTASKS
 #SBATCH --cpus-per-task=$CPUS_PER_TASK
-#SBATCH --partition=long
+#SBATCH --partition=$PARTITION
 #SBATCH --time=$TIMELIMIT
 #SBATCH --mail-type=FAIL
 #SBATCH --mail-user=aeback.oh@gmail.com
