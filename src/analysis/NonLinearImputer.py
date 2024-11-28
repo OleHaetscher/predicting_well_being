@@ -59,8 +59,8 @@ class NonLinearImputer:
 
         # Iterative imputation process
         for iteration in range(self.max_iter):
-            if (iteration + 1) % 5 == 0 or iteration == 0:  # Log every 5 iterations or the first one
-                current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            #if (iteration + 1) % 5 == 0 or iteration == 0:  # Log every 5 iterations or the first one
+            #    current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
                 #self.logger.log(f"          -> Execute iteration {iteration+1}/{self.max_iter}, at {current_time}")
                 #print(f"Iteration {iteration+1}/{self.max_iter}")
             for col in columns_with_na:

@@ -176,7 +176,7 @@ analysis:
     na_trait: [ cocoesm, cocout, cocoms, pia, zpid ]
 
   imputation:
-    num_imputations: 2 # 5
+    num_imputations: 5 # 5
     max_iter: 1 # 40
     conv_thresh: 0.05  # 0.05  only RFR
     tree_max_depth: 10  # only RFR
@@ -194,6 +194,7 @@ analysis:
       - r2
       - neg_mean_squared_error
       - spearman
+      - pearson
 
   model_hyperparameters:
     elasticnet:  # verify
