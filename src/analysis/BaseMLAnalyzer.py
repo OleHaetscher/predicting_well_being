@@ -1480,9 +1480,10 @@ class BaseMLAnalyzer(ABC):
             n_samples = len(X_train_scaled)
             explainer = shap.LinearExplainer(model=pipeline.named_steps["model"].regressor_,
                                              masker=X_train_scaled,
-                                             n_samples=n_samples)
+                                             nsamples=n_samples)
         elif self.model_name == "randomforestregressor":
-            explainer = shap.explainers.Tree(pipeline.named_steps["model"].regressor_)
+            explainer = shap.explainers.Tree(model=pipeline.named_steps["model"].regressor_,
+                                             feature_perturbation="tree_path_dependent")
         else:
             raise ValueError(f"Model {self.model_name} not implemented")
 

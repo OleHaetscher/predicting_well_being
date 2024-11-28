@@ -1,7 +1,7 @@
 general:
   datasets_to_be_included: [  cocoesm, cocoms, cocout, emotions, pia, zpid ] # cocoesm, cocoms, cocout, emotions, pia, zpid
   log_dir: "../logs/new_data_2811"  # only for preprocessing, analysis logs are stored in the result folders
-  log_name: x
+  log_name: 2811
 
   steps:
     preprocessing: false
@@ -85,8 +85,8 @@ analysis:
   store_pred_and_true: true
 
   tests:
-    sample: true
-    sample_size: 120
+    sample: false
+    sample_size: 200
 
   methods_to_apply:
     - select_samples
@@ -150,10 +150,10 @@ analysis:
     samples_to_include: all  # all, selected, control
 
   cv:
-    num_inner_cv: 3  # 10
+    num_inner_cv: 10  # 10
     verbose_inner_cv: 0
-    num_outer_cv: 3 # 10
-    num_reps: 3  # 10
+    num_outer_cv: 10 # 10
+    num_reps: 10  # 10
     id_grouping_col: other_unique_id
     cache_pipe: false  # not improving performance
     warm_start: false  # not improving performance
@@ -192,19 +192,19 @@ analysis:
 
   model_hyperparameters:
     elasticnet:  # verify
-      model__regressor__alpha: [0.1, 1]
-      model__regressor__l1_ratio: [0.5]
-      #model__regressor__alpha: [0.00001, 0.0001, 0.001, 0.01, 0.1, 1, 10, 100, 1000, 10000, 100000]
-      #model__regressor__l1_ratio: [0, 0.1, 0.2, 0.3, 0.4, 0.4, 0.6, 0.7, 0.8, 0.9, 1]
-      #model__regressor__max_iter: [ 1000, 10000 ]
-      #model__regressor__tol: [0.1, 0.01, 0.001, 0.0001]
+      #model__regressor__alpha: [0.1, 1]
+      #model__regressor__l1_ratio: [0.5]
+      model__regressor__alpha: [0.00001, 0.0001, 0.001, 0.01, 0.1, 1, 10, 100, 1000, 10000, 100000]
+      model__regressor__l1_ratio: [0, 0.1, 0.2, 0.3, 0.4, 0.4, 0.6, 0.7, 0.8, 0.9, 1]
+      model__regressor__max_iter: [ 1000, 10000 ]
+      model__regressor__tol: [0.1, 0.01, 0.001, 0.0001]
     randomforestregressor:
-      model__regressor__max_depth: [ 4, 6 ]
-      model__regressor__max_features: [ 0.2 ]
-      #model__regressor__n_estimators: [ 100, 500 ]
-      #model__regressor__max_features: [ 0.25, 0.5, 0.75]
-      #model__regressor__max_depth: [4, 6, 8, 10, 12]
-      #model__regressor__min_samples_split: [5, 10, 15, 20]
+      #model__regressor__max_depth: [ 4, 6 ]
+      #model__regressor__max_features: [ 0.2 ]
+      model__regressor__n_estimators: [ 100, 500 ]
+      model__regressor__max_features: [ 0.25, 0.5, 0.75]
+      model__regressor__max_depth: [4, 6, 8, 10, 12]
+      model__regressor__min_samples_split: [5, 10, 15, 20]
 
   parallelize:
     parallelize_shap: true
