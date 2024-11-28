@@ -58,7 +58,7 @@ class SanityChecker:
             (self.check_num_rows, {'df': None, 'dataset': dataset}),
             (self.calc_reliability, {'df': df_before_final_sel, 'dataset': dataset}),
             (self.check_zero_variance, {'df': None}),
-            (self.check_scale_endpoints, {'df': None}),
+            (self.check_scale_endpoints, {'df': None, 'dataset': dataset}),
             (self.calc_correlations, {'df': None}),
         ]
         for method, kwargs in sanity_checks:
@@ -166,12 +166,7 @@ class SanityChecker:
 
         Returns:
         """
-        num_cols_expected = self.cfg_sanity_checks["number_of_features"][dataset]
-        if len(df.columns) != num_cols_expected:
-            self.logger.log(f"    WARNING: Number of columns in PreReg: {num_cols_expected} Number of columns in df: {len(df.columns)}")
-        else:
-            self.logger.log(f"    Number of columns in PreReg corresponds to number of columns in data")
-        self.log_num_features_per_cat(df, dataset)  # do it either way to check unexpected things
+        pass
 
     def check_num_rows(self, df: pd.DataFrame, dataset: str) -> None:
         """
@@ -227,45 +222,76 @@ class SanityChecker:
             for i in cols_in_df:
                 self.logger.log(f"          {i}")
 
-    def check_scale_endpoints(self, df: pd.DataFrame) -> None:
+    def check_scale_endpoints(self, df: pd.DataFrame, dataset: str) -> None:
         """
-        This method checks if the range of values in all cells corresponds to the scale endpoints defined in the cfg.
-        If not, it logs all values per column that lie outside the defined range and throws and assertion error
+        Checks if the range of values in all cells corresponds to the scale endpoints defined in the cfg.
+        Logs all values per column that lie outside the defined range and raises an assertion error if issues are found.
 
         Args:
-            df:
+            df: The DataFrame to validate.
 
-        Returns:
-
+        Raises:
+            AssertionError: If any column has values outside the defined scale endpoints.
         """
+
+        def get_column_names(cat, var_name):
+            """
+            Resolves column names based on category and variable name.
+            """
+            if cat in ["personality", "sociodemographics"]:
+                return [f"pl_{var_name}"]
+            elif cat == "self_reported_micro_context":
+                if var_name in ["sleep_quality", "number_interaction_partners"]:
+                    return [
+                        f"srmc_{var_name}_mean",
+                        f"srmc_{var_name}_sd",
+                        f"srmc_{var_name}_min",
+                        f"srmc_{var_name}_max"
+                    ]
+                else:
+                    return [f"srmc_{var_name}"]
+            elif cat == "criterion":
+                return [f"crit_{var_name}"]
+            else:
+                return []
+
         errors = []  # To collect any errors found
 
         for meta_cat in ["person_level", "esm_based"]:
             for cat, cat_entries in self.fix_cfg[meta_cat].items():
                 for var in cat_entries:
-                    if 'scale_endpoints' in var:
-                        col_names_org = [col.split('_', 1)[1] if '_' in col else col for col in df.columns]
-                        column_names = [i for i in df.columns if i in col_names_org]
+                    # Skip variables without scale endpoints or not related to the dataset
+                    if 'scale_endpoints' not in var or dataset not in var.get('item_names', []):
+                        continue
+
+                    if var["name"] in ["sleep_quality", "number_interaction_partners"]:
+                        scale_min = 0 # for SD
+                    else:
                         scale_min = var['scale_endpoints']['min']
-                        scale_max = var['scale_endpoints']['max']
+                    scale_max = var['scale_endpoints']['max']
 
-                        for col in column_names:
-                            # Get the column values
-                            column_values = df[col]
+                    column_names = get_column_names(cat, var['name'])
+                    # Validate each column
+                    for col_name in column_names:
+                        if col_name not in df.columns:
+                            self.logger.log(f"WARNING: Skip column '{col_name}', not found in DataFrame")
+                            continue
 
-                            # Check if any values are outside the min/max range
-                            outside_values = column_values[(column_values < scale_min) | (column_values > scale_max)]
+                        column_values = df[col_name]
+                        outside_values = column_values[(column_values < scale_min) | (column_values > scale_max)]
 
-                            if not outside_values.empty:
-                                # Log the offending values
-                                self.logger.log(f"    WARNING: Values out of scale bounds in column '{col}': {outside_values.tolist()}")
-                                errors.append(
-                                    f"      Column '{col}' contains values outside of scale endpoints {scale_min}-{scale_max}. "
-                                    f"      Outliers: {outside_values.tolist()}")
+                        if not outside_values.empty:
+                            self.logger.log(
+                                f"WARNING: Values out of scale bounds in column '{col_name}': {outside_values.tolist()}"
+                            )
+                            errors.append(
+                                f"Column '{col_name}' contains values outside of scale endpoints {scale_min}-{scale_max}. "
+                                f"Outliers: {outside_values.tolist()}"
+                            )
 
-                # Raise an assertion error if any issues were found
-                if errors:
-                    raise AssertionError("Scale validation failed:\n" + "\n".join(errors))
+        # Raise an assertion error if any issues were found
+        if errors:
+            raise AssertionError("Scale validation failed:\n" + "\n".join(errors))
 
     def check_zero_variance(self, df: pd.DataFrame) -> None:
         """

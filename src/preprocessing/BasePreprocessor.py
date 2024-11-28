@@ -6,6 +6,7 @@ from functools import reduce
 from typing import Union
 
 import pandas as pd
+from pandas.api.types import is_numeric_dtype
 
 from src.utils.ConfigParser import *
 from src.utils.DataLoader import DataLoader
@@ -121,6 +122,7 @@ class BasePreprocessor(ABC):
                 'df_type': "person_level",
                 'cat_list': ['personality', 'sociodemographics', 'criterion'],
             }),
+            (self.check_scale_endpoints, {'df': None, 'df_type': "person_level"}),
             (self.create_binary_vars_from_categoricals, {'df_traits': None}),
         ]
         for method, kwargs in preprocess_steps_traits:
@@ -140,6 +142,7 @@ class BasePreprocessor(ABC):
                 'df_type': "esm_based",
                 'cat_list': ['self_reported_micro_context', 'criterion'],  # sensed microcontext?
             }),
+            (self.check_scale_endpoints, {'df': None, 'df_type': "esm_based"}),
             (self.filter_min_num_esm_measures, {'df_states': None}),
             (self.store_wb_items, {'df_states': None}),
             (self.create_person_level_vars_from_esm, {'df_states': None}),
@@ -416,8 +419,6 @@ class BasePreprocessor(ABC):
         for cat in cat_list:
             for entry in specific_cfg[cat]:
                 if "item_names" in entry:
-                    if entry["name"] == "pa_state":
-                        print()
                     item_names = entry['item_names'].get(self.dataset)
                     align_mapping = entry.get('align_scales_mapping', {}).get(self.dataset)
                     if item_names and align_mapping:
@@ -429,8 +430,15 @@ class BasePreprocessor(ABC):
                         new_max = align_mapping['max'][old_max]
 
                         for col in item_names:
+                            self.logger.log(f"        Execute align scales for column {col}")
+                            if is_numeric_dtype(df[col]):
+                                self.logger.log(f"          Old min of {col}: {df[col].min()}")
+                                self.logger.log(f"          Old max of {col}: {df[col].max()}")
                             df[col] = df[col].apply(lambda x: self._align_value(x, old_min, old_max, new_min, new_max))
                             self.logger.log(f"        align scales executed for column {col}")
+                            if is_numeric_dtype(df[col]):
+                                self.logger.log(f"          New min of {col}: {df[col].min()}")
+                                self.logger.log(f"          New max of {col}: {df[col].max()}")
         return df
 
     def _align_value(self, value: float, old_min: float, old_max: float, new_min: float, new_max: float) -> float:
@@ -453,11 +461,58 @@ class BasePreprocessor(ABC):
         if isinstance(value, str):
             value = pd.to_numeric(value, errors='coerce')
 
+        # We do this also in a seperate function, but here it is necessary to not bias the transformations
+        if value < old_min or value > old_max:
+            self.logger.log(f"         Value {value} out of range [{old_min}, {old_max}]. Setting to NaN before aligning the scales.")
+            return np.nan
+
         # Scale the value from the old range to the new range
         if old_min == old_max:
             return new_min  # Avoid division by zero if old_min and old_max are the same
-        new_val = new_min + ((value - old_min) * (new_max - new_min)) / (old_max - old_min)
-        return new_val
+        return new_min + ((value - old_min) * (new_max - new_min)) / (old_max - old_min)
+
+    def check_scale_endpoints(self, df: pd.DataFrame, df_type: str):
+        """
+        This method checks if after having the scales aligned there are still values outside the scale range.
+        We set these values to np.nan, as these correspond to NaNs, or "I do not want to answer this".
+
+        Args:
+            df:
+            df_type:
+
+        Returns:
+            pd.DataFrame:
+        """
+        for cat, cat_entries in self.fix_cfg[df_type].items():
+            for var in cat_entries:
+                # Check if scale endpoints are defined
+                if 'scale_endpoints' in var and self.dataset in var['item_names']:
+                    scale_min = var['scale_endpoints']['min']
+                    scale_max = var['scale_endpoints']['max']
+
+                    col_names = var['item_names'][self.dataset]
+                    if isinstance(col_names, str):
+                        col_names = [col_names]
+                    for col_name in col_names:
+
+                        # Convert column values to numeric
+                        column_values = pd.to_numeric(df[col_name], errors='coerce')
+                        # Check for values outside the scale endpoints
+                        outside_values = column_values[(column_values < scale_min) | (column_values > scale_max)]
+
+                        if not outside_values.empty:
+                            test = df[col_name]
+                            min = test.min()
+                            max = test.max()
+                            print()
+                            # Log the offending values
+                            self.logger.log(
+                                f"     WARNING: Values out of scale bounds in column '{col_name}': {outside_values.tolist()}, "
+                                f"set to np.nan")
+
+                            # Filter invalid values by setting them to NaN
+                            df[col_name] = df[col_name].where(df[col_name].between(scale_min, scale_max), other=np.nan)
+        return df
 
     def create_binary_vars_from_categoricals(self, df_traits: pd.DataFrame) -> pd.DataFrame:
         """
@@ -1421,16 +1476,16 @@ class BasePreprocessor(ABC):
             # pa
             if self.dataset in wb_items[0]["item_names"]:
                 pa_items = wb_items[0]["item_names"][self.dataset]
-                df[f'{criterion_type}_pa'] = df[pa_items].mean(axis=1)
-                self.logger.log(f"    M {criterion_type}_pa: {np.mean(df[f'{criterion_type}_pa'], 3)}")
-                self.logger.log(f"    SD {criterion_type}_pa: {np.std(df[f'{criterion_type}_pa'], 3)}")
+                df[f'pa_{criterion_type}'] = df[pa_items].mean(axis=1)
+                self.logger.log(f"    M {criterion_type}_pa: {np.round(np.mean(df[f'pa_{criterion_type}']), 3)}")
+                self.logger.log(f"    SD {criterion_type}_pa: {np.round(np.std(df[f'pa_{criterion_type}']), 3)}")
 
-            # na
+            # na  # TODO Check consequences of changing xx_pa to pa_xx !!! But this is more consistent
             if self.dataset in wb_items[1]["item_names"]:
                 na_items = wb_items[1]["item_names"][self.dataset]
-                df[f'{criterion_type}_na'] = df[na_items].mean(axis=1)
-                self.logger.log(f"    M {criterion_type}_na: {np.mean(df[f'{criterion_type}_na'], 3)}")
-                self.logger.log(f"    SD {criterion_type}_na: {np.std(df[f'{criterion_type}_na'], 3)}")
+                df[f'na_{criterion_type}'] = df[na_items].mean(axis=1)
+                self.logger.log(f"    M {criterion_type}_na: {np.round(np.mean(df[f'na_{criterion_type}']), 3)}")
+                self.logger.log(f"    SD {criterion_type}_na: {np.round(np.std(df[f'na_{criterion_type}']), 3)}")
 
             # wb
             scale_min = wb_items[1]["scale_endpoints"]["min"]
@@ -1439,16 +1494,16 @@ class BasePreprocessor(ABC):
                 df[f'{criterion_type}_na_tmp'] = self.inverse_code(df[na_items], min_scale=scale_min, max_scale=scale_max).mean(axis=1)
                 # Create a DataFrame with all new columns at once
                 new_columns = pd.DataFrame({
-                    f'{criterion_type}_wb': df[[f'{criterion_type}_pa', f'{criterion_type}_na_tmp']].mean(axis=1)
+                    f'wb_{criterion_type}': df[[f'pa_{criterion_type}', f'{criterion_type}_na_tmp']].mean(axis=1)
                 })
                 df = pd.concat([df, new_columns], axis=1)
                 df = df.drop([f'{criterion_type}_na_tmp'], axis=1)
             else:  # zpid
-                df[f'{criterion_type}_wb'] = df[f'{criterion_type}_pa']
-                df = df.drop(f'{criterion_type}_pa', axis=1)
+                df[f'wb_{criterion_type}'] = df[f'pa_{criterion_type}']
+                df = df.drop(f'pa_{criterion_type}', axis=1)
 
-            self.logger.log(f"    M {criterion_type}_na: {np.mean(df[f'{criterion_type}_na'], 3)}")
-            self.logger.log(f"    SD {criterion_type}_na: {np.std(df[f'{criterion_type}_na'], 3)}")
+            self.logger.log(f"    M {criterion_type}_wb: {np.round(np.mean(df[f'wb_{criterion_type}']), 3)}")
+            self.logger.log(f"    SD {criterion_type}_wb: {np.round(np.std(df[f'wb_{criterion_type}']), 3)}")
         return df
 
     @staticmethod

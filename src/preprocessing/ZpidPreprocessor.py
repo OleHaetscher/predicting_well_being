@@ -66,7 +66,6 @@ class ZpidPreprocessor(BasePreprocessor):
         df_traits.loc[df_traits['Demo_B1'] == 0, 'Demo_B1'] = np.nan
         df_traits.loc[df_traits['Arbeitsleben91_AugOct'] == 0, 'Arbeitsleben91_AugOct'] = np.nan
         df_traits.loc[df_traits['Demo_AL1'] == 0, 'Demo_AL1'] = np.nan
-
         return df_traits
 
     def merge_bfi_items(self, df_traits: pd.DataFrame) -> pd.DataFrame:
@@ -82,16 +81,37 @@ class ZpidPreprocessor(BasePreprocessor):
         Returns:
             pd.DataFrame:
         """
+        self.logger.log("        Check if params of the BFI_2XS waves are comparable")
         # Identify all BFI_2XS items
         bfi_items = set([col.rsplit('_', 1)[0] for col in df_traits.columns if "BFI_2XS" in col])
 
         # For each BFI item, merge wave 3 and wave 4
         for item in bfi_items:
-            wave3_col = f"{item}_wave3"
-            wave4_col = f"{item}_wave4"
+
+            # Sanity checks
+            for wave in ["wave3", "wave4"]:
+                col_name = f"{item}_{wave}"
+                if col_name in df_traits.columns:
+                    stats = df_traits[col_name].describe()
+                    self.logger.log(
+                        f"          Stats for {col_name} - "
+                        f"            M: {round(stats['mean'], 3)}, "
+                        f"            SD: {round(stats['std'], 3)}, "
+                        f"            Min: {round(stats['min'], 3)}, "
+                        f"            Max: {round(stats['max'], 3)}"
+                    )
+                else:
+                    self.logger.log(f"WARNING: Column {col_name} not found in DataFrame.")
 
             # Merge wave 3 and wave 4 by taking the mean, with skipna=True to ignore NaNs
+            wave3_col = f"{item}_wave3"
+            wave4_col = f"{item}_wave4"
+            # Filter invalid values (< 1 or > 5) by setting them to NaN
+            df_traits[wave3_col] = df_traits[wave3_col].where(df_traits[wave3_col].between(1, 5), other=np.nan)
+            df_traits[wave4_col] = df_traits[wave4_col].where(df_traits[wave4_col].between(1, 5), other=np.nan)
+
             df_traits[item] = df_traits[[wave3_col, wave4_col]].mean(axis=1, skipna=True)
+        self.logger.log(f"        Removed values that are not between 1 and 5")
 
         # Drop the original wave-specific columns
         df_traits.drop(columns=[f"{item}_wave3" for item in bfi_items] + [f"{item}_wave4" for item in bfi_items],

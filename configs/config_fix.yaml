@@ -581,7 +581,7 @@ person_level:
       item_names:
         emotions: [rses_1]  # 0 strongly disagree - 10 strongly agree
         cocout: [Q1_1_se, Q1_2_se, Q1_3_se, Q1_4_se, Q1_5_se, Q1_6_se, Q1_7_se, Q1_8_se, Q1_9_se, Q1_10_se]  # 1 disagree strongly - 5 agree strongly
-        pia: [self_esteem]  # trait_se in codebook, here self_esteem # 1 - 6
+        pia: [self_esteem]  # trait_se in codebook, here self_esteem # 1 - 6 in Codebook, here 1-10
         cocoesm: [self_esteem]  # 1 not agree at all - 10 agree completely
         cocoms: [self_esteem] # 1 not agree at all - 10 agree completely
       items_to_recode:
@@ -597,8 +597,8 @@ person_level:
           min: { 1: 1 }
           max: { 5: 10 }
         pia:
-          min: {1: 1}
-          max: {6: 10}
+          min: {0: 1}
+          max: {10: 10}
 
     - name: religiosity
       var_type: continuous
@@ -1528,7 +1528,7 @@ esm_based:
       item_names:
         emotions: [occup_angry, int_angry, occup_sad, int_sad, occup_anxious, int_anxious ]
         cocout: [momentary_wellbeing_angry_ema, momentary_wellbeing_sad_ema, momentary_wellbeing_worried_ema]
-        pia:  [angry, sad, afraid]  # PreReg: afraid statt anxious
+        pia:  [angry, sad, afraid]  # PreReg: anxious statt afraid
         cocoesm: [state_na1, state_na2, state_na3]
         cocoms: [state_na1, state_na2, state_na3]
       align_scales_mapping:
@@ -2171,12 +2171,19 @@ var_assignments:
     - time_bicycle_min
     - time_bicycle_max
   crit:
-    - state_pa
-    - state_na
-    - state_wb
-    - trait_pa
-    - trait_na
-    - trait_wb
+    #- state_pa
+    #- state_na
+    #- state_wb
+    #- trait_pa
+    #- trait_na
+    #- trait_wb
+    - pa_state
+    - na_state
+    - wb_state
+    - pa_trait
+    - na_trait
+    - wb_trait
+
   other:
     - unique_id
     - studyWave
