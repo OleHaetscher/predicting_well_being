@@ -16,12 +16,12 @@ Changeable variables/settings:
 
 # Variables
 PREDICTION_MODELS=("elasticnet")  # elasticnet, randomforestregressor
-CRITERIA=("state_na")             # state_wb, state_pa, state_na, trait_wb, trait_na, trait_pa
+CRITERIA=("wb_state")             # wb_state, wb_trait, etc !!!
 FEATURE_COMBINATIONS=("sens_fs")       # pl, srmc, sens, mac, etc.
 SAMPLES_TO_INCLUDE=("selected")        # all, selected, control
 
 # Parameters
-COMP_SHAP_IA_VALUES="false"
+COMP_SHAP_IA_VALUES="false" # if true palma -> weird mem per cpus restrictions -> use 10 CPUs with mem request
 PARALLELIZE_INNER_CV="true"
 PARALLELIZE_SHAP="true"
 PARALLELIZE_SHAP_IA_VALUES="true"
@@ -30,12 +30,12 @@ PARALLELIZE_IMPUTATION_RUNS="true"
 # New parameters
 SPLIT_REPS="true"    # Set to "true" to match the logic of the first script
 NUM_REPS=10          # 10
-# USE_MPI="true"       # We cannot change this here
+SPECIFIC_REP=""       # Set to specific rep number if needed; leave empty otherwise
 
 BASE_MINUTES=300
 CPUS_PER_TASK=5     # Fixed number of CPUs per analysis
 NUM_NODES=1          # Set to 1 to match the first script's logic
-PARTITION="normal"   # palma: normal / long, pc2: normal / express
+PARTITION="normal"   # palma: normal / long, pc2: normal
 
 # Memory specification based on COMP_SHAP_IA_VALUES
 if [ "$COMP_SHAP_IA_VALUES" == "true" ]; then
@@ -45,7 +45,7 @@ else
 fi
 
 # TODO: Change when using different accounts
-BASE_DIR="/scratch/hpc-prf-mldpr/coco_wb_ml_code/fs_2111_pc2_oh"  # fs_2111_pc2_oh  ia_2111_pc2_oh
+BASE_DIR="/scratch/hpc-prf-mldpr/coco_wb_ml_code/run_2811"  # fs_2111_pc2_oh  ia_2111_pc2_oh
 ENV_PATH="/scratch/hpc-prf-mldpr/coco_wb_ml_code/mpi_env/bin/activate"   # mpi_env vs palma_env
 PYTHONPATH_BASE="/scratch/hpc-prf-mldpr/coco_wb_ml_code"
 
@@ -107,8 +107,14 @@ for crit in "${CRITERIA[@]}"; do
         # Set RUN_COMMAND
         RUN_COMMAND="python main.py"
 
-        if [ "$SPLIT_REPS" == "true" ]; then
-          for rep_id in $(seq 0 $(($NUM_REPS - 1))); do
+            if [ "$SPLIT_REPS" == "true" ]; then
+              if [ -n "$SPECIFIC_REP" ]; then
+                REP_IDS=($SPECIFIC_REP)
+                NUM_REPS=1   # Override NUM_REPS when a specific rep is set
+              else
+                REP_IDS=($(seq 0 $(($NUM_REPS - 1))))
+              fi
+              for rep_id in "${REP_IDS[@]}"; do
 
             JOB_NAME="${feature_combination}_${samples_to_include}_${crit}_${prediction_model}_rep${rep_id}"
 
