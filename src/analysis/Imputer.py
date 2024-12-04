@@ -191,13 +191,13 @@ class Imputer(BaseEstimator, TransformerMixin):
 
         # INFO: The imputer is fitted only with the ml features, not the other cols
         if self.model == 'elasticnet':
-            self.logger.log(f"        Fit linear imputer")
+            self.logger.log(f"          Fit linear imputer")
             individual_imputer = self._fit_linear_imputer(
                 df=individual_df_scaled,
                 num_imputation=num_imputation
             )
         elif self.model == 'randomforestregressor':
-            self.logger.log(f"        Fit nonlinear imputer")
+            self.logger.log(f"          Fit nonlinear imputer")
             individual_imputer = self._fit_nonlinear_imputer(
                 df=individual_df_scaled,
                 num_imputation=num_imputation

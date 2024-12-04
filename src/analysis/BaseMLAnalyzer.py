@@ -9,6 +9,7 @@ import sys
 import threading
 from abc import ABC, abstractmethod
 from collections import defaultdict
+from copy import copy
 from itertools import product
 from types import SimpleNamespace
 from typing import Callable
@@ -286,7 +287,7 @@ class BaseMLAnalyzer(ABC):
         current analysis and sets the loaded features as a class attribute "X".
         ADJUST!!!!
         """
-        selected_columns = [self.id_grouping_col, self.country_grouping_col, self.years_col]
+        selected_columns = copy(self.meta_vars)
         if self.samples_to_include in ["all", "selected"]:
             feature_prefix_lst = self.feature_combination.split("_")
 
@@ -376,7 +377,10 @@ class BaseMLAnalyzer(ABC):
 
         self.logger.log("Data params")
         self.logger.log(f"    Number of rows: {self.X.shape[0]}")
-        self.logger.log(f"    Number of cols: {self.X.shape[1]}")
+        self.logger.log(f"    Number of cols: {self.X.shape[1]}, including meta-columns that are no predictors")
+        X_copy = self.X.copy()
+        X_no_meta_cols = X_copy.drop(columns=self.meta_vars + [self.id_grouping_col], errors="raise")
+        self.logger.log(f"    Number of cols: {X_no_meta_cols.shape[1]}, excluding meta-columns that are no predictors")
         self.logger.log(f"    Number of rows dropped due to missing criterion {self.crit}: {self.rows_dropped_crit_na}")
         na_counts = self.X.isna().sum()
         for column, count in na_counts[na_counts > 0].items():
@@ -684,8 +688,7 @@ class BaseMLAnalyzer(ABC):
 
                 train_indices = dataset['train_indices']
                 val_indices = dataset['val_indices']
-                # TODO Remove this, if once tested -> this would be repeated for all param combos
-                self.logger.log(f"first three val indices for fold {fold}: {val_indices[:3]}")
+                # self.logger.log(f"first three val indices for fold {fold}: {val_indices[:3]}")
 
                 # Prepare data
                 X_train = X_full.loc[train_indices].drop(columns=meta_vars, errors='ignore')
@@ -862,7 +865,7 @@ class BaseMLAnalyzer(ABC):
         imputer = clone(self.imputer)
         self.logger.log("--------------------------------------------------")
         self.logger.log(f"    Starting to impute dataset {fold} imputation number {num_imp}")
-        self.logger.log(f"      first val indices are {X_val_or_test.index[:3]}")
+        #self.logger.log(f"      first val indices are {X_val_or_test.index[:3]}")
         self.log_thread()
 
         # Fit the imputer on the training data and transform training and test data
