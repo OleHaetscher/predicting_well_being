@@ -1865,7 +1865,7 @@ var_assignments:
     - political_orientation
     - social_status
     - conspiracy_mentality
-    - trust_government  # pl
+    - trust_government
     - economic_marginalization
     - cultural_marginalization
     - political_marginalization
@@ -1944,7 +1944,6 @@ var_assignments:
     - country_neuroticism
     - peacefulness
     - social_support
-    - trust_in_government  # mac
     - social_spending
     - gender_gap
     - population_estimates
@@ -2002,14 +2001,6 @@ var_assignments:
     - last_usage_sd
     - last_usage_min
     - last_usage_max
-    #- flight_mode_mean
-    #- flight_mode_sd
-    #- flight_mode_min
-    #- flight_mode_max
-    #- number_notifications_mean
-    #- number_notifications_sd
-    #- number_notifications_min
-    #- number_notifications_max
     - audio_entertainment_apps_mean
     - audio_entertainment_apps_sd
     - audio_entertainment_apps_min
@@ -2170,13 +2161,8 @@ var_assignments:
     - time_bicycle_sd
     - time_bicycle_min
     - time_bicycle_max
+
   crit:
-    #- state_pa
-    #- state_na
-    #- state_wb
-    #- trait_pa
-    #- trait_na
-    #- trait_wb
     - pa_state
     - na_state
     - wb_state
