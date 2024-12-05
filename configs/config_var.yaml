@@ -1,6 +1,6 @@
 general:
   datasets_to_be_included: [  cocoesm, cocoms, cocout, emotions, pia, zpid ] # cocoesm, cocoms, cocout, emotions, pia, zpid
-  log_dir: "../logs/new_data_2811"  # only for preprocessing, analysis logs are stored in the result folders
+  log_dir: "../logs/RECR_DATA_04122024"  # only for preprocessing, analysis logs are stored in the result folders
   log_name: 2811
 
   steps:
@@ -146,7 +146,7 @@ analysis:
   params: # adjusted by SLURM
     prediction_model: randomforestregressor  # elasticnet, randomforestregressor
     crit: wb_state  # wb_state, wb_trait, etc
-    feature_combination: srmc # pl, srmc, sens, mac, pl_srmc, pl_sens, pl_srmc_sens, pl_mac, pl_srmc_mac, all_in
+    feature_combination: all_in # pl, srmc, sens, mac, pl_srmc, pl_sens, pl_srmc_sens, pl_mac, pl_srmc_mac, all_in
     samples_to_include: all  # all, selected, control
 
   cv:
@@ -236,18 +236,20 @@ analysis:
 postprocessing:
   methods:
     ##### Summarizing results
+    #- test_shap
     #- merge_cluster_results
     #- merge_reps
     #- check_crit_dist
+    #- sanity_check_pred_vs_true
     ##### performance based
     #- process_cv_results
     #- process_lin_model_coefs
-    #- condense_results
+    - condense_results
     #- create_descriptives
     #- create_cv_results_plots
     ##### shap based, may need to change "raw_results_path" and "processed_results_path"
     #- process_shap_values
-    - create_shap_plots
+    #- create_shap_plots
 
 
   # Currently, because of the big amounts of data, we may have separated raw dirs
@@ -258,7 +260,7 @@ postprocessing:
   raw_results_path: "../results/cluster_results_merged_2611"  # BASE RESULT DIR FOR RAW RESULTS  # shap or cv test_fs_shap
 
   # "C:/Users/lokal_o_haet01/Documents/git_repos/coco_wb_ml_code/results/  a) cluster_results_only_cv_proc" b) cluster_results_shap_merged
-  processed_results_path: "C:/Users/lokal_o_haet01/Documents/git_repos/coco_wb_ml_code/results/cluster_results_shap_merged"  #"../results/cluster_results_only_cv_proc  # cluster_results_only_cv_proc"  # "# BASE RESULT DIR FOR PROCESSED RESULTS  # shap or cv
+  processed_results_path: "C:/Users/lokal_o_haet01/Documents/git_repos/coco_wb_ml_code/results/run_2811"  #"../results/cluster_results_only_cv_proc  # cluster_results_only_cv_proc"  # "# BASE RESULT DIR FOR PROCESSED RESULTS  # shap or cv
 
 
   #plots_base_dir: "../results/plots"
@@ -275,7 +277,10 @@ postprocessing:
     source_2: "../results/cluster_results_shap_oh"
     output_folder: "../results/cluster_results_shap_merged"
 
-  metric: spearman
+  metrics:
+    - spearman
+    - r2
+    - pearson
 
 
   significance_tests:
@@ -286,10 +291,19 @@ postprocessing:
       - xxx
 
   plots:
-    store_plots: true
+    store_plots: false
     plots:
-      - importance_plot
+      # - importance_plot
       - beeswarm_plot
+    custom_cmap_colors:  # for a linear colormap, used e.g. in the beeswarm plots
+      - "#5E9ACC"  # Blue
+      - "#4F84B1"  # Deep blue
+      - "#9DB9BF"  # Soft gray-blue
+      - "#7DA5A9"  # Muted teal
+      - "#B9D1B9"  # Light green
+      - "#A3C7A1"  # Green
+      - "#E3EEE5"  # Very pale green
+      - "#CEE7CF"  # Light mint
     feature_combo_name_mapping:
       pl: "Personal" # "Person-level"
       srmc: "ESM"
@@ -308,18 +322,21 @@ postprocessing:
     shap_importance_plot:  # could define dpi, etc as well here
 
       # This should be lists
-      prediction_model: [randomforestregressor]  # elasticnet, randomforestregressor
-      crit: [state_wb]
-      samples_to_include: [selected]
+      prediction_model: [elasticnet]  # elasticnet, randomforestregressor
+      crit: [wb_state, pa_state, na_state]
+      samples_to_include: [selected, all]
 
       num_to_display: 6
 
       # first_col: ["pl", "srmc", "sens", "mac"]
       # second_col: ["pl_srmc", "pl_sens", "pl_srmc_sens", "pl_mac"]
       # third_col: ["pl_srmc_mac"]
-      first_col: ["pl", "srmc", "sens"]
-      second_col: ["mac", "pl_srmc", "pl_sens"]
-      third_col: ["pl_mac", "pl_srmc_sens", "pl_srmc_mac"]
+      #first_col: ["pl", "srmc", "sens"]
+      #second_col: ["mac", "pl_srmc", "pl_sens"]
+      #third_col: ["pl_mac", "pl_srmc_sens", "pl_srmc_mac"]
+      first_col: [ "pl"]
+      second_col: [ "mac" ]
+      third_col: [ "pl_mac"]
 
 
 

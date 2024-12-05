@@ -442,8 +442,8 @@ class ResultPlotter:
             for samples_to_include in samples_to_include_list:
                 for model in models:
                     print("### Plot combination:", samples_to_include, crit, model)
-                    data_current = prepare_data_func(crit_to_plot=crit, samples_to_include=samples_to_include, model_to_plot=model,
-                                                     custom_affordances={"sens": "selected", "mac": "selected"})
+                    data_current = prepare_data_func(crit_to_plot=crit, samples_to_include=samples_to_include, model_to_plot=model)
+                                                     # custom_affordances={"sens": "selected", "mac": "selected"})
 
                     # Create a grid of subplots with specified empty cells
                     fig, axes = self.create_grid(num_rows=3, num_cols=3, figsize=(35, 25))
@@ -466,7 +466,7 @@ class ResultPlotter:
                         positions[(row, 2)] = predictor_combination
                     # Empty positions are at (2, 2) and (3, 2)
 
-                    # Define the custom colormap
+                    # TODO Use config
                     # colors = ["#5E9ACC", "#A3C7A1", "#A3C7A1"]
                     colors = [
                         "#5E9ACC",  # Blue
@@ -535,6 +535,51 @@ class ResultPlotter:
     def plot_shap_ia_values(self):
         pass
 
+    def plot_pred_true_parity(self, sample_data, feature_combination: str, samples_to_include: str, crit: str, model: str):
+        """
+        This function creates a parity plot of predicted vs. true values for all samples.
+        Different samples are plotted with different colors.
+
+        Args:
+            sample_data (dict): Dictionary of samples to plot
+            feature_combination: e.g., "pl_srmc"
+            samples_to_include: e.g., "all"
+            crit: e.g., "state_wb"
+            model: e.g., "randomforestregressor"
+        """
+
+        # After collecting data, create the parity plot
+        fig, ax = plt.subplots(figsize=(8, 8))
+
+        # Assign colors to samples
+        samples = list(sample_data.keys())
+        num_samples = len(samples)
+
+        # Get style fitting colors
+        colors = self.var_cfg["postprocessing"]["plots"]["custom_cmap_colors"]
+        # This works for any number of samples, as it loops through available colors
+        colors = [colors[i % len(colors)] for i in range(num_samples)]
+
+        for i, sample_name in enumerate(samples):
+            color = colors[i % 10]
+            pred_values = sample_data[sample_name]['pred']
+            true_values = sample_data[sample_name]['true']
+            ax.scatter(true_values, pred_values, color=color, label=sample_name)
+
+        # Plot y = x line for reference
+        min_val = min([min(sample_data[s]['true'] + sample_data[s]['pred']) for s in samples])
+        max_val = max([max(sample_data[s]['true'] + sample_data[s]['pred']) for s in samples])
+        ax.plot([min_val, max_val], [min_val, max_val], 'k--', label='Ideal')
+
+        ax.set_xlabel('True Value')
+        ax.set_ylabel('Predicted Value')
+        ax.set_title(f'Pred vs True - {samples_to_include} - {crit} - {model}')
+        ax.legend()
+        if self.store_plots:
+            self.store_plot(plot_name="pred_vs_true_scatter", crit=crit, samples_to_include=samples_to_include, model=model)
+        else:
+            plt.show()
+
     def store_plot(self,
                    plot_name: str,
                    plot_format: str = "png",
@@ -544,7 +589,6 @@ class ResultPlotter:
                    crit: str = None,
                    model: str = None,
                    ):
-        #TODO We could adjust this to a more general method that also stores tables?
         """
         This function is a generic method to store plots in a given directory
             - If we have single plots for specific model/crit/... combinations, we store the plots in the respective dirs

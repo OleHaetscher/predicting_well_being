@@ -137,7 +137,7 @@ class ShapProcessor:
 
         # Traverse the directory structure
         for root, dirs, files in os.walk(self.processed_output_path):
-            if 'shap_values_processed.pkl' in files:
+            if 'shap_values_summary.pkl' in files:  # 'shap_values_processed.pkl'
                 # Extract the directory components based on the structure
                 relative_path = os.path.relpath(root, self.processed_output_path)
                 parts = relative_path.split(os.sep)
@@ -158,22 +158,24 @@ class ShapProcessor:
                     # Only load if all filters match
                     if crit == crit_to_plot and samples == effective_samples_to_include and model == model_to_plot:
                         # Get the path to the shap_values file
-                        shap_values_path = os.path.join(root, 'shap_values_processed.pkl')
+                        shap_values_path = os.path.join(root, 'shap_values_summary.pkl')
                         # Load the shap_values using the data loader
                         shap_values = self.data_loader.read_pkl(shap_values_path)
 
                         # Apply name mapping
                         feature_names = shap_values["feature_names"]
+                        # print(feature_names)
+                        filtered_feature_names = [feature for feature in feature_names if feature not in ['other_unique_id', 'other_country', 'other_years_of_participation']]
                         # TODO sauberer klären
-                        feature_names = [name for name in feature_names if name.startswith("mac")] + [name for name in feature_names if not name.startswith("mac")]
-                        feature_names = self.apply_name_mapping(feature_names)
+                        #feature_names = [name for name in feature_names if name.startswith("mac")] + [name for name in feature_names if not name.startswith("mac")]
+                        #feature_names = self.apply_name_mapping(feature_names)
 
                         # Recreate explanation objects
                         shap_exp = self.recreate_shap_exp_objects(
-                            shap_values=shap_values["shap_values"]["mean"],
-                            base_values=shap_values["base_values"]["mean"],
-                            data=shap_values["data"]["mean"],
-                            feature_names=feature_names,
+                            shap_values=np.array(shap_values["shap_values"]["mean"]),
+                            base_values=np.array(shap_values["base_values"]["mean"]),
+                            data=np.array(shap_values["data"]["mean"]),
+                            feature_names=filtered_feature_names,
                         )
                         # Store explanation objects in the nested defaultdict structure
                         # result_dct[crit][samples][model][predictor_combination] = shap_exp

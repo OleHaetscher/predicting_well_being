@@ -12,6 +12,9 @@ import pandas as pd
 import os
 import seaborn as sns
 import matplotlib.pyplot as plt
+import shap
+from sklearn.metrics import r2_score
+from scipy.stats import spearmanr
 
 from src.postprocessing.ResultPlotter import ResultPlotter
 from src.postprocessing.ShapProcessor import ShapProcessor
@@ -20,7 +23,7 @@ from src.postprocessing.DescriptiveStatistics import DescriptiveStatistics
 from src.utils.DataLoader import DataLoader
 from src.utils.Logger import Logger
 
-
+# TODO: Improve structure of postprocessing code
 class Postprocessor:
     """
     This class executes the different postprocessing steps. This includes
@@ -52,9 +55,10 @@ class Postprocessor:
             name_mapping=self.name_mapping,
         )
         self.feature_mappings = {}
-        self.metric = self.var_cfg["postprocessing"]["metric"]
+        self.metrics = self.var_cfg["postprocessing"]["metrics"]
         self.methods_to_apply = self.var_cfg["postprocessing"]["methods"]
 
+    # TOOD: Einmal sauber mit dem ClusterAnalzer alignen und Redundanzen entfernen
     def postprocess(self):
         """
         This is kind of a wrapper method that does all the postprocessing steps specified in the config.
@@ -63,7 +67,13 @@ class Postprocessor:
         Returns:
 
         """
-        self.create_correction_mapping()
+        # self.create_correction_mapping()
+
+        if "test_shap" in self.methods_to_apply:
+            self.test_shap()
+
+        if "sanity_check_pred_vs_true" in self.methods_to_apply:
+            self.sanity_check_pred_vs_true()
 
         if "merge_cluster_results" in self.methods_to_apply:
             self.merge_folders(source1=self.var_cfg["postprocessing"]["merge_cluster_results"]["source_1"],
@@ -100,10 +110,11 @@ class Postprocessor:
         # These are the operations to condense the results into one file (.e.g., of the coefficients
         if "condense_results" in self.methods_to_apply:
             #self.extract_fitting_times(base_dir=self.base_result_dir, output_dir=self.processed_output_path)
-            metrics_dict, data_points = self.extract_metrics(self.processed_output_path, self.metric)
-            coefficients_dict, coefficient_points = self.extract_coefficients(self.processed_output_path)
-            self.create_df_table(data_points, self.metric, self.processed_output_path)
-            self.create_coefficients_dataframe(coefficient_points, self.processed_output_path)
+            for metric in self.metrics:
+                metrics_dict, data_points = self.extract_metrics(self.processed_output_path, metric)
+                coefficients_dict, coefficient_points = self.extract_coefficients(self.processed_output_path)
+                self.create_df_table(data_points, metric, self.processed_output_path)
+                self.create_coefficients_dataframe(coefficient_points, self.processed_output_path)
 
         if "create_descriptives" in self.methods_to_apply:
             # pass
@@ -112,6 +123,7 @@ class Postprocessor:
             #self.descriptives_creator.create_wb_item_statistics()
 
         if "create_cv_results_plots" in self.methods_to_apply:
+            rel = 0.90
             self.plotter.plot_figure_2(data_to_plot=metrics_dict, rel=rel)
 
         if "create_shap_plots" in self.methods_to_apply:
@@ -120,6 +132,39 @@ class Postprocessor:
 
         if "conduct_significance_tests" in self.methods_to_apply:
             self.significance_testing.significance_testing(dct=self.cv_result_dct.copy())
+
+    def test_shap(self):
+        path = "../results/test_shap_2911/"
+        file_name = "shap_values_summary.pkl"
+        file_path = os.path.join(path, file_name)
+        # Load the pickle file
+        with open(file_path, "rb") as f:
+            shap_values_summary = pickle.load(f)
+
+        # Extract relevant information
+        shap_values = np.array(shap_values_summary["shap_values"]["mean"])  # Extract mean values
+        base_values = np.array(shap_values_summary["base_values"]["mean"])  # Base values
+        feature_names = shap_values_summary["feature_names"][3:]  # List of feature names
+        data = np.array(shap_values_summary["data"]["mean"])  # Ensure correct extraction from nested dict
+
+        # Ensure the dimensions of SHAP values, base values, and data align
+        assert shap_values.shape[0] == data.shape[0], "Mismatch in number of samples between shap_values and data."
+        assert shap_values.shape[1] == len(feature_names), "Mismatch in features between shap_values and feature_names."
+
+        # Recreate SHAP explanation object
+        explanation = shap.Explanation(
+            values=shap_values,
+            base_values=base_values,
+            data=data,
+            feature_names=feature_names
+        )
+
+        # Create and display the beeswarm plot
+        shap.plots.beeswarm(explanation, show=False)
+        plt.tight_layout(rect=[0.2, 0, 1, 1])  # Adds more space on the left for feature name
+        plt.show()
+        print()
+
 
     def merge_folders(self, source1: str, source2: str, merged_folder: str):
         """
@@ -175,6 +220,96 @@ class Postprocessor:
 
         print(f"Merging complete. Results stored in {merged_folder}")
 
+    def sanity_check_pred_vs_true(self):
+        """
+        This function analysis the predicted and the true criterion values within and across samples.
+        We do this to further investigate unexpected predictive patterns in the mac analysis.
+        To do so, we aggregate the predicted vs. true values across
+            - repetitions
+            - outer folds
+            - imputations
+        and compute some summary statistics and metrics
+        """
+        # Only do this for mac, could be done for other analyses as well (may be interesting as well)
+        root_dir = "../results/mac_pred_true/"
+
+        # Walk through all subdirectories
+        for dirpath, dirnames, filenames in os.walk(root_dir):
+            if not dirnames:
+                index_data = {}
+
+                for filename in filenames:  # TODO: Do this for all reps, or at least 3-4?
+                    if filename.startswith('pred_vs_true_rep_1') and filename.endswith('.json'):
+                        file_path = os.path.join(dirpath, filename)
+                        with open(file_path, 'r') as f:
+                            data = json.load(f)
+
+                        # Iterate over the nested structure
+                        for outer_fold_data in data.values():
+                            for imp_data in outer_fold_data.values():
+                                for index, pred_true in imp_data.items():
+                                    # Append the pred_true tuple to the index in index_data
+                                    if index not in index_data:
+                                        index_data[index] = []
+                                    index_data[index].append(pred_true)
+
+                # If index_data is not empty, process it
+                if index_data:
+                    sample_data = {}
+
+                    # Process the collected data
+                    for index, pred_true_list in index_data.items():
+                        # Extract sample name from index (e.g., 'cocoesm' from 'cocoesm_7')
+                        sample_name = index.split('_')[0]
+                        if sample_name not in sample_data:
+                            sample_data[sample_name] = {'pred': [], 'true': [], 'diff': []}
+                        for pred_true in pred_true_list:
+                            pred, true = pred_true
+                            sample_data[sample_name]['pred'].append(pred)
+                            sample_data[sample_name]['true'].append(true)
+                            sample_data[sample_name]['diff'].append(true - pred)
+
+                    dir_components = os.path.normpath(dirpath).split(os.sep)
+
+                    self.plotter.plot_pred_true_parity(sample_data,
+                                                       feature_combination="mac",
+                                                       samples_to_include=dir_components[-3],
+                                                       crit=dir_components[-2],
+                                                       model=dir_components[-1]
+                                                       )
+
+                    # Compute summary statistics for each sample
+                    summary_statistics = {}
+
+                    for sample_name, values in sample_data.items():
+                        pred_array = np.array(values['pred'])
+                        true_array = np.array(values['true'])
+                        diff_array = np.array(values['diff'])
+
+                        # Compute R² and Spearman's rho if there are at least two data points
+                        if len(pred_array) > 1:
+                            r2 = r2_score(true_array, pred_array)
+                            rho, _ = spearmanr(true_array, pred_array)
+                        else:
+                            r2 = None
+                            rho = None
+
+                        summary_statistics[sample_name] = {
+                            'pred_mean': np.round(np.mean(pred_array), 4),
+                            'pred_std': np.round(np.std(pred_array), 4),
+                            'true_mean': np.round(np.mean(true_array), 4),
+                            'true_std': np.round(np.std(true_array), 4),
+                            'diff_mean': np.round(np.mean(diff_array), 4),
+                            'diff_std': np.round(np.std(diff_array), 4),
+                            'r2_score': np.round(r2, 4) if r2 is not None else None,
+                            'spearman_rho': np.round(rho, 4) if rho is not None else None
+                        }
+
+                    # Save the summary statistics to a JSON file in the terminal directory
+                    output_file = os.path.join(dirpath, 'pred_vs_true_summary.json')
+                    with open(output_file, 'w') as f:
+                        json.dump(summary_statistics, f, indent=4)
+
     def check_crit_distribution_sample(self):
         """
         This function calculates the mean (M) and standard deviation (SD)
@@ -190,7 +325,7 @@ class Postprocessor:
 
         # Define samples and criteria
         samples = ["cocoesm", "cocout", "cocoms", "emotions", "pia", "zpid"]
-        criteria = ["crit_state_pa", "crit_state_na", "crit_state_wb"]
+        criteria = ["crit_pa_state", "crit_na_state", "crit_wb_state"]
 
         # Initialize a list to collect results
         results = []
@@ -254,7 +389,7 @@ class Postprocessor:
         )
 
         # Define criteria
-        criteria = ["crit_state_pa", "crit_state_na", "crit_state_wb"]
+        criteria = ["crit_pa_state", "crit_na_state", "crit_wb_state"]
 
         # Initialize a list to collect results
         results = []
@@ -311,7 +446,7 @@ class Postprocessor:
         df = df.copy()
 
         # Define criteria
-        criteria = ["crit_state_pa", "crit_state_na", "crit_state_wb"]
+        criteria = ["crit_pa_state", "crit_na_state", "crit_wb_state"]
 
         # Filter out rows where 'other_years_of_participation' contains multiple years
         df = df[
@@ -630,7 +765,7 @@ class Postprocessor:
         data_points = []
 
         for root, _, files in os.walk(base_dir):
-            if 'proc_cv_results.json' in files:
+            if 'cv_results_summary.json' in files:
                 relative_path = os.path.relpath(root, base_dir)
                 path_parts = relative_path.strip(os.sep).split(os.sep)
 
@@ -643,7 +778,7 @@ class Postprocessor:
                 rearranged_key = '_'.join([c, a, d, b])
 
                 try:
-                    with open(os.path.join(root, 'proc_cv_results.json'), 'r') as f:
+                    with open(os.path.join(root, 'cv_results_summary.json'), 'r') as f:
                         proc_cv_results = json.load(f)
 
                     m_metric = proc_cv_results['m'][metric]
@@ -673,7 +808,7 @@ class Postprocessor:
         coefficient_points = []
 
         for root, _, files in os.walk(base_dir):
-            if 'proc_lin_model_coefficients.json' in files:
+            if 'lin_model_coefs_summary.json' in files:
                 relative_path = os.path.relpath(root, base_dir)
                 path_parts = relative_path.strip(os.sep).split(os.sep)
 
@@ -686,7 +821,7 @@ class Postprocessor:
                 rearranged_key = '_'.join([c, a, d, b])
 
                 try:
-                    with open(os.path.join(root, 'proc_lin_model_coefficients.json'), 'r') as f:
+                    with open(os.path.join(root, 'lin_model_coefs_summary.json'), 'r') as f:
                         lin_model_coefficients = json.load(f)
 
                     coefficients = lin_model_coefficients['m']
@@ -722,6 +857,8 @@ class Postprocessor:
             df = pd.DataFrame(filtered_data_points)
             df.set_index(['c', 'd', 'b'], inplace=True)
             df_pivot = df.pivot_table(values=f"m_{metric}", index=['c', 'd', 'b'], columns='a', aggfunc=np.mean)
+            # Round
+            df_pivot = df_pivot.round(3)
 
             custom_order = [
                 "pl", "pl_nnse", "srmc", "sens", "mac",
@@ -732,7 +869,7 @@ class Postprocessor:
             ]
             df_pivot = df_pivot.reindex(columns=custom_order)
 
-            output_path = os.path.join(output_dir, f'df_pivot_{metric}.xlsx')
+            output_path = os.path.join(output_dir, f'cv_results_{metric}.xlsx')
             df_pivot.to_excel(output_path, merge_cells=True)
 
     @staticmethod

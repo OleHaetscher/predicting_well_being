@@ -352,7 +352,7 @@ class DescriptiveStatistics:
         Returns:
             tuple(pd.DataFrame, dict): trait and state df processed for reliability analysis
         """
-
+        # TODO ADJUST
         # state data
         state_dfs = {}
         for dataset in self.var_cfg["general"]["datasets_to_be_included"]:
@@ -369,12 +369,12 @@ class DescriptiveStatistics:
             state_df['idx_measurement_per_person'] = state_df.sort_values(by=timestamp_col).groupby(id_col).cumcount()
             state_df["joint_user_id"] = state_df[id_col].apply(lambda x: f"{dataset}_{x}")
             state_df = state_df.sort_values([id_col, "idx_measurement_per_person"])
-            columns_to_select = ["state_pa", "state_na", "state_wb", "idx_measurement_per_person", "joint_user_id"]
+            columns_to_select = ["pa_state", "na_state", "wb_state", "idx_measurement_per_person", "joint_user_id"]
             state_dfs[dataset] = state_df[state_df.columns.intersection(columns_to_select)]
 
         # trait data
         full_df = self.data_loader.read_pkl(self.full_data_path)
-        full_df_filtered = full_df[["crit_trait_wb", "crit_trait_pa", "crit_trait_na"]]
+        full_df_filtered = full_df[["crit_wb_trait", "crit_pa_trait", "crit_na_trait"]]
         # TODO: I need single items for trait rel? -> Change preprocessor
 
         return full_df_filtered, state_dfs
