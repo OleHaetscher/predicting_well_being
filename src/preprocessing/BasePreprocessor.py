@@ -1196,19 +1196,19 @@ class BasePreprocessor(ABC):
         pa_items = affect_states_dct["pa_state"]
 
         if self.dataset == "zpid":
-            df_wb_items["state_wb"] = df_wb_items[pa_items[0]]  # valence
+            df_wb_items["wb_state"] = df_wb_items[pa_items[0]]  # valence
         else:
             # create pa / na / wb score
             na_items = affect_states_dct["na_state"]
-            df_wb_items[f'state_pa'] = df_wb_items[pa_items].mean(axis=1)
-            df_wb_items[f'state_na'] = df_wb_items[na_items].mean(axis=1)
+            df_wb_items[f'pa_state'] = df_wb_items[pa_items].mean(axis=1)
+            df_wb_items[f'na_state'] = df_wb_items[na_items].mean(axis=1)
 
             # Create wb score
             df_wb_items[f'state_na_inv'] = self.inverse_code(df_wb_items[na_items],
                                                              min_scale=1,
                                                              max_scale=6).mean(axis=1)
             new_columns = pd.DataFrame({
-                f'state_wb': df_wb_items[[f'state_pa', f'state_na_inv']].mean(axis=1)
+                f'wb_state': df_wb_items[[f'pa_state', f'state_na_inv']].mean(axis=1)
             })
             df_wb_items = pd.concat([df_wb_items, new_columns], axis=1)
             df_wb_items = df_wb_items.drop(['state_na_inv'], axis=1)

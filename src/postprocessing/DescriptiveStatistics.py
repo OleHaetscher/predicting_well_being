@@ -3,6 +3,7 @@ import numpy as np
 import pandas as pd
 from src.utils.DataLoader import DataLoader
 import openpyxl
+import json
 
 
 class DescriptiveStatistics:
@@ -15,6 +16,7 @@ class DescriptiveStatistics:
     """
     def __init__(self, fix_cfg, var_cfg, name_mapping):
         self.var_cfg = var_cfg
+        self.desc_cfg = self.var_cfg["postprocessing"]["descriptives"]
         self.data_loader = DataLoader()
         self.fix_cfg = fix_cfg
         self.name_mapping = name_mapping
@@ -22,6 +24,7 @@ class DescriptiveStatistics:
 
         self.full_data_path = os.path.join(self.var_cfg['analysis']["path_to_preprocessed_data"], "full_data")
         self.state_data_base_path = self.var_cfg['analysis']["path_to_preprocessed_data"]
+        self.desc_results_base_path = self.var_cfg['postprocessing']["descriptives"]["base_path"]
 
     def create_m_sd_feature_table(self):
         """
@@ -33,10 +36,12 @@ class DescriptiveStatistics:
             final_table: pd.DataFrame containing the formatted table in APA style.
         """
         # TODO: Per Sample or in total? Currently total
-        # path_to_full_data = os.path.join(self.var_cfg['analysis']["path_to_preprocessed_data"], "full_data")
+
         full_df = self.data_loader.read_pkl(self.full_data_path)
         results = []
-        feature_cats = ['pl', 'srmc', 'sens', 'mac']
+        feature_cats = self.var_cfg["analysis"]["feature_combinations"]
+        cont_agg_dct = {}
+        bin_agg_dct = {}
 
         for cat in feature_cats:
             prefix = f"{cat}_"
@@ -49,89 +54,134 @@ class DescriptiveStatistics:
 
             # Compute statistics for continuous variables
             if continuous_vars:
-                cont_stats = self.calculate_cont_stats(df=df_subset, continuous_vars=continuous_vars, prefix=prefix)
+                cont_agg_dct = self.desc_cfg["cont_agg_dct"]
+                cont_stats = self.calculate_cont_stats(
+                    df=df_subset,
+                    continuous_vars=continuous_vars,
+                    prefix=prefix,
+                    stats=cont_agg_dct
+                )
                 results.append(cont_stats)
 
             # Compute frequencies for binary variables
             if binary_vars:
-                bin_stats = self.calculate_bin_stats(df=df_subset, binary_vars=binary_vars, prefix=prefix)
+                bin_agg_lst = self.desc_cfg["bin_agg_lst"]
+                bin_stats = self.calculate_bin_stats(
+                    df=df_subset,
+                    binary_vars=binary_vars,
+                    prefix=prefix,
+                    stats=bin_agg_lst,
+                )
                 results.append(bin_stats)
 
         # Combine all results
         final_table = pd.concat(results, ignore_index=True)
+        col_names = list(cont_agg_dct.keys()) + bin_agg_lst
 
-        # Format numerical columns to two decimal places  # TODO make general method?
-        final_table['M'] = final_table.get('M', pd.Series()).round(2)
-        final_table['SD'] = final_table.get('SD', pd.Series()).round(2)
-        final_table['Percentage'] = final_table.get('Percentage', pd.Series()).round(2)
+        # Format numerical columns to two decimal places
+        final_table = DescriptiveStatistics.format_columns(
+            df=final_table,
+            columns=col_names,  # ["M", "SD", "%"],
+            decimals=2
+        )
 
         # Rename feature names
         final_table["Group"] = final_table["Group"].replace(self.name_mapping["category_names"])
         for cat in feature_cats:
             final_table['Variable'] = final_table['Variable'].replace(self.name_mapping[cat])
-
         final_table = final_table.reset_index(drop=True)
-        final_table.to_excel("test.xlsx", index=False)
-        print(final_table.to_string(index=False))
+
+        # If defined in the cfg, store results
+        if self.desc_cfg["store"]:
+            file_name = os.path.join(self.desc_results_base_path, "descriptives_table.xlsx")
+            final_table.to_excel(file_name, index=False)
 
     @staticmethod
-    def calculate_cont_stats(df, continuous_vars, prefix):
+    def format_columns(df: pd.DataFrame, columns: list = None, decimals: int = 2) -> pd.DataFrame:
         """
+        Formats specified numerical columns of a DataFrame to the given number of decimal places.
+        If no columns are specified, all numerical columns are formatted.
 
         Args:
-            df:
-            continuous_vars:
-            prefix:
+            df (pd.DataFrame): The DataFrame containing the data.
+            columns (list, optional): List of column names to format. Defaults to None.
+            decimals (int): Number of decimal places to round to. Defaults to 2.
 
         Returns:
-
+            pd.DataFrame: A DataFrame with the specified (or all numerical) columns rounded to the given number of decimal places.
         """
-        cont_stats = df[continuous_vars].agg(['mean', 'std']).transpose().reset_index()
-        cont_stats.columns = ['Variable', 'M', 'SD']
-        cont_stats['Variable'] = cont_stats['Variable'].str.replace(prefix, '', regex=False)
-        cont_stats['Group'] = prefix.rstrip('_')
-        # Reorder columns for APA style
-        cont_stats = cont_stats[['Group', 'Variable', 'M', 'SD']]
+        if columns is None:
+            # Select only numerical columns if no specific columns are provided
+            columns = df.select_dtypes(include=['number']).columns.tolist()
+
+        for column in columns:
+            if column in df:
+                df[column] = df[column].round(decimals)
+
+        return df
+
+    @staticmethod
+    def calculate_cont_stats(df, continuous_vars, prefix, stats):
+        """
+        Calculate continuous statistics for specified variables with custom aggregation mapping.
+
+        Args:
+            df (pd.DataFrame): The DataFrame containing the data.
+            continuous_vars (list): List of continuous variable names.
+            prefix (str): Prefix to remove from variable names for display.
+            stats (dict): Aggregation functions as keys and their desired output names as values.
+
+        Returns:
+            pd.DataFrame: A DataFrame with calculated statistics in APA format.
+        """
+        # Extract the list of aggregation functions from the stats dictionary keys
+        agg_funcs = list(stats.keys())
+
+        # Apply the aggregation functions to the continuous variables
+        cont_stats = df[continuous_vars].agg(agg_funcs).transpose().reset_index()
+
+        # Rename the columns using the stats dictionary values
+        # The columns after 'index' correspond to the aggregation functions
+        cont_stats.columns = ['Variable'] + [stats[func] for func in agg_funcs]
+
+        # Remove the prefix from the variable names
+        cont_stats['Variable'] = cont_stats['Variable'].str.lstrip(prefix)
+
         return cont_stats
 
     @staticmethod
-    def calculate_bin_stats(df, binary_vars, prefix):
+    def calculate_bin_stats(df, binary_vars, prefix, stats):
         """
+        Calculate binary statistics for specified variables with custom aggregation mapping.
 
         Args:
-            df:
-            binary_vars:
-            prefix:
+            df (pd.DataFrame): The DataFrame containing the data.
+            binary_vars (list): List of binary variable names to analyze.
+            prefix (str): Prefix to remove from variable names for display.
+            stats (list): Mapping of custom statistics to calculate, with keys as functions
+                          (e.g., 'value_counts') and values as column names.
 
         Returns:
-
+            pd.DataFrame: A DataFrame with binary statistics, including frequency, total count,
+                          and percentage of occurrences, formatted in APA style.
         """
         bin_stats = df[binary_vars].apply(lambda x: x.value_counts(dropna=True)).transpose()
-
-        # Clean variable names (remove prefix)
         bin_stats['Variable'] = bin_stats.index.str.replace(prefix, '', regex=False)
 
-        # Initialize the 'Frequency' column
-        bin_stats['Frequency'] = np.nan
+        if "%" in stats:
+            bin_stats['Frequency'] = np.nan
 
-        # Handle counts for '1' (could be 1 or 1.0)
-        if 1 in bin_stats.columns:
-            bin_stats['Frequency'] = bin_stats[1]
-        elif 1.0 in bin_stats.columns:
-            bin_stats['Frequency'] = bin_stats[1.0]
-        # If neither '1' nor '1.0' is present, 'Frequency' remains NaN
+            # Handle counts for '1' (could be 1 or 1.0)
+            if 1 in bin_stats.columns:
+                bin_stats['Frequency'] = bin_stats[1]
+            elif 1.0 in bin_stats.columns:
+                bin_stats['Frequency'] = bin_stats[1.0]
 
-        # Calculate the total count excluding NaN values for each variable
-        bin_stats['Total'] = df[binary_vars].notna().sum().values
-
-        # Calculate percentage of '1' occurrences, handling NaN frequencies properly
-        bin_stats['Percentage'] = (bin_stats['Frequency'] / bin_stats['Total']) * 100
-
-        # Add the group name (derived from the prefix)
-        bin_stats['Group'] = prefix.rstrip('_')
-
-        # Select relevant columns and reset index
-        bin_stats = bin_stats[['Group', 'Variable', 'Frequency', 'Total', 'Percentage']].reset_index(drop=True)
+            # Calculate percentage of '1' occurrences, handling NaN frequencies properly
+            bin_stats['Total'] = df[binary_vars].notna().sum().values
+            bin_stats['%'] = (bin_stats['Frequency'] / bin_stats['Total']) * 100
+            bin_stats['Group'] = prefix.rstrip('_')
+            bin_stats = bin_stats[['Group', 'Variable', 'Frequency', 'Total', '%']].reset_index(drop=True)
 
         return bin_stats
 
@@ -155,20 +205,49 @@ class DescriptiveStatistics:
         Returns:
 
         """
+        full_df = self.data_loader.read_pkl(self.full_data_path)
         for dataset in self.var_cfg["general"]["datasets_to_be_included"]:
-            path_to_full_data = os.path.join(self.var_cfg['analysis']["path_to_preprocessed_data"], f"wb_items_{dataset}")
-            state_df = self.data_loader.read_pkl(path_to_full_data)
-            m_sd_df = self.create_m_sd_wb_items(state_df)
+            print("XX")
+            path_to_state_data = os.path.join(self.var_cfg['analysis']["path_to_preprocessed_data"], f"wb_items_{dataset}")
+            state_df = self.data_loader.read_pkl(path_to_state_data)
+            m_sd_df_wb_items = self.create_m_sd_wb_items(state_df)
+            m_sd_df_wb_scales = self.create_m_sd_crits(full_df, dataset=dataset)
             wp_corr, bp_corr, icc1, icc2 = self.calc_bp_wp_statistics(state_df, self.esm_id_col_dct[dataset])
-            print()
 
-    @staticmethod
-    def create_m_sd_wb_items(state_df):
+            if self.desc_cfg["store"]:
+                file_path = os.path.join(self.desc_results_base_path, dataset)
+                os.makedirs(file_path, exist_ok=True)
+
+                wp_corr = self.format_columns(df=wp_corr, decimals=2)
+                file_name_wp_corr = os.path.join(file_path, "within_person_corr_crit.xlsx")
+                wp_corr.to_excel(file_name_wp_corr, index=False)
+
+                bp_corr = self.format_columns(df=wp_corr,decimals=2)
+                file_name_bp_corr = os.path.join(file_path, "between_person_corr_crit.xlsx")
+                bp_corr.to_excel(file_name_bp_corr, index=False)
+
+                file_name_icc1 = os.path.join(file_path, "between_person_corr_crit.xlsx")
+                with open(file_name_icc1, 'w') as f:
+                    json.dump(icc1, f, indent=4)
+
+                file_name_icc2 = os.path.join(file_path, "between_person_corr_crit.xlsx")
+                with open(file_name_icc2, 'w') as f:
+                    json.dump(icc2, f, indent=4)
+
+                file_name_wb_items = os.path.join(file_path, "m_sd_wb_items.xlsx")
+                m_sd_df_wb_items.to_excel(file_name_wb_items, index=False)
+
+                file_name_wb_scales = os.path.join(file_path, "m_sd_wb_scales.xlsx")
+                m_sd_df_wb_scales.to_excel(file_name_wb_scales, index=False)
+
+
+    def create_m_sd_wb_items(self, state_df):
         """
 
         Returns:
 
         """
+        # TODO Check if CoCoUT is already transformed
         means = state_df.mean()
         stds = state_df.std()
 
@@ -181,7 +260,38 @@ class DescriptiveStatistics:
         # Reset the index for proper formatting and return the DataFrame
         m_sd_df = m_sd_df.reset_index().rename(columns={'index': 'Variable'})
 
+        m_sd_df = self.format_columns(m_sd_df, decimals=2)
+
         return m_sd_df
+
+    def create_m_sd_crits(self, full_data, dataset):
+        """
+
+        Args:
+            full_data:
+            dataset:
+
+        Returns:
+
+        """
+        crits_avail = [f"crit_{key}" for key, datasets in self.var_cfg["analysis"]["crit_available"].items() if dataset in datasets]
+        df_crit = full_data.loc[full_data.index.str.startswith("dataset"), crits_avail]
+        means = df_crit.mean()
+        stds = df_crit.std()
+
+        # Create a new DataFrame with the means and standard deviations
+        m_sd_df = pd.DataFrame({
+            'M': means,
+            'SD': stds
+        })
+
+        # Reset the index for proper formatting and return the DataFrame
+        m_sd_df = m_sd_df.reset_index().rename(columns={'index': 'Variable'})
+
+        m_sd_df = self.format_columns(m_sd_df, decimals=2)
+
+        return m_sd_df
+
 
     @staticmethod
     def calc_bp_wp_statistics(df, id_col):
@@ -328,31 +438,36 @@ class DescriptiveStatistics:
         Returns:
 
         """
-        trait_df, state_df_dct =  self.prepare_rel_data()
+        trait_df, state_df_dct = self.prepare_rel_data()
         path_to_full_data = os.path.join(self.var_cfg['analysis']["path_to_preprocessed_data"], "full_data")
         full_df = self.data_loader.read_pkl(path_to_full_data)
-        crit_cols = [col[5:] for col in full_df.columns if col.startswith('crit')]
+        crit_cols = [col[5:] for col in full_df.columns if col.startswith('crit')]  # remove prefix
 
         rel_dct = {}
         for crit in crit_cols:
             if "trait" in crit:
-                continue  # focus on state data first
+                continue  # TODO ADD
             elif "state" in crit:
                 rel = self.compute_split_half_rel(df_dct=state_df_dct, construct=crit)
                 rel_dct[crit] = rel
                 print(f"Rel {crit}: {rel}")
             else:
                 raise ValueError("Unknown criterium ")
-        return rel_dct["state_wb"]
 
+        if self.desc_cfg["store"]:
+            file_name_rel = os.path.join(self.desc_results_base_path, "weighted_rels.json")
+            with open(file_name_rel, 'w') as f:
+                json.dump(rel_dct, f, indent=4)
+
+        return None
 
     def prepare_rel_data(self):
         """
+        This function prepares the data to compute the reliability.
 
         Returns:
             tuple(pd.DataFrame, dict): trait and state df processed for reliability analysis
         """
-        # TODO ADJUST
         # state data
         state_dfs = {}
         for dataset in self.var_cfg["general"]["datasets_to_be_included"]:
@@ -375,7 +490,7 @@ class DescriptiveStatistics:
         # trait data
         full_df = self.data_loader.read_pkl(self.full_data_path)
         full_df_filtered = full_df[["crit_wb_trait", "crit_pa_trait", "crit_na_trait"]]
-        # TODO: I need single items for trait rel? -> Change preprocessor
+        # TODO ADD
 
         return full_df_filtered, state_dfs
 
@@ -469,7 +584,6 @@ class DescriptiveStatistics:
 
         return weighted_mean_rel
 
-
     @staticmethod
     def compute_weighted_mean_rel(df_dct: dict, rel_dct: dict, user_id_col: str) -> float:
         """
@@ -487,6 +601,7 @@ class DescriptiveStatistics:
         # Calculate the weighted mean reliability
         total_unique_users = 0
         weighted_sum_reliability = 0
+
         for dataset, reliability in rel_dct.items():
             # Count unique users in the current dataset
             unique_user_count = df_dct[dataset][user_id_col].nunique()
@@ -494,6 +609,7 @@ class DescriptiveStatistics:
             weighted_sum_reliability += reliability * unique_user_count
             total_unique_users += unique_user_count
         weighted_mean_rel = weighted_sum_reliability / total_unique_users if total_unique_users > 0 else np.nan
+
         return weighted_mean_rel
 
 

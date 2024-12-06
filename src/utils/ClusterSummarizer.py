@@ -27,7 +27,7 @@ class ClusterSummarizer:
         self.num_reps = num_reps
         self.rng_ = np.random.RandomState(self.var_cfg["analysis"]["random_state"])  # Local RNG
 
-    def aggregate(self):
+    def aggregate(self):  # TODO: Could add fit time extractor
         """
         This method walks through the directory tree from self.base_result_dir and
             - checks if a filetype (cv_results / lin_model_coefs / shap_values) exists for all repetitions

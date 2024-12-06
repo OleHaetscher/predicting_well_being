@@ -5,12 +5,12 @@ general:
 
   steps:
     preprocessing: false
-    analysis: true
-    postprocessing: false
+    analysis: false
+    postprocessing: true
 
 preprocessing:
   path_to_raw_data: "../data/raw"
-  store_data: true  # stores the full preprocessed df
+  store_data: false  # stores the full preprocessed df
   path_to_preprocessed_data: "../data/preprocessed"
   min_num_esm_measures: 5  # 5
   nrows: 999999 # only for descriptives
@@ -99,6 +99,12 @@ analysis:
     - get_average_coefficients
     - process_all_shap_ia_values
     - store_analysis_results  # CAUTION
+
+  feature_combinations:
+    - pl
+    - srmc
+    - sens
+    - mac
 
 # for each combination, we will also use all samples and always compare it against the same samples using only pl
   feature_sample_combinations:
@@ -244,8 +250,8 @@ postprocessing:
     ##### performance based
     #- process_cv_results
     #- process_lin_model_coefs
-    - condense_results
-    #- create_descriptives
+    #- condense_results
+    - create_descriptives
     #- create_cv_results_plots
     ##### shap based, may need to change "raw_results_path" and "processed_results_path"
     #- process_shap_values
@@ -262,38 +268,61 @@ postprocessing:
   # "C:/Users/lokal_o_haet01/Documents/git_repos/coco_wb_ml_code/results/  a) cluster_results_only_cv_proc" b) cluster_results_shap_merged
   processed_results_path: "C:/Users/lokal_o_haet01/Documents/git_repos/coco_wb_ml_code/results/run_2811"  #"../results/cluster_results_only_cv_proc  # cluster_results_only_cv_proc"  # "# BASE RESULT DIR FOR PROCESSED RESULTS  # shap or cv
 
+  summarized_file_names:
+    cv_results: "cv_results_summary.json"
+    lin_model_coefs: "lin_model_coefs_summary.json"
+    shap_values: "shap_values_summary.pkl"
+    shap_ia_values: "XXX"
 
-  #plots_base_dir: "../results/plots"
-  #tables_base_dir: "../results/plots"
-  merge_cluster_results:
-    merge_folders: true
-    source_1: "../results/res_js_pc2_2611"
-    source_2: "../results/res_oh_pc2_2611"
-    output_folder: "../results/cluster_results_merged_2611"
+  cv_results:
+    table_feature_combo_order:
+      - pl
+      - pl_nnse
+      - srmc
+      - sens
+      - mac
+      - pl_srmc
+      - pl_srmc_nnse
+      - pl_sens
+      - pl_sens_nnse
+      - pl_srmc_sens
+      - pl_srmc_sens_nnse
+      - srmc_control
+      - pl_srmc_control
+      - pl_mac
+      - pl_mac_nnse
+      - pl_srmc_mac
+      - pl_srmc_mac_nnse
+      - all_in
+      - all_in_nnse
 
-  shap_processing:
-    merge_folders: true  # do merge folders from different cluster accounts
-    source_1: "../results/cluster_results_shap_js"
-    source_2: "../results/cluster_results_shap_oh"
-    output_folder: "../results/cluster_results_shap_merged"
+  descriptives:
+    base_path: "../results/descriptives"
+    store: false
+    cont_agg_dct: {mean: M, std: SD}
+    bin_agg_lst: ["%"]
+
+  check_pred_vs_true:
+    path: "../results/mac_pred_true/"
+    reps_to_check: [0, 1]  # attention, may overshoot memory
+    store: true
 
   metrics:
     - spearman
     - r2
     - pearson
 
-
   significance_tests:
     output_path: "../results/significance_tests"
-    alpha: .05
+    alpha: 0.05 # .05
     metric: r2 # r2
     methods:
       - xxx
 
-  plots:
+  plots:  # TODO: Adhere to NHB Style
     store_plots: false
     plots:
-      # - importance_plot
+      # - importance_plot  # TODO: Make with IA values
       - beeswarm_plot
     custom_cmap_colors:  # for a linear colormap, used e.g. in the beeswarm plots
       - "#5E9ACC"  # Blue
@@ -315,28 +344,76 @@ postprocessing:
       pl_mac: "Personal + Societal"
       pl_srmc_mac: "Personal + ESM + Societal"
 
-    cv_result_plot:
+    cv_results_plot:
       crit: [ state_wb ]
       samples_to_include: [ selected ]
+      metrics: [spearman, r2]  # must be iterable
+      models:
+        - elasticnet
+        - randomforestregressor
+      figure:
+        num_rows: 4
+        num_cols: 3
+        width: 20
+        height: 10
+        empty_cells:
+          - [ 3, 2 ]
+          - [ 2, 2 ]
+      fontsizes:
+        title: 15
+        tick_params: 12
+      color_dct:
+        pl: "#5E9ACC"
+        srmc: "#A3C7A1"
+        sens: "#A3C7A1"
+        mac: "#F0E68C"
+      col_assignment:
+        first_col: ["pl", "srmc", "sens", "mac"]
+        second_col: ["pl_srmc", "pl_sens", "pl_srmc_sens", "pl_mac"]
+        third_col: ["pl_srmc_mac", "all_in"]
+      titles:
+        - "Within Conceptual Levels"
+        - "Across Two Conceptual Levels"
+        - "Across Three Conceptual Levels"
 
-    shap_importance_plot:  # could define dpi, etc as well here
 
-      # This should be lists
-      prediction_model: [elasticnet]  # elasticnet, randomforestregressor
-      crit: [wb_state, pa_state, na_state]
-      samples_to_include: [selected, all]
+    shap_beeswarm_plot:  # could define dpi, etc as well here
 
+      prediction_model: [elasticnet]  # must be iterable
+      crit: [wb_state, pa_state, na_state] # must be iterable
+      samples_to_include: [selected, all] # must be iterable
       num_to_display: 6
+      figure:
+        num_rows: 3
+        num_cols: 3
+        width: 35
+        height: 25
+      fontsizes:
+        title: 28
+        tick_params: 25
+        x_label: 25
+        y_label: 25
+      subplot_adjustments:
+        left: 0.24
+        wspace: 1.2
+        hspace: 0.4
+        right: 0.95
 
-      # first_col: ["pl", "srmc", "sens", "mac"]
-      # second_col: ["pl_srmc", "pl_sens", "pl_srmc_sens", "pl_mac"]
-      # third_col: ["pl_srmc_mac"]
+
+      col_assignment:
+        first_col: [ "pl", "srmc", "sens", "mac" ]
+        second_col: [ "pl_srmc", "pl_sens", "pl_srmc_sens", "pl_mac" ]
+        third_col: [ "pl_srmc_mac", "all_in" ]
+
+      first_col: ["pl", "srmc", "sens", "mac"]
+      second_col: ["pl_srmc", "pl_sens", "pl_srmc_sens", "pl_mac"]
+      third_col: ["pl_srmc_mac"]
       #first_col: ["pl", "srmc", "sens"]
       #second_col: ["mac", "pl_srmc", "pl_sens"]
       #third_col: ["pl_mac", "pl_srmc_sens", "pl_srmc_mac"]
-      first_col: [ "pl"]
-      second_col: [ "mac" ]
-      third_col: [ "pl_mac"]
+      #first_col: [ "pl"]
+      #second_col: [ "mac" ]
+      #third_col: [ "pl_mac"]
 
 
 

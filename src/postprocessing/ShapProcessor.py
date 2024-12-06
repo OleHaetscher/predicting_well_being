@@ -30,39 +30,6 @@ class ShapProcessor:
         self.data_importance_plot = None
         self.data_violin_plot = None
 
-    def aggregate_shap_values(self, feature_mappings):
-        """
-        This function compoutes the mean and the sd across 500 outer folds for
-            - the shap values
-            - the base values
-            - the features
-        and stores this in the associated folders of cluster_results_processed.
-        We may want to process only one SHAP data at a time, because the filesize is large
-
-        Returns:
-
-        """
-        # TODO: We need to adjust this for new filenames
-        # Traverse the directory structure
-        for root, dirs, files in os.walk(self.base_result_dir):
-            if 'shap_values_rep_all.pkl' in files:  # shap_values.pkl
-                rel_path = os.path.relpath(root, self.base_result_dir)
-                shap_values_path = os.path.join(root, 'shap_values_rep_all.pkl') # shap_values.pkl
-                shap_values = self.data_loader.read_pkl(shap_values_path)
-                shap_values["feature_names"] = self.process_feature_names(
-                    feature_names=shap_values["feature_names"].copy(),
-                    rel_path=rel_path,
-                    feature_mappings=feature_mappings
-                )
-                shap_values_processed = self.compute_mean_sd(shap_value_dct=shap_values)
-                output_path = os.path.join(self.processed_output_path, rel_path, "shap_values_processed.pkl")
-                # Create the directory if it doesn't exist
-                os.makedirs(os.path.dirname(output_path), exist_ok=True)
-                with open(output_path, 'wb') as f:
-                    pickle.dump(shap_values_processed, f)
-                print("stored shap values processed in: ", output_path)
-                # This may be the place to apply the feature assignment correction
-
     def merge_folders(self, source1: str, source2: str, merged_folder: str):
         """
         This is used to merge folders with processed shap_values to account for data from different sources. We do this
