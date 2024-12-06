@@ -1,19 +1,13 @@
 import os
-import random
-import string
 from itertools import product
 from typing import Callable, Union
 
-from matplotlib.patches import Rectangle
-import matplotlib.patches as mpatches
 import matplotlib.lines as mlines
+import matplotlib.patches as mpatches
 import matplotlib.pyplot as plt
-from matplotlib.colors import LinearSegmentedColormap
 import numpy as np
 import shap
-
-import matplotlib.colors as mcolors
-import colorsys
+from matplotlib.colors import LinearSegmentedColormap
 
 
 class ResultPlotter:
@@ -31,118 +25,248 @@ class ResultPlotter:
         self.plot_cfg = self.var_cfg["postprocessing"]["plots"]
         self.plot_base_dir = os.path.join(plot_base_dir, "plots")  # this is the folder containing the processed final results
         self.store_plots = self.plot_cfg["store_plots"]
+        self.feature_combo_mapping = self.plot_cfg["feature_combo_name_mapping"]
 
-    def plot_cv_results_plots(self, data_to_plot: dict, rel: Union[float, None] = None):
+    def plot_cv_results_plots_wrapper(self, data_to_plot: dict, rel: Union[float, None] = None):
         """
-        Function to create a figure with three columns, each with multiple rows representing the cv_results
-        with a different set of feature combinations for both models (ENR / RFR)
+        Wrapper function for the "plot_cv_results_plots" function. It
+            - gets the data-indepdenent parameters for the plot from the config
+            - iterates over crit - samples_to_include combinations
+            - gets the specific data for a given combination
+            - invokes the plot_cv_results_plots function for a given combination
 
         Args:
             data_to_plot (dict): Dict containing the cv_results
             rel: Reliability of the specific crit, if None, it is not included in the plots
         """
+        # Get meta-params of the plot that are equal for all combinations. Could be a seperate method though
         color_dct = self.plot_cfg["cv_results_plot"]["color_dct"]
-        fig_groups = []
+        feature_combinations = []
         for col, feature_combination_lst in self.plot_cfg["cv_results_plot"]["col_assignment"]:
-            fig_groups.append(feature_combination_lst)
+            feature_combinations.append(feature_combination_lst)
 
-        feature_combo_mapping = self.plot_cfg["feature_combo_name_mapping"]
         titles = self.plot_cfg["cv_results_plot"]["titles"]
         models = self.plot_cfg["cv_results_plot"]["models"]
-        cv_results_figure_params = self.plot_cfg["shap_beeswarm_plot"]["figure"]
+        cv_results_figure_params = self.plot_cfg["cv_results_plot"]["figure"]
         cv_results_empty_cells = [tuple(cell) for cell in cv_results_figure_params['empty_cells']]
         cv_results_fontsizes = self.plot_cfg["cv_results_plot"]["fontsizes"]
-        x_min, x_max = -0.1, 1
 
-        for samples_to_include in self.plot_cfg["cv_results_plot"]["samples_to_include"]:
-            for crit in self.plot_cfg["cv_results_plot"]["crit"]:
-
-                # Filter metrics to include only current crit / samples_to_include
-                filtered_metrics = {
-                    key.replace(crit + "_", "").replace("_" + samples_to_include, ""): value
-                    for key, value in data_to_plot.items()
-                    if key.startswith(crit) and key.endswith(samples_to_include)
-                }
-
-                ##### TODO REMOVE with full results
-                # pl_srmc_sens -> Use all Analysen: RFR: Mean = 0.607, SD = 0.0207, ENR: 0.597, 0.0213
-                #filtered_metrics["pl_srmc_sens_elasticnet"] = {"m_spearman": 0.597, 'sd_spearman': 0.0213}
-                #filtered_metrics["pl_srmc_sens_randomforestregressor"] = {"m_spearman": 0.607, 'sd_spearman': 0.0207}
-                #filtered_metrics["pl_sens_elasticnet"] = {"m_spearman": 0.570, 'sd_spearman': 0.0213}
-                #filtered_metrics["pl_sens_randomforestregressor"] = {"m_spearman": 0.573, 'sd_spearman': 0.0207}
-                pl_margin_dct = self.compute_pl_margin(filtered_metrics)
-
+        # With this order, we can vary "samples_to_include" in one plot more easily
+        for crit in self.plot_cfg["cv_results_plot"]["crit"]:
+            for samples_to_include in self.plot_cfg["cv_results_plot"]["samples_to_include"]:
+                # Create a new figure for every combination
                 fig, axes = self.create_grid(
                     num_cols=cv_results_figure_params["num_cols"],
                     num_rows=cv_results_figure_params["num_rows"],
-                    figsize=(cv_results_figure_params["width"],
-                             cv_results_figure_params["height"]),
+                    figsize=(cv_results_figure_params["width"], cv_results_figure_params["height"]),
                     empty_cells=cv_results_empty_cells
                 )
+                # Get the specific data to plot
+                filtered_metrics, filtered_metrics_col = self.prepare_cv_results_plot_data(
+                    data_to_plot=data_to_plot,
+                    crit=crit,
+                    samples_to_include=samples_to_include,
+                    models=models,
+                    feature_combinations=feature_combinations
+                )
+                # Create margin dct to display the incremental performance
+                pl_margin_dct = self.compute_pl_margin(filtered_metrics)
 
-                # Prepare filtered metrics for each group
-                filtered_metrics_col = [
-                    {key: value for key, value in filtered_metrics.items() if
-                     key in [f"{prefix}_{model}" for prefix, model in product(group, models)]}
-                    for group in fig_groups
-                ]
-                pl_ref_dct = {"elasticnet": filtered_metrics_col[0]["pl_elasticnet"],
-                              "randomforestregressor": filtered_metrics_col[0]["pl_randomforestregressor"]}
+                # Create dict with reference values for the incremental performance
+                pl_ref_dct = {
+                    "elasticnet": filtered_metrics_col[0]["pl_elasticnet"],
+                    "randomforestregressor": filtered_metrics_col[0]["pl_randomforestregressor"]
+                }
 
-                # Loop through each group and plot in the respective column
-                for i, (group, title, metrics) in enumerate(zip(fig_groups, titles, filtered_metrics_col)):
-                    for j, category in enumerate(group):  # Each row gets one category
-                        ax = axes[j, i]
-                        single_category_metrics = {
-                            f"{category}_{model}": metrics[f"{category}_{model}"] for model in models if
-                            f"{category}_{model}" in metrics
-                        }
+                self.plot_cv_results_plots(
+                    feature_combinations=feature_combinations,
+                    crit=crit,
+                    samples_to_include=samples_to_include,
+                    titles=titles,
+                    filtered_metrics_col=filtered_metrics_col,
+                    pl_margin_dct=pl_margin_dct,
+                    pl_ref_dct=pl_ref_dct,
+                    fig=fig,
+                    axes=axes,
+                    models=models,
+                    color_dct=color_dct,
+                    fontsizes=cv_results_fontsizes,
+                    figure_params=cv_results_figure_params,
+                    rel=rel,
+                    )
 
-                        if i == 0:
-                            # Plot for the first column (Within Conceptual Levels)
-                            self.plot_bar_plot(ax=ax, data=single_category_metrics, order=[category], models=models,
-                                               color_dct=color_dct, feature_combo_mapping=feature_combo_mapping, rel=rel)
-                        elif i == 1:
-                            # Plot for the second column (Across Two Conceptual Levels)
-                            self.plot_incremental_bar_plot(ax=ax, data=single_category_metrics, pl_margin_dct=pl_margin_dct,
-                                                           order=[category],feature_combo_mapping=feature_combo_mapping,
-                                                           models=models, color_dct=color_dct, rel=rel, pl_reference_dct=pl_ref_dct)
-                        elif i == 2 and j < 2:
-                            # Plot in the third column only for the first 2 rows
-                            pass  # TODO: create!
-                            # self.plot_bar_plot(ax=ax, data=single_category_metrics, order=[category], models=models,
-                                               # color_dct=color_dct, rel=rel)
+    def prepare_cv_results_plot_data(self, data_to_plot, crit, samples_to_include, models, feature_combinations):
+        """
+        Prepares the filtered data for CV results plotting.
 
-                        ax.set_xlim(x_min, x_max)
-                        ax.set_title(
-                            title if j == 0 else "",
-                            fontsize=cv_results_fontsizes["tick_params"],
-                            pad=15,
-                            fontweight="bold"
-                        )
-                        ax.tick_params(axis='x', labelsize=cv_results_fontsizes["tick_params"])
-                        ax.tick_params(axis='y', labelsize=cv_results_fontsizes["tick_params"])
+        Args:
+            data_to_plot (dict): The data to be filtered.
+            crit (str): The current criterion being processed.
+            samples_to_include (str): The sample type to include in the filtering.
+            models (list): List of models to include.
+            feature_combinations (list of lists): Feature groups to consider for filtering.
 
-                # Add a general legend in the bottom right
-                # fig.legend(models, loc='lower right', bbox_to_anchor=(0.85, 0.05), ncol=1, title="Models", frameon=False)
-                # Define the legend elements
-                randomforest_patch = mpatches.Patch(facecolor='white', edgecolor='black', label='RandomForestRegressor (Upper Bar)')
-                elasticnet_patch = mpatches.Patch(facecolor='white', edgecolor='black', label='ElasticNet (Lower Bar)')
-                if rel:
-                    reliability_line = mlines.Line2D([], [], color='black', linestyle='--', linewidth=1.2, label='Reliability = .90')
+        Returns:
+            list of dict: Prepared metrics for each feature group.
+        """
+        filtered_metrics = {}
+        filtered_metrics_col = []
+
+        if samples_to_include in ["all", "selected"]:
+            # Filter metrics to include only current crit / samples_to_include
+            filtered_metrics = {
+                key.replace(f"{crit}_", "").replace(f"_{samples_to_include}", ""): value
+                for key, value in data_to_plot.items()
+                if key.startswith(crit) and key.endswith(samples_to_include)
+            }
+            # Prepare filtered metrics for each bar to plot
+            filtered_metrics_col = [
+                {
+                    key: value for key, value in filtered_metrics.items()
+                    if key in [f"{prefix}_{model}" for prefix, model in product(group, models)]
+                }
+                for group in feature_combinations
+            ]
+        elif samples_to_include == "combo":
+            for i, group in enumerate(feature_combinations):
+                # Use "selected" for the first column (one-level) and "all" for the other coplumns (two/three-level)
+                if i == 0:
+                    sublist_sample = "selected"
                 else:
-                    reliability_line = None
+                    sublist_sample = "all"
 
-                # Add the custom legend to the figure
-                fig.legend(handles=[randomforest_patch, elasticnet_patch, reliability_line],
-                           loc='lower right', bbox_to_anchor=(0.98, 0.15), ncol=1, frameon=False, title="", fontsize=15)
+                # Filter metrics for the current sublist_sample
+                filtered_metrics = {
+                    key.replace(f"{crit}_", "").replace(f"_{sublist_sample}", ""): value
+                    for key, value in data_to_plot.items()
+                    if key.startswith(crit) and key.endswith(sublist_sample)
+                }
 
-                # Adjust layout for readability
-                plt.tight_layout(rect=[0, 0.05, 1, 0.95])
-                if self.store_plots:
-                    self.store_plot(plot_name="cv_results", crit=crit, samples_to_include=samples_to_include, model=None)
-                else:
-                    plt.show()
+                # Filter metrics for the current feature group
+                group_metrics = {
+                    key: value for key, value in filtered_metrics.items()
+                    if key in [f"{prefix}_{model}" for prefix, model in product(group, models)]
+                }
+                filtered_metrics_col.append(group_metrics)
+        else:
+            raise ValueError("Invalid value for samples_to_include. Must be one of ['all', 'selected', 'combo'].")
+
+        return filtered_metrics, filtered_metrics_col
+
+    def plot_cv_results_plots(self,
+                              feature_combinations: list[list[str]],
+                              crit: str,
+                              samples_to_include: str,
+                              titles: list[str],
+                              filtered_metrics_col: list[dict],
+                              pl_margin_dct: dict,
+                              pl_ref_dct: dict,
+                              fig,
+                              axes,
+                              models,
+                              color_dct,
+                              fontsizes,
+                              figure_params,
+                              rel=None,
+                              ):
+        """ # TODO: add significance brackets for both comparison (ENR / RFR as well as incremental change?)
+        This function creates the cv_result bar plot for a given analysis (i.e., a samples_to_include / crit combination).
+        As the meta-parameters of the plots are equal for all combinations, we pass them as arguments here.
+
+        Args:
+            feature_combinations:
+            crit:
+            samples_to_include:
+            titles:
+            filtered_metrics_col:
+            pl_margin_dct:
+            fig:
+            axes:
+            models:
+            color_dct:
+            fontsizes:
+            figure_params:
+            rel:
+        """
+        # Loop over columns (one-level / two-level / three-level) and rows (different feature combinations)
+        for col_idx, (group, title, metrics) in enumerate(zip(feature_combinations, titles, filtered_metrics_col)):
+            for row_idx, category in enumerate(group):
+                ax = axes[row_idx, col_idx]
+                single_category_metrics = {
+                    f"{category}_{model}": metrics[f"{category}_{model}"] for model in models if
+                    f"{category}_{model}" in metrics
+                }
+                if col_idx == 0:
+                    # Plot for the first column (Within Conceptual Levels)
+                    self.plot_bar_plot(
+                        ax=ax,
+                        data=single_category_metrics,
+                        order=[category],
+                        models=models,
+                        color_dct=color_dct,
+                        feature_combo_mapping=self.feature_combo_mapping,
+                        rel=rel
+                    )
+                elif col_idx == 1:
+                    # Plot for the second column (Across Two Conceptual Levels)
+                    self.plot_incremental_bar_plot(
+                        ax=ax,
+                        data=single_category_metrics,
+                        pl_margin_dct=pl_margin_dct,
+                        order=[category],
+                        feature_combo_mapping=self.feature_combo_mapping,
+                        models=models,
+                        color_dct=color_dct,
+                        rel=rel,
+                        pl_reference_dct=pl_ref_dct
+                    )
+                elif col_idx == 2 and row_idx < 2:
+                    # Plot in the third column (Across three conceptual levels, only the first 2 rows)
+                    pass  # TODO: create!
+
+                ax.set_xlim(figure_params["x_min"], figure_params["x_max"])
+                ax.set_title(
+                    title if row_idx == 0 else "",
+                    fontsize=fontsizes["tick_params"],
+                    pad=figure_params["title_pad"],
+                    fontweight="bold"
+                )
+                ax.tick_params(axis='x', labelsize=fontsizes["tick_params"])
+                ax.tick_params(axis='y', labelsize=fontsizes["tick_params"])
+
+        # Create a legend in the lower right corner
+        randomforest_patch = mpatches.Patch(facecolor='white', edgecolor='black', label='RandomForestRegressor (Upper Bar)')
+        elasticnet_patch = mpatches.Patch(facecolor='white', edgecolor='black', label='ElasticNet (Lower Bar)')
+        if rel:
+            reliability_line = mlines.Line2D([], [], color='black', linestyle='--', linewidth=1.2, label='Reliability = .90')
+        else:
+            reliability_line = None
+
+        # Add the custom legend to the figure
+        fig.legend(
+            handles=[randomforest_patch, elasticnet_patch, reliability_line],
+            loc='lower right',
+            bbox_to_anchor=(0.98, 0.15),
+            ncol=1,
+            frameon=False,
+            title="",
+            fontsize=fontsizes["legend"]
+        )
+
+        # Adjust layout for readability
+        plt.tight_layout(rect=figure_params["tight_layout"])   # (rect=[0, 0.05, 1, 0.95])
+        if self.store_plots:
+            self.store_plot(
+                plot_name="cv_results",
+                plot_format="pdf",  # TODO test
+                dpi=600,  # TODO test
+                crit=crit,
+                samples_to_include=samples_to_include,
+                model=None
+            )
+        else:
+            plt.show()
+
     def plot_bar_plot(self, ax, data, order, models, color_dct, feature_combo_mapping, rel=None):
         """
         Plots a bar plot for the given data with error bars, with each feature group displayed separately.
@@ -457,8 +581,12 @@ class ResultPlotter:
             for samples_to_include in samples_to_include_list:
                 for model in models:
                     print(f"### Plot combination: {samples_to_include}_{crit}_{model}")
-                    data_current = prepare_data_func(crit_to_plot=crit, samples_to_include=samples_to_include, model_to_plot=model)
-                                                     # custom_affordances={"sens": "selected", "mac": "selected"})
+                    data_current = prepare_data_func(
+                        crit_to_plot=crit,
+                        samples_to_include=samples_to_include,
+                        model_to_plot=model,
+                        col_assignment=col_assignment,
+                    )
 
                     # Create a grid of subplots with specified empty cells
                     fig, axes = self.create_grid(
@@ -606,7 +734,7 @@ class ResultPlotter:
         file_path = os.path.join(plot_path, filename)
         print("store plot in:", file_path)
         plt.savefig(
-            file_path, format=plot_format, dpi=dpi,  #...
+            file_path, format=plot_format, dpi=dpi,
         )
         plt.close()
 
@@ -626,6 +754,7 @@ class ResultPlotter:
             model:
 
         Returns:
+            str: path where the plot should be stored
 
         """
         path_components = [None, None, None, None]
@@ -634,4 +763,5 @@ class ResultPlotter:
                 path_components[path_idx] = var
                 print(path_components)
         filtered_path_components = [comp for comp in path_components if comp]
+
         return os.path.normpath(os.path.join(self.plot_base_dir, *filtered_path_components))

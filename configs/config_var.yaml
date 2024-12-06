@@ -346,7 +346,7 @@ postprocessing:
 
     cv_results_plot:
       crit: [ state_wb ]
-      samples_to_include: [ selected ]
+      samples_to_include: [ selected, all, combo ]
       metrics: [spearman, r2]  # must be iterable
       models:
         - elasticnet
@@ -356,12 +356,17 @@ postprocessing:
         num_cols: 3
         width: 20
         height: 10
+        x_min: -0.1
+        x_max: 1
+        title_pad: 15
         empty_cells:
           - [ 3, 2 ]
           - [ 2, 2 ]
+        tight_layout: [0, 0.05, 1, 0.95]
       fontsizes:
         title: 15
         tick_params: 12
+        legend: 15
       color_dct:
         pl: "#5E9ACC"
         srmc: "#A3C7A1"
@@ -381,7 +386,7 @@ postprocessing:
 
       prediction_model: [elasticnet]  # must be iterable
       crit: [wb_state, pa_state, na_state] # must be iterable
-      samples_to_include: [selected, all] # must be iterable
+      samples_to_include: [ selected, all, combo ] # must be iterable
       num_to_display: 6
       figure:
         num_rows: 3
