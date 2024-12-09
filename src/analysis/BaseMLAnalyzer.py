@@ -291,7 +291,7 @@ class BaseMLAnalyzer(ABC):
         if self.samples_to_include in ["all", "selected"]:
             feature_prefix_lst = self.feature_combination.split("_")
 
-            if self.feature_combination == "all_in":  # include all features
+            if "all_in" in self.feature_combination:  # include all features
                 feature_prefix_lst = ["pl", "srmc", "sens", "mac"]
                 if self.samples_to_include == "selected":
                     self.logger.log(f"    WARNING: No selected analysis needed for {self.feature_combination}, stop computations")
@@ -1004,15 +1004,15 @@ class BaseMLAnalyzer(ABC):
         X_test_scaled = pipeline.named_steps["preprocess"].transform(X_test)  # scaler
 
         if "feature_selection" in pipeline.named_steps:  # feature sizes must match, conditionally apply fs
+            X_train_scaled = pipeline.named_steps["feature_selection"].transform(X_train)
             X_test_scaled = pipeline.named_steps["feature_selection"].transform(X_test)
+
             original_feature_names = X_test.columns  # Feature names before selection
             selected_feature_names = X_test_scaled.columns if isinstance(X_test_scaled, pd.DataFrame) else pipeline.named_steps[
                 "feature_selection"].selected_features_
             # Find the intersection and get the indices in the original dataset
             feature_indices = [original_feature_names.get_loc(name) for name in selected_feature_names if
                                name in original_feature_names]
-            for i in feature_indices:  # for testing
-                print(i)
         else:
             feature_indices = None
 

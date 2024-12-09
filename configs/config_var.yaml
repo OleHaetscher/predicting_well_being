@@ -5,8 +5,8 @@ general:
 
   steps:
     preprocessing: false
-    analysis: false
-    postprocessing: true
+    analysis: true
+    postprocessing: false
 
 preprocessing:
   path_to_raw_data: "../data/raw"
@@ -150,9 +150,9 @@ analysis:
   no_control_lst: ["pl", "srmc", "sens", "mac", "all_in"] # we do not run control analyses for these combinations
 
   params: # adjusted by SLURM
-    prediction_model: randomforestregressor  # elasticnet, randomforestregressor
+    prediction_model: elasticnet  # elasticnet, randomforestregressor
     crit: wb_state  # wb_state, wb_trait, etc
-    feature_combination: all_in # pl, srmc, sens, mac, pl_srmc, pl_sens, pl_srmc_sens, pl_mac, pl_srmc_mac, all_in
+    feature_combination: sens_fs # pl, srmc, sens, mac, pl_srmc, pl_sens, pl_srmc_sens, pl_mac, pl_srmc_mac, all_in
     samples_to_include: all  # all, selected, control
 
   cv:
