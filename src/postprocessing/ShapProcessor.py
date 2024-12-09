@@ -22,7 +22,7 @@ class ShapProcessor:
         self.base_result_dir = base_result_dir
         self.processed_output_path = processed_output_path
         self.data_loader = DataLoader()
-        self.shap_values_file_name = self.var_cfg["postprocessing"]["summarized_file_names"]["cv_results"]
+        self.shap_values_file_name = self.var_cfg["postprocessing"]["summarized_file_names"]["shap_values"]
         self.meta_vars = ['other_unique_id', 'other_country', 'other_years_of_participation']
 
     @classmethod
@@ -74,7 +74,9 @@ class ShapProcessor:
                         shap_values = self.data_loader.read_pkl(shap_values_path)
 
                         # Filter out meta vars from feature names
-                        feature_names = shap_values["feature_names"].drop(self.meta_vars, errors="ignore")
+                        feature_names = [feature for feature in shap_values["feature_names"]
+                                         if feature not in self.meta_vars]
+                        feature_names = self.apply_name_mapping(feature_names)
 
                         # Recreate explanation objects
                         shap_exp = self.recreate_shap_exp_objects(
@@ -104,13 +106,13 @@ class ShapProcessor:
             str: samples_to_include for the current feature_combination
         """
         # If combination is in the first sublist, use "selected"
-        if feature_combination in col_assignment[0]:
+        if feature_combination in col_assignment["first_col"]:
             return "selected"
         # If combination is in the second or third sublist, use "all"
-        for sublst in col_assignment[1:3]:
+        for sublst in col_assignment["second_col"] + col_assignment["third_col"]:
             if feature_combination in sublst:
                 return "all"
-        raise ValueError(f"Predictor combination {feature_combination} not found in col_assignment.")
+        # raise ValueError(f"Predictor combination {feature_combination} not found in col_assignment.")
 
     def apply_name_mapping(self, features: list) -> list:
         """

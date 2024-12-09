@@ -183,6 +183,7 @@ class BasePreprocessor(ABC):
             (self.set_id_as_index, {'df': None}),
             (self.inverse_coding, {'df': None}),  # this makes sense here
             (self.create_scale_means, {'df': None}),
+            (self.store_trait_wb_items, {'df': None}),
             (self.create_criteria, {'df': None}),
             (self.set_full_col_df_as_attr, {'df': None}),
             (self.fill_unique_id_col, {'df': None}),
@@ -1442,6 +1443,27 @@ class BasePreprocessor(ABC):
                     })
                 except ValueError:
                     df[entry['name']] = df[item_cols]
+        return df
+
+    def store_trait_wb_items(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+
+        Args:
+            df:
+
+        Returns:
+
+        """
+        pa_trait_items = self.fix_cfg["person_level"]["criterion"][0]["item_names"][self.dataset]
+        na_trait_items = self.fix_cfg["person_level"]["criterion"][1]["item_names"][self.dataset]
+        wb_trait_items = pa_trait_items + na_trait_items
+        if wb_trait_items:
+            df_trait_wb_items = df[wb_trait_items]
+
+            filename = os.path.join(self.var_cfg["preprocessing"]["path_to_preprocessed_data"],
+                                    f"trait_wb_items_{self.dataset}")
+            with open(filename, "wb") as f:
+                pickle.dump(df_trait_wb_items, f)
         return df
 
     def create_criteria(self, df: pd.DataFrame) -> pd.DataFrame:

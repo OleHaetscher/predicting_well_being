@@ -4,15 +4,18 @@ import pandas as pd
 from src.utils.DataLoader import DataLoader
 import openpyxl
 import json
+import pingouin as pg
 
 
 class DescriptiveStatistics:
     """
     This class computes descriptives as specified in the PreReg. This includes
         - M and SD of all features used in the ML-based analysis
-        - means, standard deviations, the proportion of between-person variance (ICC),
-            and within-person and between-person correlations for the wb_items and the
-            pa, na, and wb-scores
+        - descriptive statistics for the individual wb_items and the wb_scores (criteria)
+            - M and SD
+            - ICC1s and ICC2s
+            - Within-person and between-person correlations
+        - Reliability of the wb_scores per dataset
     """
     def __init__(self, fix_cfg, var_cfg, name_mapping):
         self.var_cfg = var_cfg
@@ -20,10 +23,13 @@ class DescriptiveStatistics:
         self.data_loader = DataLoader()
         self.fix_cfg = fix_cfg
         self.name_mapping = name_mapping
-        self.esm_id_col_dct = self.fix_cfg["esm_based"]["other_esm_columns"][0]["item_names"]
+        self.datasets = self.var_cfg["general"]["datasets_to_be_included"]
+
+        self.esm_id_col_dct = self.var_cfg["preprocessing"]["esm_id_col"]
+        self.esm_tp_col_dct = self.var_cfg["preprocessing"]["esm_timestamp_col"]
 
         self.full_data_path = os.path.join(self.var_cfg['analysis']["path_to_preprocessed_data"], "full_data")
-        self.state_data_base_path = self.var_cfg['analysis']["path_to_preprocessed_data"]
+        self.data_base_path = self.var_cfg['analysis']["path_to_preprocessed_data"]
         self.desc_results_base_path = self.var_cfg['postprocessing']["descriptives"]["base_path"]
 
     def create_m_sd_feature_table(self):
@@ -35,13 +41,13 @@ class DescriptiveStatistics:
         Returns:
             final_table: pd.DataFrame containing the formatted table in APA style.
         """
-        # TODO: Per Sample or in total? Currently total
+        # TODO: Per Sample or in total? Currently only total, but we could easily modify this
 
         full_df = self.data_loader.read_pkl(self.full_data_path)
         results = []
         feature_cats = self.var_cfg["analysis"]["feature_combinations"]
         cont_agg_dct = {}
-        bin_agg_dct = {}
+        bin_agg_lst = []
 
         for cat in feature_cats:
             prefix = f"{cat}_"
@@ -113,11 +119,9 @@ class DescriptiveStatistics:
         if columns is None:
             # Select only numerical columns if no specific columns are provided
             columns = df.select_dtypes(include=['number']).columns.tolist()
-
         for column in columns:
             if column in df:
                 df[column] = df[column].round(decimals)
-
         return df
 
     @staticmethod
@@ -199,7 +203,7 @@ class DescriptiveStatistics:
         continuous_cols = [col for col in df.columns if col not in binary_cols]  # ordered as in df
         return binary_cols, continuous_cols
 
-    def create_wb_item_statistics(self):
+    def create_wb_items_statistics(self):
         """
 
         Returns:
@@ -208,11 +212,20 @@ class DescriptiveStatistics:
         full_df = self.data_loader.read_pkl(self.full_data_path)
         for dataset in self.var_cfg["general"]["datasets_to_be_included"]:
             print("XX")
+
             path_to_state_data = os.path.join(self.var_cfg['analysis']["path_to_preprocessed_data"], f"wb_items_{dataset}")
             state_df = self.data_loader.read_pkl(path_to_state_data)
-            m_sd_df_wb_items = self.create_m_sd_wb_items(state_df)
-            m_sd_df_wb_scales = self.create_m_sd_crits(full_df, dataset=dataset)
-            wp_corr, bp_corr, icc1, icc2 = self.calc_bp_wp_statistics(state_df, self.esm_id_col_dct[dataset])
+
+            m_sd_df_wb_items = self.create_m_sd_wb_items(
+                state_df=state_df,
+                state_id_col=self.esm_id_col_dct[dataset]
+            )
+            # m_sd_df_wb_scales = self.create_m_sd_crits(full_df, dataset=dataset)
+            wp_corr, bp_corr, icc1, icc2 = self.calc_bp_wp_statistics(
+                df=state_df,
+                id_col=self.esm_id_col_dct[dataset],
+                tp_col=self.esm_tp_col_dct[dataset],
+            )
 
             if self.desc_cfg["store"]:
                 file_path = os.path.join(self.desc_results_base_path, dataset)
@@ -222,7 +235,7 @@ class DescriptiveStatistics:
                 file_name_wp_corr = os.path.join(file_path, "within_person_corr_crit.xlsx")
                 wp_corr.to_excel(file_name_wp_corr, index=False)
 
-                bp_corr = self.format_columns(df=wp_corr,decimals=2)
+                bp_corr = self.format_columns(df=wp_corr, decimals=2)
                 file_name_bp_corr = os.path.join(file_path, "between_person_corr_crit.xlsx")
                 bp_corr.to_excel(file_name_bp_corr, index=False)
 
@@ -237,17 +250,15 @@ class DescriptiveStatistics:
                 file_name_wb_items = os.path.join(file_path, "m_sd_wb_items.xlsx")
                 m_sd_df_wb_items.to_excel(file_name_wb_items, index=False)
 
-                file_name_wb_scales = os.path.join(file_path, "m_sd_wb_scales.xlsx")
-                m_sd_df_wb_scales.to_excel(file_name_wb_scales, index=False)
-
-
-    def create_m_sd_wb_items(self, state_df):
+    def create_m_sd_wb_items(self, state_df, state_id_col):
         """
 
         Returns:
 
         """
         # TODO Check if CoCoUT is already transformed
+        state_df = state_df.drop(state_id_col, axis=1, errors="ignore")
+        state_df = state_df.select_dtypes(include=[np.number])
         means = state_df.mean()
         stds = state_df.std()
 
@@ -294,7 +305,7 @@ class DescriptiveStatistics:
 
 
     @staticmethod
-    def calc_bp_wp_statistics(df, id_col):
+    def calc_bp_wp_statistics(df, id_col, tp_col):
         """
         Calculates within-person (within-group) and between-person (between-group) correlations and ICCs for given variables.
         Based on the R implementation in psych (Revelle)
@@ -310,7 +321,7 @@ class DescriptiveStatistics:
             ICC2_dict: dict, containing the ICC2 values for each variable.
         """
         # Exclude the group identifier column to get the variables to correlate
-        variables_to_correlate = df.columns.drop(id_col)
+        variables_to_correlate = df.columns.drop([id_col, tp_col], errors="ignore")
 
         # Total number of observations and number of variables
         N = len(df)
@@ -438,28 +449,34 @@ class DescriptiveStatistics:
         Returns:
 
         """
-        trait_df, state_df_dct = self.prepare_rel_data()
-        path_to_full_data = os.path.join(self.var_cfg['analysis']["path_to_preprocessed_data"], "full_data")
-        full_df = self.data_loader.read_pkl(path_to_full_data)
-        crit_cols = [col[5:] for col in full_df.columns if col.startswith('crit')]  # remove prefix
+        pass
+        """
+        # TODO: Make this sample specific!
+        self.datasets
+        trait_df_dct, state_df_dct = self.prepare_rel_data()
+        # path_to_full_data = os.path.join(self.var_cfg['analysis']["path_to_preprocessed_data"], "full_data")
+        # full_df = self.data_loader.read_pkl(path_to_full_data)
+        # crit_cols = [col[5:] for col in full_df.columns if col.startswith('crit')]  # remove prefix
 
-        rel_dct = {}
-        for crit in crit_cols:
-            if "trait" in crit:
-                continue  # TODO ADD
-            elif "state" in crit:
-                rel = self.compute_split_half_rel(df_dct=state_df_dct, construct=crit)
-                rel_dct[crit] = rel
-                print(f"Rel {crit}: {rel}")
-            else:
-                raise ValueError("Unknown criterium ")
-
-        if self.desc_cfg["store"]:
-            file_name_rel = os.path.join(self.desc_results_base_path, "weighted_rels.json")
-            with open(file_name_rel, 'w') as f:
-                json.dump(rel_dct, f, indent=4)
+        # rel_dct = {} # TODO fix 
+        for dataset in self.datasets:
+            for crit in crit_cols:
+                if "trait" in crit:
+                    continue  # TODO ADD
+                elif "state" in crit:
+                    rel = self.compute_split_half_rel(df_dct=state_df_dct, construct=crit)
+                    rel_dct[crit] = rel
+                    print(f"Rel {crit}: {rel}")
+                else:
+                    raise ValueError("Unknown criterium ")
+    
+            if self.desc_cfg["store"]:
+                file_name_rel = os.path.join(self.desc_results_base_path, "weighted_rels.json")
+                with open(file_name_rel, 'w') as f:
+                    json.dump(rel_dct, f, indent=4)
 
         return None
+        """
 
     def prepare_rel_data(self):
         """
@@ -470,11 +487,11 @@ class DescriptiveStatistics:
         """
         # state data
         state_dfs = {}
-        for dataset in self.var_cfg["general"]["datasets_to_be_included"]:
+        for dataset in self.datasets:
             timestamp_col = self.var_cfg["preprocessing"]["esm_timestamp_col"][dataset]
             id_col = self.var_cfg["preprocessing"]["esm_id_col"][dataset]
 
-            path_to_state_data = os.path.join(self.state_data_base_path, f"wb_items_{dataset}")
+            path_to_state_data = os.path.join(self.data_base_path, f"wb_items_{dataset}")
             state_df = self.data_loader.read_pkl(path_to_state_data)
 
             # Ensure timestamp is in datetime format
@@ -488,11 +505,30 @@ class DescriptiveStatistics:
             state_dfs[dataset] = state_df[state_df.columns.intersection(columns_to_select)]
 
         # trait data
-        full_df = self.data_loader.read_pkl(self.full_data_path)
-        full_df_filtered = full_df[["crit_wb_trait", "crit_pa_trait", "crit_na_trait"]]
-        # TODO ADD
+        trait_dfs = {}
+        for dataset in self.datasets:
+            path_to_trait_data = os.path.join(self.data_base_path, f"trait_wb_items_{dataset}")
+            trait_df = self.data_loader.read_pkl(path_to_trait_data)
+            trait_dfs[dataset] = trait_df
 
-        return full_df_filtered, state_dfs
+        return trait_dfs, state_dfs
+
+    def compute_internal_consistency(self,
+                                     df_items,
+                                     ):
+        """
+        This function computes the internal consistency as a reliability measure of the trait wb_items
+
+        Returns:
+
+        """
+        alpha = None
+        if len(df_items.columns) > 1:
+            alpha = pg.cronbach_alpha(data=df_items)[0]
+        return alpha
+
+
+
 
     def compute_split_half_rel(self,
                                df_dct: dict[pd.DataFrame],
@@ -501,7 +537,7 @@ class DescriptiveStatistics:
                                measurement_idx_col: str = "idx_measurement_per_person",
                                method: str = "individual_halves",
                                correlation_method: str = "spearman") -> float:
-        """
+        """  # TODO: This should currently be per sample
         Computes the split-half reliability by splitting the data according to the specified method,
         then calculating the correlation of these halves across users.
 

@@ -1,7 +1,7 @@
 general:
-  datasets_to_be_included: [  cocoesm, cocoms, cocout, emotions, pia, zpid ] # cocoesm, cocoms, cocout, emotions, pia, zpid
-  log_dir: "../logs/RECR_DATA_04122024"  # only for preprocessing, analysis logs are stored in the result folders
-  log_name: 2811
+  datasets_to_be_included: [ cocoesm, cocoms, cocout, emotions, pia, zpid ] # cocoesm, cocoms, cocout, emotions, pia, zpid
+  log_dir: "../logs/0912"  # only for preprocessing, analysis logs are stored in the result folders
+  log_name: 0912
 
   steps:
     preprocessing: false
@@ -241,32 +241,20 @@ analysis:
 
 postprocessing:
   methods:
-    ##### Summarizing results
-    #- test_shap
-    #- merge_cluster_results
-    #- merge_reps
-    #- check_crit_dist
     #- sanity_check_pred_vs_true
-    ##### performance based
-    #- process_cv_results
-    #- process_lin_model_coefs
-    #- condense_results
+
+    #- condense_cv_results
+    #- condense_lin_model_coefs
     - create_descriptives
+    #- conduct_significance_tests
     #- create_cv_results_plots
-    ##### shap based, may need to change "raw_results_path" and "processed_results_path"
-    #- process_shap_values
     #- create_shap_plots
-
-
-  # Currently, because of the big amounts of data, we may have separated raw dirs
-  # raw: cv: "../results/cluster_results_only_cv_raw" , shap:
-  # proc: cv: "../results/cluster_results_only_cv_proc" , shap: "../results/cluster_results_shap_merged" or
 
   # "../results/results_merged_onlycv"
   raw_results_path: "../results/cluster_results_merged_2611"  # BASE RESULT DIR FOR RAW RESULTS  # shap or cv test_fs_shap
 
-  # "C:/Users/lokal_o_haet01/Documents/git_repos/coco_wb_ml_code/results/  a) cluster_results_only_cv_proc" b) cluster_results_shap_merged
-  processed_results_path: "C:/Users/lokal_o_haet01/Documents/git_repos/coco_wb_ml_code/results/run_2811"  #"../results/cluster_results_only_cv_proc  # cluster_results_only_cv_proc"  # "# BASE RESULT DIR FOR PROCESSED RESULTS  # shap or cv
+  # We do merging on the cluster, thus, we are currently only using the processed_results_path
+  processed_results_path: "../results/run_0912"
 
   summarized_file_names:
     cv_results: "cv_results_summary.json"
@@ -298,7 +286,7 @@ postprocessing:
 
   descriptives:
     base_path: "../results/descriptives"
-    store: false
+    store: true
     cont_agg_dct: {mean: M, std: SD}
     bin_agg_lst: ["%"]
 
@@ -334,6 +322,7 @@ postprocessing:
       - "#E3EEE5"  # Very pale green
       - "#CEE7CF"  # Light mint
     feature_combo_name_mapping:
+      # Main analyses
       pl: "Personal" # "Person-level"
       srmc: "ESM"
       sens: "Sensing"
@@ -343,11 +332,19 @@ postprocessing:
       pl_srmc_sens: "Personal + ESM + Sensing"
       pl_mac: "Personal + Societal"
       pl_srmc_mac: "Personal + ESM + Societal"
+      # all_in
+
+      # Additional analyses
+      pl_nnse: "Personal without neuroticism facets and self-esteem"
+      pl_mac_nnse: "Personal + Societal without neuroticism facets and self-esteem"
+      pl_srmc_nnse: "Personal + ESM without neuroticism facets and self-esteem"
+      pl_srmc_control: "Personal + ESM only for CoCoMS samples that contain Sensing data"
+      srmc_control: "ESM only for CoCoMS samples that contain Sensing data"
 
     cv_results_plot:
-      crit: [ state_wb ]
-      samples_to_include: [ selected, all, combo ]
-      metrics: [spearman, r2]  # must be iterable
+      crit: [ wb_state ]
+      samples_to_include: [ combo ]  # combo
+      metrics: [ spearman ]  # must be iterable
       models:
         - elasticnet
         - randomforestregressor
@@ -384,12 +381,12 @@ postprocessing:
 
     shap_beeswarm_plot:  # could define dpi, etc as well here
 
-      prediction_model: [elasticnet]  # must be iterable
-      crit: [wb_state, pa_state, na_state] # must be iterable
-      samples_to_include: [ selected, all, combo ] # must be iterable
+      prediction_model: [randomforestregressor]  # must be iterable
+      crit: [wb_state] # must be iterable
+      samples_to_include: [ combo ] # must be iterable
       num_to_display: 6
       figure:
-        num_rows: 3
+        num_rows: 4  # 3
         num_cols: 3
         width: 35
         height: 25
@@ -403,7 +400,6 @@ postprocessing:
         wspace: 1.2
         hspace: 0.4
         right: 0.95
-
 
       col_assignment:
         first_col: [ "pl", "srmc", "sens", "mac" ]

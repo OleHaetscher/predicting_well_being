@@ -42,7 +42,7 @@ class ResultPlotter:
         # Get meta-params of the plot that are equal for all combinations. Could be a seperate method though
         color_dct = self.plot_cfg["cv_results_plot"]["color_dct"]
         feature_combinations = []
-        for col, feature_combination_lst in self.plot_cfg["cv_results_plot"]["col_assignment"]:
+        for col, feature_combination_lst in self.plot_cfg["cv_results_plot"]["col_assignment"].items():
             feature_combinations.append(feature_combination_lst)
 
         titles = self.plot_cfg["cv_results_plot"]["titles"]
@@ -220,9 +220,19 @@ class ResultPlotter:
                         rel=rel,
                         pl_reference_dct=pl_ref_dct
                     )
-                elif col_idx == 2 and row_idx < 2:
+                elif col_idx == 2 and row_idx < 1:  # < 2:  # TODO Adjust bar color problem
                     # Plot in the third column (Across three conceptual levels, only the first 2 rows)
-                    pass  # TODO: create!
+                    self.plot_incremental_bar_plot(
+                        ax=ax,
+                        data=single_category_metrics,
+                        pl_margin_dct=pl_margin_dct,
+                        order=[category],
+                        feature_combo_mapping=self.feature_combo_mapping,
+                        models=models,
+                        color_dct=color_dct,
+                        rel=rel,
+                        pl_reference_dct=pl_ref_dct
+                    )
 
                 ax.set_xlim(figure_params["x_min"], figure_params["x_max"])
                 ax.set_title(
@@ -237,14 +247,14 @@ class ResultPlotter:
         # Create a legend in the lower right corner
         randomforest_patch = mpatches.Patch(facecolor='white', edgecolor='black', label='RandomForestRegressor (Upper Bar)')
         elasticnet_patch = mpatches.Patch(facecolor='white', edgecolor='black', label='ElasticNet (Lower Bar)')
+        legends_to_handle = [randomforest_patch, elasticnet_patch]
         if rel:
             reliability_line = mlines.Line2D([], [], color='black', linestyle='--', linewidth=1.2, label='Reliability = .90')
-        else:
-            reliability_line = None
+            legends_to_handle.append(reliability_line)
 
         # Add the custom legend to the figure
         fig.legend(
-            handles=[randomforest_patch, elasticnet_patch, reliability_line],
+            handles=legends_to_handle,
             loc='lower right',
             bbox_to_anchor=(0.98, 0.15),
             ncol=1,
@@ -346,6 +356,7 @@ class ResultPlotter:
         error_metric = "sd_spearman"
         bar_width = 0.3
         y_positions = np.arange(len(order))
+        # TODO: Add two color option
 
         for i, model in enumerate(models):
             for j, feature in enumerate(order):

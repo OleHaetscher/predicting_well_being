@@ -60,7 +60,7 @@ class Postprocessor:
 
     def postprocess(self):
         """
-        This is kind of a wrapper method that does all the postprocessing steps specified in the config.
+        This is a wrapper method that does all the postprocessing steps specified in the config.
         It may invoke the methods in the other classes. What it does:
 
             sanity_check_pred_vs_true:
@@ -97,7 +97,8 @@ class Postprocessor:
                     data=data_points,
                     metric=metric,
                     output_dir=self.processed_output_path,
-                    custom_order=self.var_cfg["postprocessing"]["cv_results"]["table_feature_combo_order"]
+                    custom_order=self.var_cfg["postprocessing"]["cv_results"]["table_feature_combo_order"],
+                    feature_combo_mapping=self.var_cfg["postprocessing"] ["plots"]["feature_combo_name_mapping"],
                 )
                 self.cv_results_dct[metric] = metric_dict
 
@@ -113,19 +114,18 @@ class Postprocessor:
 
         if "create_descriptives" in self.methods_to_apply:
             # pass  TODO Bugfix
-            # rel = self.descriptives_creator.compute_rel()
+            rel = self.descriptives_creator.compute_rel()
             self.descriptives_creator.create_m_sd_feature_table()
-            self.descriptives_creator.create_wb_item_statistics()
+            self.descriptives_creator.create_wb_items_statistics()
 
         if "conduct_significance_tests" in self.methods_to_apply:
             # TODO: Complete, with simulated data?
             self.significance_testing.significance_testing(dct=self.cv_results_dct.copy())
 
         if "create_cv_results_plots" in self.methods_to_apply:
-            # Create cv_results_plot for all metrics for the supplement
             if self.cv_results_dct:
                 for metric in self.var_cfg["postprocessing"]["plots"]["cv_results_plot"]["metrics"]:
-                    self.plotter.plot_cv_results_plots(
+                    self.plotter.plot_cv_results_plots_wrapper(
                         data_to_plot=self.cv_results_dct[metric],
                         rel=None
                     )
@@ -347,7 +347,7 @@ class Postprocessor:
             return None
 
     @staticmethod
-    def create_df_table(data, metric, output_dir, custom_order):
+    def create_df_table(data, metric, output_dir, custom_order, feature_combo_mapping):
         """
         Create DataFrame from metrics data, save to Excel.
 
@@ -357,14 +357,20 @@ class Postprocessor:
             output_dir (str): Directory to save the Excel file.
         """
         if data:
-            filtered_data_points = [entry for entry in data if entry.get('samples_to_include') != 'control']
+            filtered_data_points = data  # [entry for entry in data if entry.get('samples_to_include') != 'control']
             df = pd.DataFrame(filtered_data_points)
             df.set_index(['crit', 'model', 'samples_to_include'], inplace=True)
-            df_pivot = df.pivot_table(values=f"m_{metric}", index=['crit', 'model', 'samples_to_include'], columns='feature_combination', aggfunc=np.mean)
-
-            # Round
-            df_pivot = df_pivot.round(3)
-            df_pivot = df_pivot.reindex(columns=custom_order)
+            df_pivot = df.pivot_table(
+                values=f"m_{metric}",
+                index=['crit', 'model', 'samples_to_include'],
+                columns='feature_combination',
+                aggfunc=np.mean
+            )
+            df_pivot = (df_pivot
+                        .reindex(columns=custom_order)
+                        .rename(columns=feature_combo_mapping)
+                        .round(3)
+                        )
 
             output_path = os.path.join(output_dir, f'cv_results_{metric}.xlsx')
             df_pivot.to_excel(output_path, merge_cells=True)
