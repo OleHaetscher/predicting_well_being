@@ -60,25 +60,25 @@ class BasePreprocessor(ABC):
 
     @property
     def path_to_sensing_data(self):
-        """Path to the folder containing the raw files for self.dataset."""
-        if self.dataset in ["cocoms", "zpid"]:  # os.path.join(self.path_to_raw_data, "country_level_vars")
+        """Path to the folder containing the Sensing data."""
+        if self.dataset in ["cocoms", "zpid"]:
             return os.path.join(self.var_cfg["preprocessing"]["path_to_raw_data"], self.dataset, "sensing_vars")
         else:
             return None
 
     @property
     def raw_trait_id_col(self):
-        """Dataset specific ID col, must be instantiated after the super.init of the subclasses."""
+        """Dataset specific Trait ID col, must be instantiated after the init method of the subclasses."""
         return self.fix_cfg["person_level"]["other_trait_columns"][0]["item_names"][self.dataset]
 
     @property
     def raw_esm_id_col(self):
-        """Dataset specific ID col, must be instantiated after the super.init of the subclasses."""
+        """Dataset specific ESM ID col, must be instantiated after the init method of the subclasses."""
         return self.fix_cfg["esm_based"]["other_esm_columns"][0]["item_names"][self.dataset]
 
     @property
     def raw_sensing_id_col(self):
-        """Dataset specific sensing ID col, must be instantiated after the super.init of the subclasses."""
+        """Dataset specific Sensing ID col, must be instantiated after the init method of the subclasses."""
         if self.dataset in ["cocoms", "zpid"]:
             return self.fix_cfg["sensing_based"]["phone"][0]["item_names"][self.dataset]
         else:
@@ -94,6 +94,7 @@ class BasePreprocessor(ABC):
         This function applies the preprocessing methods
 
         Returns:
+            pd.DataFrame: The fully preprocessed dataframe for a given dataset
 
         """
         self.logger.log(f"--------------------------------------------------------")
@@ -104,7 +105,6 @@ class BasePreprocessor(ABC):
         df_dct = self.data_loader.read_csv(path_to_dataset=self.path_to_raw_data)
         df_traits = None  # Initialize df_traits as None
         df_states = None
-        df_joint = None
 
         # Step 2: Process and transform trait data
         self.logger.log(f".")
