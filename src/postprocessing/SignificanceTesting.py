@@ -1,3 +1,5 @@
+import re
+
 from statsmodels.stats.multitest import fdrcorrection
 
 from src.utils.DataLoader import DataLoader
@@ -15,6 +17,8 @@ from scipy.stats import t
 from statsmodels.stats.multitest import fdrcorrection
 
 from collections import deque, defaultdict
+
+from src.utils.utilfuncs import defaultdict_to_dict, format_df
 
 
 class SignificanceTesting:
@@ -46,15 +50,16 @@ class SignificanceTesting:
             config_path: Path to the .YAML config file.
         """
         self.var_cfg = var_cfg
-        self.base_output_dir = self.var_cfg["postprocessing"]["significance_tests"]["output_path"]
+        self.sig_cfg = self.var_cfg["postprocessing"]["significance_tests"]
+        self.base_result_dir = self.var_cfg["postprocessing"]["significance_tests"]["base_result_path"]
         self.result_dct = None
-        self.metric = self.var_cfg["postprocessing"]["significance_tests"]["metric"]
+        self.metric = self.sig_cfg["metric"]
         self.data_loader = DataLoader()
 
         self.compare_model_results = {}
         self.compare_predictor_classes_results = {}
 
-    def significance_testing(self, dct):
+    def significance_testing(self):
         """
         Wrapper function that
             - compares models
@@ -89,96 +94,354 @@ class SignificanceTesting:
 
         """
         # compare models
-        data_for_compare_models = self.get_data(raw_dct=dct, comparison="models")
-        self.apply_compare_models(data_for_compare_models)
-        data_for_compare_predictor_classes = self.get_data(raw_dct=dct, comparison="predictor_classes")
-        self.apply_compare_predictor_classes(data_for_compare_predictor_classes)
+        if self.sig_cfg["compare_models"]:
+            data_to_compare_models = self.get_model_comparison_data()
+            sig_results_models = self.apply_compare_models(data_to_compare_models)
+            sig_results_models_fdr = self.fdr_correct_p_values(sig_results_models)
+            sig_results_models_table = self.create_sig_results_table_models(sig_results_models_fdr)
+            if self.sig_cfg["store"]:
+                file_name = os.path.join(self.base_result_dir, "compare_models.xlsx")
+                sig_results_models_table.to_excel(file_name, index=True)
 
-        self.fdr_correct_p_values()
+        # compare predictor classes
+        if self.sig_cfg["compare_predictor_classes"]:
+            data_to_compare_predictor_classes = self.get_predictor_class_comparison_data()
+            sig_results_predictor_classes = self.apply_compare_predictor_classes(data_to_compare_predictor_classes)
+            sig_results_predictor_classes_fdr = self.fdr_correct_p_values(sig_results_predictor_classes)
+            sig_results_predictor_classes_table = self.create_sig_results_table_predictor_classes(sig_results_predictor_classes_fdr)
+            if self.sig_cfg["store"]:
+                file_name = os.path.join(self.base_result_dir, "compare_predictor_classes.xlsx")
+                sig_results_predictor_classes_table.to_excel(file_name, index=True)
 
-    def get_data(self, raw_dct: dict, comparison: str) -> dict:
+    def create_sig_results_table_models(self, data_dct):
         """
+        Creates a pandas DataFrame from the nested dictionary structure.
 
         Args:
-            comparison:
+            data_dct:
 
         Returns:
-            dict: Dict containing the processed data for significance testing (e.g., the right metric for enr and rfr in
-                the final values).
-
+            pd.DataFrame: A DataFrame with:
+                          - Columns based on the first dictionary hierarchy (`outer_key`).
+                          - Multi-index rows:
+                              - Level 1: Inner dictionary keys (`second_key`).
+                              - Level 2: Metrics (`p_val`, `t_val`, `p_val_corrected`).
         """
-        # Initialize the result dictionary
-        processed_data = defaultdict(lambda: defaultdict(lambda: defaultdict(dict)))
+        # Flatten the dictionary into rows for easier DataFrame creation
+        flattened_data = []
 
-        # Check if the comparison is based on models
-        if comparison == "models":
-            # Traverse the raw dictionary
-            for fc, fc_vals in raw_dct.items():
-                for sti, sti_values in fc_vals.items():
-                    # Traverse the models under 'state_wb'
-                    if "state_wb" in sti_values:  # remove
-                        for model, model_vals in sti_values["state_wb"].items():
+        # Iterate through the nested dictionary structure
+        for feature_combo, inner_dict in data_dct.items():
+            for samples_to_include, metrics in inner_dict.items():
+                for stat, stat_value in metrics.items():
+                    # Add each metric as a separate row
+                    flattened_data.append({
+                        "Predictor class": feature_combo,
+                        "Samples to include": samples_to_include,
+                        "Stat": stat,
+                        "Stat value": stat_value
+                    })
 
-                            processed_data[fc][sti][model] = (
-                                        self.extract_metric_across_folds_imps(
-                                            data_dct=model_vals["cv_results"],
-                                            metric=self.metric
-                                        )
-                                    )
+        # Create a flat DataFrame
+        df = pd.DataFrame(flattened_data)
 
-        elif comparison == "predictor_classes":
-            # Fill full data
-            for fc, fc_vals in raw_dct.items():
-                if "all" in fc_vals:  # remove  -> no results yet, skip
-                    if "state_wb" in fc_vals["all"]:  # remove
-                        for model, models_vals in fc_vals["all"]["state_wb"].items():
-                            if "pl" in fc:
-                                processed_data["full_data"][model][fc] = (
-                                        self.extract_metric_across_folds_imps(
-                                            data_dct=models_vals["cv_results"],
-                                            metric=self.metric
-                                        )
-                                    )
-            # Fill reduced data
-            for fc, fc_vals in raw_dct.items():
-                if "control" in fc_vals or "selected" in fc_vals:
-                    for sti, sti_vals in fc_vals.items():
-                        if "state_wb" in sti_vals:
-                            for model, models_vals in sti_vals["state_wb"].items():
-                                if "pl_" in fc:
-                                    processed_data["reduced_data"][model][fc][sti] = (
-                                        self.extract_metric_across_folds_imps(
-                                            data_dct=models_vals["cv_results"],
-                                            metric=self.metric
-                                        )
-                                    )
-        else:
-            raise ValueError
-        return processed_data
+        # Format the table
+        df["Predictor class"] = df["Predictor class"].map(
+            self.var_cfg["postprocessing"]["plots"]["feature_combo_name_mapping"]
+        )
+        # Set custom order for stats
+        custom_order = self.sig_cfg["stat_order"]
+        df["Stat"] = pd.Categorical(df["Stat"], categories=custom_order, ordered=True)
+        df["Stat"] = df["Stat"].map(self.sig_cfg["stat_mapping"])
 
-    @staticmethod
-    def extract_metric_across_folds_imps(data_dct, metric: str):
+        # Pivot the DataFrame
+        df_pivoted = df.pivot(index=["Samples to include", "Stat"], columns="Predictor class", values="Stat value")
+
+        # Format the pivoted DataFrame
+        df_pivoted = format_df(df_pivoted, decimals=2)
+
+        return df_pivoted
+
+    def create_sig_results_table_predictor_classes(self, data_dct):
         """
-        This function extracts a given metric across outer folds and imputations for the significance tests
+        Creates a pandas DataFrame from the nested dictionary structure for predictor classes.
 
         Args:
-            data_dct: Dict with the levels reps/outer_folds/imp that contain the metrics as values
-            metric: Metric the significance tests are based on (r2)
+            data_dct: The nested dictionary structure.
 
         Returns:
-            metric_values (deque): A deque containing the 500 metric values
-
+            pd.DataFrame: A DataFrame with:
+                          - Columns based on the last dictionary keys before the statistics (e.g., `pl_mac`).
+                          - Multi-index rows:
+                              - Level 1: Model (e.g., `elasticnet`).
+                              - Level 2: Samples to include (e.g., `selected`).
+                              - Level 3: Statistics (e.g., `p_val`, `t_val`, `p_val_corrected`).
         """
-        metric_values = deque()
-        # Traverse replications, outer folds, and imputations
-        for rep_key, rep_vals in data_dct.items():
-            for fold_key, fold_vals in rep_vals.items():
-                for imp_key, imp_vals in fold_vals.items():
-                    # Extract the 'r2' value and add to the deque
-                    r2_val = imp_vals.get(metric, None)
-                    if r2_val is not None:
-                        metric_values.append(r2_val)
-        return metric_values
+        # Flatten the dictionary into rows for easier DataFrame creation
+        flattened_data = []
+
+        # Iterate through the nested dictionary structure
+        for model, sample_dict in data_dct.items():
+            for sample, feature_dict in sample_dict.items():
+                for feature, metrics in feature_dict.items():
+                    for metric_key, metric_value in metrics.items():
+                        # Add each metric as a separate row
+                        flattened_data.append({
+                            "Prediction model": model,
+                            "Samples to include": sample,
+                            "Predictor class": feature,
+                            "Stat": metric_key,
+                            "Stat value": metric_value
+                        })
+
+        # Create a flat DataFrame
+        df = pd.DataFrame(flattened_data)
+
+        # Format the table
+        df["Predictor class"] = df["Predictor class"].map(
+            self.var_cfg["postprocessing"]["plots"]["feature_combo_name_mapping"]
+        )
+        # Set custom order for stats
+        custom_order = self.sig_cfg["stat_order"]
+        df["Stat"] = pd.Categorical(df["Stat"], categories=custom_order, ordered=True)
+        df["Stat"] = df["Stat"].map(self.sig_cfg["stat_mapping"])
+
+        # Pivot the DataFrame to create the desired structure
+        df_pivoted = df.pivot(index=["Prediction model", "Samples to include", "Stat"], columns="feature", values="Stat value")
+
+        df_pivoted = format_df(df_pivoted, decimals=2)
+
+        return df_pivoted
+
+    def get_model_comparison_data(self):
+        """
+        This method loads the JSON files containing the CV results data necessary to compare the models.
+
+        Returns:
+            A Dict containing the relevant data for testing in the following format:
+            {
+                "pl": {
+                    "all": {
+                        "randomforestregressor": [list with 500 values],
+                        "elasticnet": [list with 500 values]
+                    },
+                    "selected": {
+                        ...
+                    },
+                },
+                ...
+            }
+        """
+
+        # Extract configuration
+        feature_combos = self.sig_cfg["model_comparison_data"]["feature_combinations"]
+        samples_to_include = self.sig_cfg["model_comparison_data"]["samples_to_include"]
+        metric = self.sig_cfg["metric"]  # e.g. "r2"
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        models = ["elasticnet", "randomforestregressor"]
+
+        # Precompile pattern
+        file_pattern = re.compile(r"cv_results_rep_\d+\.json")
+
+        # Using a nested defaultdict to avoid repeated setdefault calls
+        # Structure: results[feature_combo][sample][model] = list of metrics
+        results = defaultdict(lambda: defaultdict(lambda: defaultdict(list)))
+
+        for dirpath, dirnames, filenames in os.walk(self.base_result_dir):
+            # Normalize and split directory path for checks
+            dir_components = os.path.normpath(dirpath).split(os.sep)
+
+            # Check if this directory contains one of the desired feature combos and samples
+            feature_combo = next((fc for fc in feature_combos if fc in dir_components), None)
+            sample = next((s for s in samples_to_include if s in dir_components), None)
+            if not feature_combo or not sample:
+                continue
+
+            # Identify the model from the directory path if present
+            model = next((m for m in models if m in dir_components), None)
+            if not model:
+                continue
+
+            # Process JSON files that match the pattern
+            for filename in filenames:
+                if not file_pattern.match(filename):
+                    continue
+
+                filepath = os.path.join(dirpath, filename)
+                with open(filepath, "r") as f:
+                    data = json.load(f)
+
+                # Extract the metric values
+                for outer_fold_data in data.values():
+                    for metrics in outer_fold_data.values():
+                        if metric in metrics:
+                            results[feature_combo][sample][model].append(metrics[metric])
+
+        results_dct = defaultdict_to_dict(results)
+        return results_dct
+
+    def get_predictor_class_comparison_data(self):
+        """
+        Loads the JSON files containing the CV results data for comparing models (predictor classes).
+
+        The returned structure:
+        {
+            model: {
+                "all": {
+                    feature_combo: [metrics...],
+                    ...
+                },
+                "selected": {
+                    feature_combo: [metrics...],
+                    ...
+                }
+            },
+            ...
+        }
+
+        Logic:
+        - "all": take data from the "all" sample directly.
+        - "selected":
+            * For "pl", take data from "control" sample.
+            * For other feature combos, take data from "selected" sample.
+        """
+
+        # Extract configuration details
+        feature_combos = self.sig_cfg["predictor_class_comparison_data"]["feature_combinations"]
+        samples_to_include = self.sig_cfg["predictor_class_comparison_data"]["samples_to_include"]
+        metric = self.sig_cfg["metric"]
+
+        file_pattern = re.compile(r"cv_results_rep_\d+\.json")
+
+        # Collect raw data
+        # raw_data[model][sample][feature_combo] = list of metric values
+        raw_data = defaultdict(lambda: defaultdict(lambda: defaultdict(list)))
+
+        for dirpath, _, filenames in os.walk(self.base_result_dir):
+            dir_components = os.path.normpath(dirpath).split(os.sep)
+
+            # Identify feature_combo and sample if present
+            feature_combo = next((fc for fc in feature_combos if fc in dir_components), None)
+            sample = next((s for s in samples_to_include if s in dir_components), None)
+
+            if not feature_combo or not sample:
+                continue
+
+            # Identify model:
+            # The model should be a directory component that is neither a sample nor a feature combo.
+            # We assume model names appear in dir_components.
+            # Filter out known samples and feature combos.
+            possible_models = [c for c in dir_components if c not in samples_to_include and c not in feature_combos]
+            if not possible_models:
+                # If we can't find a model in the path, skip
+                continue
+
+            # Assume the last remaining component that isn't a sample or feature combo is the model
+            # If there are multiple, choose the first. Adjust logic if needed.
+            model = possible_models[-1]
+
+            # Process files
+            for filename in filenames:
+                if not file_pattern.match(filename):
+                    continue
+
+                filepath = os.path.join(dirpath, filename)
+                with open(filepath, "r") as f:
+                    data = json.load(f)
+
+                # Extract the specified metric
+                for outer_fold_data in data.values():
+                    for metrics_data in outer_fold_data.values():
+                        if metric in metrics_data:
+                            raw_data[model][sample][feature_combo].append(metrics_data[metric])
+
+        final_results = {}
+        for model, model_data in raw_data.items():
+            all_pairs = []
+            selected_pairs = []
+
+            # Cache the baseline 'pl' data for the 'all' scenario
+            all_pl = model_data.get("all", {}).get("pl", [])
+
+            # For the 'selected' scenario, 'pl' is derived from each combo under 'control'.
+            # We'll get this inside the loop.
+
+            # For each feature combination (except 'pl'), create pairs with 'pl'
+            for c in feature_combos:
+                if c == "pl":
+                    # Skip 'pl' itself, as we only create pairs comparing 'pl' with another combo
+                    continue
+
+                # For 'all':
+                # 'pl' from model_data["all"]["pl"]
+                # c from model_data["all"][c]
+                c_all_data = model_data.get("all", {}).get(c, [])
+                all_pairs.append({
+                    "pl": all_pl,
+                    c: c_all_data
+                })
+
+                # For 'selected':
+                # 'pl' data comes from c/control
+                # c data comes from c/selected
+                pl_selected_data = model_data.get("control", {}).get(c, [])
+                c_selected_data = model_data.get("selected", {}).get(c, [])
+                selected_pairs.append({
+                    "pl": pl_selected_data,
+                    c: c_selected_data
+                })
+
+            final_results[model] = {
+                "all": all_pairs,
+                "selected": selected_pairs
+            }
+
+        return final_results
 
     def apply_compare_models(self, processed_data: dict) -> None:
         """
@@ -190,7 +453,7 @@ class SignificanceTesting:
         Returns:
             dict: The same processed_data dictionary, but with test results (p_val, t_val, etc.) replacing the original lists.
         """
-
+        sig_results_dct = defaultdict(lambda: defaultdict(dict))
         for fc, fc_vals in processed_data.items():
             for sti, model_data in fc_vals.items():
                 if len(model_data) < 2:
@@ -209,13 +472,16 @@ class SignificanceTesting:
                 # Perform the corrected dependent t-test
                 t_val, p_val = self.corrected_dependent_ttest(data1, data2)
 
-                # Replace the r2 values with the test results
-                processed_data[fc][sti] = {
-                    'model_comparison': f"{model1_name} vs {model2_name}",
+                # Get results into the result_dct
+                sig_results_dct[fc][sti] = {
+                    # 'model_comparison': f"{model1_name} vs {model2_name}",
                     'p_val': p_val,
                     't_val': np.round(t_val, 2)
                 }
-        self.compare_model_results = processed_data
+
+        sig_results_dct = defaultdict_to_dict(sig_results_dct)
+
+        return sig_results_dct
 
     def apply_compare_predictor_classes(self, processed_data: dict) -> None:
         """
@@ -227,46 +493,31 @@ class SignificanceTesting:
 
         """
         # Iterate over models
-        for model, model_vals in processed_data["full_data"].items():
-            # First, identify the 'pl' feature class values
-            if "pl" not in model_vals:
-                print(f"WARNING: 'pl' feature class not found for model {model}, SKIP")
-                continue
+        sig_results_dct = defaultdict(lambda: defaultdict(dict))
+        for model, model_vals in processed_data.items():  # enr / rfr
+            for samples_to_include, samples_to_include_vals in model_vals.items():  # all / selected
+                for comparison in samples_to_include_vals:  # just numbers: TODO Use second key of child
+                    dct_values = list(comparison.values())
+                    pl_combo_key = list(comparison.keys())[1]
+                    pl_data = dct_values[0]
+                    pl_combo_data = dct_values[1]
 
-            pl_vals = model_vals["pl"]  # Get the 'pl' feature class values
+                    # Perform the corrected dependent t-test between 'pl' and the current feature class
+                    if pl_data and pl_combo_data:
+                        pl_m, pl_sd = np.mean(pl_data), np.std(pl_data)
+                        pl_combo_m, pl_combo_sd = np.mean(pl_combo_data), np.std(pl_combo_data)
+                        t_val, p_val = self.corrected_dependent_ttest(pl_data, pl_combo_data)
 
-            # Now, iterate through the other feature classes and compare them with 'pl'
-            for fc, fc_vals in model_vals.items():
-                if fc == "pl":
-                    continue  # Skip the 'pl' comparison with itself
+                        # Get results into the result_dct
+                        sig_results_dct[model][samples_to_include][pl_combo_key] = {
+                            'p_val': p_val,
+                            't_val': np.round(t_val, 2)
+                        }
 
-                # Perform the corrected dependent t-test between 'pl' and the current feature class
-                t_val, p_val = self.corrected_dependent_ttest(pl_vals, fc_vals)
+        sig_results_dct = defaultdict_to_dict(sig_results_dct)
+        return sig_results_dct
 
-                # Store the comparison results for the current feature class
-                processed_data["full_data"][model][fc] = {
-                    'comparison_with_pl': f"{fc} vs pl",
-                    'p_val': p_val,
-                    't_val': round(t_val, 2)
-                }
-
-        for model, model_vals in processed_data["reduced_data"].items():
-            for fc, fc_vals in model_vals.items():
-                if len(fc_vals) < 2:
-                    print(f"WARNING: Not enough data yet, SKIP")
-                    # raise ValueError(f"Not enough models to compare in {fc}/{sti}")
-                    continue
-                # Perform the corrected dependent t-test
-                t_val, p_val = self.corrected_dependent_ttest(fc_vals["selected"], fc_vals["control"])
-                processed_data["reduced_data"][model][fc] = {
-                'model_comparison': f"{fc} vs pl",
-                'p_val': p_val,
-                't_val': round(t_val, 2)
-                }
-
-        self.compare_predictor_classes_results = processed_data
-
-    def fdr_correct_p_values(self):
+    def fdr_correct_p_values(self, data_dct):
         """
         Correct p-values using False Discovery Rate (FDR) as described by Benjamini & Hochberg (1995).
         This function works recursively to find all instances of 'p_val' in a nested dictionary structure.
@@ -278,32 +529,38 @@ class SignificanceTesting:
         p_val_locations = []
 
         # Helper function to recursively traverse the dictionary
-        def find_p_values(d):
+        def find_p_values(d, path=None):
+            if path is None:
+                path = []
+
             for key, value in d.items():
+                current_path = path + [key]  # Extend the path with the current key
                 if isinstance(value, dict):
                     # Recursively search nested dictionaries
-                    find_p_values(value)
+                    find_p_values(value, current_path)
                 elif key == "p_val":
                     # Collect the p_val and its dictionary reference
                     p_values.append(value)
-                    p_val_locations.append((d, key))
+                    p_val_locations.append(d)  # Store the dictionary where the p_val exists
 
         # Start the recursive search
-        find_p_values(self.compare_model_results)
-        find_p_values(self.compare_predictor_classes_results)
-        print()
+        find_p_values(data_dct)
 
         # Apply FDR correction on collected p-values
         if p_values:
             adjusted_p_values = fdrcorrection(p_values)[1]
 
             # Format the p_values for the table accordingly (if you have a format function)
-            formatted_p_values = self.format_p_values(adjusted_p_values)
+            formatted_p_values_fdr = self.format_p_values(adjusted_p_values)
+            # Also format the original p values
+            formatted_p_values = self.format_p_values(p_values)
 
             # Insert the corrected p-values back into the same dictionary locations
-            for i, (p_val_dict, key) in enumerate(p_val_locations):
-                p_val_dict["p_val_corrected"] = formatted_p_values[i]
-        print()
+            for i, p_val_dct in enumerate(p_val_locations):
+                p_val_dct["p_val_fdr"] = formatted_p_values_fdr[i]
+                p_val_dct["p_val"] = formatted_p_values[i]
+
+        return data_dct  # Return the updated dictionary
 
     @staticmethod
     def corrected_dependent_ttest(data1, data2, test_training_ratio=1 / 9):
@@ -344,8 +601,11 @@ class SignificanceTesting:
         for p_val in lst_of_p_vals:
             if p_val < 0.001:
                 formatted_p_vals.append("<.001")
-            else:
+            elif p_val < 0.01:
                 formatted = "{:.3f}".format(p_val).lstrip("0")
+                formatted_p_vals.append(formatted)
+            else:
+                formatted = "{:.2f}".format(p_val).lstrip("0")
                 formatted_p_vals.append(formatted)
         return formatted_p_vals
 

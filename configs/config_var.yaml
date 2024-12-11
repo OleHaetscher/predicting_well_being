@@ -301,11 +301,50 @@ postprocessing:
     - pearson
 
   significance_tests:
-    output_path: "../results/significance_tests"
+    base_result_path: "../results/significance_testing"  # this contains only the results necessary for testing
     alpha: 0.05 # .05
     metric: r2 # r2
-    methods:
-      - xxx
+    crit: wb_state  # do this only for wb_state
+    store: true
+    stat_order: ["t_val", "p_val", "p_val_fdr"]
+
+    stat_mapping:
+      t_val: "t"
+      p_val: "p"
+      p_val_fdr: "p (FDR-corrected)"
+
+
+    compare_models: true
+    compare_predictor_classes: true
+
+    model_comparison_data:
+      feature_combinations:
+        - pl
+        - srmc
+        - mac
+        - sens
+        - pl_srmc
+        - pl_sens
+        - pl_srmc_sens
+        - pl_mac
+        - pl_srmc_mac
+        - all_in
+      samples_to_include:
+        - all
+        - selected
+        - control
+    predictor_class_comparison_data:
+      feature_combinations:
+        - pl
+        - pl_srmc
+        - pl_sens
+        - pl_srmc_sens
+        - pl_mac
+        - pl_srmc_mac
+      samples_to_include:
+        - all
+        - selected
+        - control
 
   plots:  # TODO: Adhere to NHB Style
     store_plots: false
@@ -386,7 +425,7 @@ postprocessing:
 
       prediction_model: [randomforestregressor]  # must be iterable
       crit: [wb_state] # must be iterable
-      samples_to_include: [ combo ] # must be iterable
+      samples_to_include: [ all ] # must be iterable
       num_to_display: 6
       figure:
         num_rows: 4  # 3

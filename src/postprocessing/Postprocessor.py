@@ -84,6 +84,12 @@ class Postprocessor:
                     SHAP beeswarm plots representing the most imortant features for all feature combinations
                     SHAP importance plots TBA
         """
+        test_dir = "../results/test_ia_values/selected/wb_state/randomforestregressor/shap_ia_values_summary.pkl"
+        test_dir_2 = "../results/test_ia_values/selected/pa_state/randomforestregressor/shap_ia_values_summary.pkl"
+        test_1 = self.data_loader.read_pkl(test_dir)
+        test_2 = self.data_loader.read_pkl(test_dir_2)
+        print()
+
         if "sanity_check_pred_vs_true" in self.methods_to_apply:
             self.sanity_check_pred_vs_true()
 
@@ -147,7 +153,7 @@ class Postprocessor:
 
         if "conduct_significance_tests" in self.methods_to_apply:
             # TODO: Complete, with simulated data?
-            self.significance_testing.significance_testing(dct=self.cv_results_dct.copy())
+            self.significance_testing.significance_testing()  # (dct=self.cv_results_dct.copy())
 
         if "create_cv_results_plots" in self.methods_to_apply:
             if self.cv_results_dct:
