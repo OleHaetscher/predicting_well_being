@@ -8,6 +8,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import shap
 from matplotlib.colors import LinearSegmentedColormap
+from matplotlib.ticker import FuncFormatter
 
 
 class ResultPlotter:
@@ -27,7 +28,7 @@ class ResultPlotter:
         self.store_plots = self.plot_cfg["store_plots"]
         self.feature_combo_mapping = self.plot_cfg["feature_combo_name_mapping"]
 
-    def plot_cv_results_plots_wrapper(self, data_to_plot: dict, rel: Union[float, None] = None):
+    def plot_cv_results_plots_wrapper(self, data_to_plot: dict, metric: str, rel: Union[float, None] = None):
         """
         Wrapper function for the "plot_cv_results_plots" function. It
             - gets the data-indepdenent parameters for the plot from the config
@@ -37,6 +38,7 @@ class ResultPlotter:
 
         Args:
             data_to_plot (dict): Dict containing the cv_results
+            metric:
             rel: Reliability of the specific crit, if None, it is not included in the plots
         """
         # Get meta-params of the plot that are equal for all combinations. Could be a seperate method though
@@ -70,7 +72,7 @@ class ResultPlotter:
                     feature_combinations=feature_combinations
                 )
                 # Create margin dct to display the incremental performance
-                pl_margin_dct = self.compute_pl_margin(filtered_metrics)
+                pl_margin_dct = self.compute_pl_margin(filtered_metrics, metric)
 
                 # Create dict with reference values for the incremental performance
                 pl_ref_dct = {
@@ -92,6 +94,7 @@ class ResultPlotter:
                     color_dct=color_dct,
                     fontsizes=cv_results_fontsizes,
                     figure_params=cv_results_figure_params,
+                    metric=metric,
                     rel=rel,
                     )
 
@@ -167,6 +170,7 @@ class ResultPlotter:
                               color_dct,
                               fontsizes,
                               figure_params,
+                              metric,
                               rel=None,
                               ):
         """ # TODO: add significance brackets for both comparison (ENR / RFR as well as incremental change?)
@@ -200,36 +204,31 @@ class ResultPlotter:
                     # Plot for the first column (Within Conceptual Levels)
                     self.plot_bar_plot(
                         ax=ax,
+                        row_idx=row_idx,
                         data=single_category_metrics,
                         order=[category],
                         models=models,
                         color_dct=color_dct,
                         feature_combo_mapping=self.feature_combo_mapping,
-                        rel=rel
-                    )
-                elif col_idx == 1:
-                    # Plot for the second column (Across Two Conceptual Levels)
-                    self.plot_incremental_bar_plot(
-                        ax=ax,
-                        data=single_category_metrics,
-                        pl_margin_dct=pl_margin_dct,
-                        order=[category],
-                        feature_combo_mapping=self.feature_combo_mapping,
-                        models=models,
-                        color_dct=color_dct,
+                        metric=metric,
+                        fontsizes=fontsizes,
+                        bar_width=figure_params["bar_width"],
                         rel=rel,
-                        pl_reference_dct=pl_ref_dct
                     )
-                elif col_idx == 2 and row_idx < 1:  # < 2:  # TODO Adjust bar color problem
-                    # Plot in the third column (Across three conceptual levels, only the first 2 rows)
+                elif col_idx == 1 or col_idx == 2 and row_idx < 1:
+                    # Plot for the second and third column (Across Two Conceptual Levels)
                     self.plot_incremental_bar_plot(
                         ax=ax,
+                        row_idx=row_idx,
                         data=single_category_metrics,
                         pl_margin_dct=pl_margin_dct,
                         order=[category],
                         feature_combo_mapping=self.feature_combo_mapping,
                         models=models,
                         color_dct=color_dct,
+                        metric=metric,
+                        fontsizes=fontsizes,
+                        bar_width=figure_params["bar_width"],
                         rel=rel,
                         pl_reference_dct=pl_ref_dct
                     )
@@ -241,12 +240,20 @@ class ResultPlotter:
                     pad=figure_params["title_pad"],
                     fontweight="bold"
                 )
-                ax.tick_params(axis='x', labelsize=fontsizes["tick_params"])
+                # Remove frames around the plot
+                ax.spines['top'].set_visible(False)
+                ax.spines['right'].set_visible(False)
+                ax.spines['left'].set_visible(False)
+
+                # Show x-axis only for the bottom row
+                if row_idx < len(group) - 1:
+                    ax.tick_params(axis='x', bottom=False, labelbottom=False)
+                    ax.spines['bottom'].set_visible(False)
                 ax.tick_params(axis='y', labelsize=fontsizes["tick_params"])
 
         # Create a legend in the lower right corner
-        randomforest_patch = mpatches.Patch(facecolor='white', edgecolor='black', label='RandomForestRegressor (Upper Bar)')
-        elasticnet_patch = mpatches.Patch(facecolor='white', edgecolor='black', label='ElasticNet (Lower Bar)')
+        randomforest_patch = mpatches.Patch(facecolor='lightgray', edgecolor='black', label='RFR (Upper Bar)')
+        elasticnet_patch = mpatches.Patch(facecolor='gray', edgecolor='black', label='ENR (Lower Bar)')
         legends_to_handle = [randomforest_patch, elasticnet_patch]
         if rel:
             reliability_line = mlines.Line2D([], [], color='black', linestyle='--', linewidth=1.2, label='Reliability = .90')
@@ -256,7 +263,7 @@ class ResultPlotter:
         fig.legend(
             handles=legends_to_handle,
             loc='lower right',
-            bbox_to_anchor=(0.98, 0.15),
+            bbox_to_anchor=tuple(figure_params["legend_pos"]),
             ncol=1,
             frameon=False,
             title="",
@@ -277,7 +284,18 @@ class ResultPlotter:
         else:
             plt.show()
 
-    def plot_bar_plot(self, ax, data, order, models, color_dct, feature_combo_mapping, rel=None):
+    def plot_bar_plot(self,
+                      ax,
+                      data,
+                      order,
+                      models,
+                      color_dct,
+                      feature_combo_mapping,
+                      fontsizes,
+                      metric,
+                      bar_width,
+                      row_idx,
+                      rel=None):
         """
         Plots a bar plot for the given data with error bars, with each feature group displayed separately.
         Uses different saturation levels to differentiate models and adds a vertical line for `rel`.
@@ -290,9 +308,8 @@ class ResultPlotter:
             color_dct: Optional dict of colors for each feature category.
             rel: vertical line value to indicate a threshold.
         """
-        metric = "m_spearman"
-        error_metric = "sd_spearman"
-        bar_width = 0.15
+        m_metric = f"m_{metric}"
+        sd_metric = f"sd_{metric}"
 
         # Generate bar positions for each feature group
         y_positions = np.arange(len(order))
@@ -305,8 +322,8 @@ class ResultPlotter:
                 alpha = 1 if model == "elasticnet" else 0.7
 
                 model_key = f"{feature}_{model}"
-                value = data.get(model_key, {}).get(metric, 0)
-                error = data.get(model_key, {}).get(error_metric, 0)
+                value = data.get(model_key, {}).get(m_metric, 0)
+                error = data.get(model_key, {}).get(sd_metric, 0)
 
                 # Plot the bar with adjusted color
                 ax.barh(y_positions[j] + (i * bar_width), value, xerr=error, height=bar_width,
@@ -317,19 +334,17 @@ class ResultPlotter:
                 # bottom, top = ax.get_ylim()
                 # may place some significance bracket here
 
-        # Set y-ticks to the feature group labels in reversed order
-        ax.set_yticks(y_positions + bar_width / 2)
-
-        new_lst = [feature_combo_mapping[feature] for feature in order]
-        ax.set_yticklabels(new_lst, fontsize=15)
-        ax.tick_params(axis='x', labelsize=15)
-        if "spearman" in metric:
-            ax.set_xlabel(r'$\rho$', fontsize=15)
-        # ax.grid(True, linestyle='--', linewidth=0.5, alpha=0.7)
-
-        # Draw the rel line if rel is provided
-        if rel:
-            ax.axvline(x=rel, color='black', linestyle='--', linewidth=1.2, label=f'Rel ({rel:.2f})')
+        self.format_bar_plot(
+            ax=ax,
+            row_idx=row_idx,
+            y_positions=y_positions,
+            bar_width=bar_width,
+            feature_combo_mapping=feature_combo_mapping,
+            order=order,
+            metric=metric,
+            fontsizes=fontsizes,
+            rel=rel
+        )
 
     def plot_incremental_bar_plot(self,
                                   ax,
@@ -340,6 +355,10 @@ class ResultPlotter:
                                   models,
                                   color_dct,
                                   feature_combo_mapping,
+                                  fontsizes,
+                                  metric,
+                                  row_idx,
+                                  bar_width,
                                   rel=None):
         """
         Plots an incremental bar plot, splitting each bar into 'pl' base and the incremental effect.
@@ -352,18 +371,17 @@ class ResultPlotter:
             models: list of models.
             color_dct: Color dictionary for each feature.
         """
-        metric = "m_spearman"
-        error_metric = "sd_spearman"
-        bar_width = 0.3
+        print(metric)
+        m_metric = f"m_{metric}"
+        sd_metric = f"sd_{metric}"
         y_positions = np.arange(len(order))
-        # TODO: Add two color option
 
         for i, model in enumerate(models):
             for j, feature in enumerate(order):
                 # Combination, plot incremental bar
-                base_value = pl_reference_dct[model][metric]
-                increment = pl_margin_dct.get(f"{feature}_{model}", {}).get("incremental_m_spearman", 0)
-                error = data[f"{feature}_{model}"][error_metric]
+                base_value = pl_reference_dct[model][m_metric]
+                increment = pl_margin_dct.get(f"{feature}_{model}", {}).get(f"incremental_{m_metric}", 0)
+                error = data[f"{feature}_{model}"][sd_metric]
 
                 base_feature = feature.split("_")[1]
                 other_feat_color = color_dct[base_feature]
@@ -376,24 +394,104 @@ class ResultPlotter:
                     ax.barh(y_positions[j] + (i * bar_width), increment, left=base_value, height=bar_width,
                             xerr=error, color=other_feat_color, align='center', edgecolor=None, alpha=alpha,
                             capsize=5)
-                else:
+                else:  # TODO Fix this for pl_sens -> negative
                     ax.barh(y_positions[j] + (i * bar_width), 0, left=base_value, height=bar_width,
                             xerr=error, color=other_feat_color, align='center', edgecolor=None, alpha=alpha, # hatch
                             capsize=5)
 
-            ax.set_yticks(y_positions + bar_width / 2)
+            self.format_bar_plot(
+                ax=ax,
+                row_idx=row_idx,
+                y_positions=y_positions,
+                bar_width=bar_width,
+                feature_combo_mapping=feature_combo_mapping,
+                order=order,
+                metric=metric,
+                fontsizes=fontsizes,
+                rel=rel
+            )
 
-            new_lst = [feature_combo_mapping[feature] for feature in order]
-            formatted_labels = [label.replace('+', '\n +') for label in new_lst]
-            ax.set_yticklabels(formatted_labels, fontsize=15)
-            ax.tick_params(axis='x', labelsize=15)
-            if "spearman" in metric:
-                ax.set_xlabel(r'$\rho$', fontsize=15)
-            # ax.grid(True, linestyle='--', linewidth=0.5, alpha=0.7)
+    def format_bar_plot(self, ax, row_idx, y_positions, bar_width, feature_combo_mapping, order, fontsizes, metric, rel=None):
+        """
+        Formats the bar plot by setting y-ticks, x-axis label based on the metric, and an optional reference line.
 
-            # Draw the rel line
-            if rel:
-                ax.axvline(x=rel, color='black', linestyle='--', linewidth=1.2, label=f'Rel ({rel:.2f})')
+        Args:
+            ax: Matplotlib Axes object to format.
+            y_positions: Array of y positions for the bars.
+            bar_width: Width of the bars.
+            feature_combo_mapping: Dictionary mapping features to their group labels.
+            order: List of features in the desired order for the y-axis.
+            metric: Metric for the x-axis label ("spearman", "pearson", or "r2").
+            rel: Optional float, the reference line value to draw.
+        """
+        # Set y-ticks to the feature group labels in reversed order
+        ax.set_yticks(y_positions + bar_width / 2)
+
+        # Map features to their group labels
+        feature_combos = [feature_combo_mapping[feature] for feature in order]
+        # Format feature combinations
+        feature_combos_str_format = [self.line_break_strings(combo, max_char_on_line=17)
+                                     for combo in feature_combos]
+        ax.set_yticklabels(feature_combos_str_format, fontsize=fontsizes["tick_params"])
+
+        ax.spines['left'].set_visible(False)
+
+        # Apply custom APA-style formatting to the x-axis
+        ax.xaxis.set_major_formatter(FuncFormatter(lambda x, _: self.format_metric(x)))
+
+        # Set tick parameters
+        ax.tick_params(axis='x', labelsize=fontsizes["tick_params"])
+        ax.tick_params(axis='y', which='major', pad=10, length=0)
+
+        # Set x-axis label based on the metric
+        if row_idx == 3:
+            if metric == "spearman":
+                ax.set_xlabel(r'$\rho$', fontsize=fontsizes["label"], labelpad=10)
+            elif metric == "pearson":
+                ax.set_xlabel(r'$r$', fontsize=fontsizes["label"], labelpad=10)  # Italicized r in LaTeX
+            elif metric == "r2":
+                ax.set_xlabel(r'$R^2$', fontsize=fontsizes["label"], labelpad=10)
+
+        # Draw the reference line if provided
+        if rel is not None:
+            ax.axvline(x=rel, color='black', linestyle='--', linewidth=1.2, label=f'Rel ({rel:.2f})')
+
+    @staticmethod
+    def format_metric(metric: float) -> str:
+        """
+        Formats a given metric according to APA style:
+        - No leading zero for correlations or R² values (e.g., .85 instead of 0.85).
+        - Rounded to two decimal places.
+
+        Args:
+            metric: The metric to be formatted (e.g., a correlation or R² value).
+
+        Returns:
+            A string representation of the formatted metric.
+        """
+        if metric == 0:
+            return 0
+
+        if not isinstance(metric, (float, int)):
+            raise ValueError("The metric must be a numeric value.")
+
+        # Round to two decimals
+        rounded_metric = round(metric, 2)
+
+        # Format without leading zero
+        formatted_metric = f"{rounded_metric:.2f}".lstrip('0').replace('-.', '-0.')
+
+        return formatted_metric
+
+    def apply_formatted_x_axis(self, ax):
+        """
+        Applies the APA-style formatting to the x-axis of a plot.
+
+        Args:
+            ax: The Matplotlib Axes object whose x-axis needs formatting.
+        """
+        formatter = FuncFormatter(lambda x, _: self.format_metric(x))
+        ax.xaxis.set_major_formatter(formatter)
 
     def add_significance_bracket(self, ax, y1, y2, significance_level):
         """  # TODO Not used ATM
@@ -457,7 +555,7 @@ class ResultPlotter:
         # Return figure and axes array
         return fig, axes
 
-    def compute_pl_margin(self, filtered_metrics: dict):
+    def compute_pl_margin(self, filtered_metrics: dict, metric: str):
         """
         Computes the incremental performance difference for all combinations involving 'pl' (e.g., 'pl_srmc')
         compared to the base 'pl' metric for each model.
@@ -470,6 +568,8 @@ class ResultPlotter:
         """
         # Initialize a dictionary to store the incremental performance margins
         pl_margin_dict = {}
+        m_metric = f"m_{metric}"
+        sd_metric = f"sd_{metric}"
 
         # Get base metrics for 'pl' only (e.g., 'pl_elasticnet' and 'pl_randomforestregressor')
         base_metrics = {key: value for key, value in filtered_metrics.items() if key.startswith("pl_") and "_" not in key[len("pl_"):]}
@@ -477,19 +577,18 @@ class ResultPlotter:
         # Loop over each key in the filtered_metrics that contains 'pl_' but is not the base 'pl'
         for key, value in filtered_metrics.items():
             if key.startswith("pl_") and key not in base_metrics:
-                # Extract the model (e.g., 'elasticnet' or 'randomforestregressor') from the key
                 model = key.split('_')[-1]
                 base_key = f"pl_{model}"
 
                 # Check if the base metric exists
                 if base_key in base_metrics:
-                    # Calculate the difference in metric ('m_spearman') for the combination vs the base 'pl'
-                    incremental_difference = value['m_spearman'] - base_metrics[base_key]['m_spearman']
+                    # Calculate the difference in metric  for the combination vs the base 'pl'
+                    incremental_difference = value[m_metric] - base_metrics[base_key][m_metric]
 
                     # Store the incremental difference with the key indicating the combination and model
                     pl_margin_dict[key] = {
-                        'incremental_m_spearman': incremental_difference,
-                        'sd_spearman': value['sd_spearman']  # Keep the standard deviation of the combination
+                        f'incremental_m_{metric}': incremental_difference,
+                        sd_metric: value[sd_metric]  # Keep the standard deviation of the combination
                     }
 
         return pl_margin_dict
@@ -613,12 +712,14 @@ class ResultPlotter:
                             shap_values = data_current[predictor_combination]
                             ax = axes[row][col]
                             plt.sca(ax)
+                            feature_names_formatted = [self.line_break_strings(feature_name, max_char_on_line=28)
+                                                       for feature_name in shap_values.feature_names]
 
                             # Plot the SHAP beeswarm plot in the specified subplot
                             shap.summary_plot(
                                 shap_values.values,
                                 shap_values.data,
-                                feature_names=shap_values.feature_names,
+                                feature_names=feature_names_formatted,
                                 max_display=num_to_display,
                                 show=False,
                                 plot_size=None,
@@ -711,6 +812,55 @@ class ResultPlotter:
             self.store_plot(plot_name="pred_vs_true_scatter", crit=crit, samples_to_include=samples_to_include, model=model)
         else:
             plt.show()
+
+    def line_break_strings(self, strng: str, max_char_on_line: int, split_strng: str = None) -> str:
+        """
+        This function formats a string so that no line exceeds `max_char_on_line` characters.
+        Priority for splitting:
+        1. If `split_strng` is given, it tries to split after this substring within the first `max_char_on_line` characters.
+        2. If `split_strng` is not found or not given, it attempts to break at a space before `max_char_on_line`.
+        3. If no space is found, it breaks exactly at `max_char_on_line`.
+
+        Args:
+            strng: The input string to format.
+            max_char_on_line: The maximum number of characters allowed per line.
+            split_strng: An optional string that, if present, we try to break after it first.
+
+        Returns:
+            A string with newline characters inserted so that each line is at most `max_char_on_line` characters long.
+        """
+        # Base case: If the string fits within the limit or is empty, return as is.
+        if len(strng) <= max_char_on_line:
+            return strng
+
+        # Consider one character beyond max_char_on_line to detect split points right at the limit
+        substring = strng[:max_char_on_line + 1]
+
+        # Try to break at split_strng if provided
+        if split_strng is not None:
+            split_pos = substring.rfind(split_strng)
+            if split_pos != -1:
+                # Found the split_strng before max_char_on_line. Break after it.
+                break_pos = split_pos + len(split_strng)
+            else:
+                # If not found, fall back to space logic
+                break_pos = substring.rfind(' ')
+                if break_pos == -1:
+                    # No space found, break exactly at max_char_on_line
+                    break_pos = max_char_on_line
+        else:
+            # No split_strng provided, fallback to the original space logic directly
+            break_pos = substring.rfind(' ')
+            if break_pos == -1:
+                break_pos = max_char_on_line
+
+        # Extract the first line
+        first_line = strng[:break_pos].rstrip()
+        # The remainder of the string, stripping leading spaces to avoid awkward spacing
+        remainder = strng[break_pos:].lstrip()
+
+        # Recursively process the remainder
+        return first_line + '\n' + self.line_break_strings(remainder, max_char_on_line, split_strng)
 
     def store_plot(self,
                    plot_name: str,

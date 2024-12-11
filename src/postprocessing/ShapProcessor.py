@@ -7,6 +7,7 @@ import shap
 from shap import Explanation
 
 from src.utils.DataLoader import DataLoader
+from src.utils.utilfuncs import apply_name_mapping
 
 
 class ShapProcessor:
@@ -76,7 +77,11 @@ class ShapProcessor:
                         # Filter out meta vars from feature names
                         feature_names = [feature for feature in shap_values["feature_names"]
                                          if feature not in self.meta_vars]
-                        feature_names = self.apply_name_mapping(feature_names)
+                        feature_names = apply_name_mapping(
+                            features=feature_names,
+                            name_mapping=self.name_mapping,
+                            prefix=True
+                        )
 
                         # Recreate explanation objects
                         shap_exp = self.recreate_shap_exp_objects(
@@ -113,24 +118,6 @@ class ShapProcessor:
             if feature_combination in sublst:
                 return "all"
         # raise ValueError(f"Predictor combination {feature_combination} not found in col_assignment.")
-
-    def apply_name_mapping(self, features: list) -> list:
-        """
-        Maps a list of features to their descriptive names based on the second-level name in the provided mapping dictionary.
-
-        Args:
-            features (list): A list of feature strings in the format "first_level_second_level".
-
-        Returns:
-            list: A list of mapped second-level feature names.
-        """
-        mapped_features = []
-        for feature in features:
-            # Remove the feature category prefix (e.g., pl or srmc)
-            first_level, _, second_level = feature.partition('_')
-            second_level_mapped = self.name_mapping[first_level][second_level]
-            mapped_features.append(second_level_mapped)
-        return mapped_features
 
     @staticmethod
     def recreate_shap_exp_objects(

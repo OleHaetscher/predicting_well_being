@@ -1,12 +1,12 @@
 general:
-  datasets_to_be_included: [ cocoesm, cocoms, cocout, emotions, pia, zpid ] # cocoesm, cocoms, cocout, emotions, pia, zpid
+  datasets_to_be_included: [ zpid ] # cocoesm, cocoms, cocout, emotions, pia, zpid
   log_dir: "../logs/0912"  # only for preprocessing, analysis logs are stored in the result folders
   log_name: 0912
 
   steps:
     preprocessing: false
-    analysis: true
-    postprocessing: false
+    analysis: false
+    postprocessing: true
 
 preprocessing:
   path_to_raw_data: "../data/raw"
@@ -245,10 +245,10 @@ postprocessing:
 
     #- condense_cv_results
     #- condense_lin_model_coefs
-    - create_descriptives
+    #- create_descriptives
     #- conduct_significance_tests
     #- create_cv_results_plots
-    #- create_shap_plots
+    - create_shap_plots
 
   # "../results/results_merged_onlycv"
   raw_results_path: "../results/cluster_results_merged_2611"  # BASE RESULT DIR FOR RAW RESULTS  # shap or cv test_fs_shap
@@ -323,15 +323,15 @@ postprocessing:
       - "#CEE7CF"  # Light mint
     feature_combo_name_mapping:
       # Main analyses
-      pl: "Personal" # "Person-level"
-      srmc: "ESM"
-      sens: "Sensing"
+      pl: "Personal"
+      srmc: "Situational (ESM)"  # self-reported
+      sens: "Situational (Sensing)"
       mac: "Societal" # "Macro-level"
-      pl_srmc: "Personal + ESM"
-      pl_sens: "Personal + Sensing"
-      pl_srmc_sens: "Personal + ESM + Sensing"
+      pl_srmc: "Personal + Situational (ESM)"
+      pl_sens: "Personal + Situational (Sensing)"
+      pl_srmc_sens: "Personal + Situational (ESM) + Situational (Sensing)"
       pl_mac: "Personal + Societal"
-      pl_srmc_mac: "Personal + ESM + Societal"
+      pl_srmc_mac: "Personal + Situational (ESM) + Societal"
       # all_in
 
       # Additional analyses
@@ -343,8 +343,8 @@ postprocessing:
 
     cv_results_plot:
       crit: [ wb_state ]
-      samples_to_include: [ combo ]  # combo
-      metrics: [ spearman ]  # must be iterable
+      samples_to_include: [ selected ]  # combo
+      metrics: [ pearson ]  # must be iterable
       models:
         - elasticnet
         - randomforestregressor
@@ -353,22 +353,25 @@ postprocessing:
         num_cols: 3
         width: 20
         height: 10
-        x_min: -0.1
-        x_max: 1
-        title_pad: 15
+        x_min: 0
+        x_max: 0.70
+        bar_width: 0.15
+        title_pad: 30
+        legend_pos: [0.925, 0.18]
         empty_cells:
           - [ 3, 2 ]
           - [ 2, 2 ]
-        tight_layout: [0, 0.05, 1, 0.95]
+        tight_layout: [0.02, 0.02, 0.98, 0.98]  # [0, 0.05, 1, 0.95]
       fontsizes:
-        title: 15
-        tick_params: 12
+        title: 20
+        tick_params: 15
         legend: 15
-      color_dct:
+        label: 15
+      color_dct:  # only differ pl and the rest
         pl: "#5E9ACC"
         srmc: "#A3C7A1"
         sens: "#A3C7A1"
-        mac: "#F0E68C"
+        mac: "#A3C7A1"
       col_assignment:
         first_col: ["pl", "srmc", "sens", "mac"]
         second_col: ["pl_srmc", "pl_sens", "pl_srmc_sens", "pl_mac"]
@@ -388,13 +391,13 @@ postprocessing:
       figure:
         num_rows: 4  # 3
         num_cols: 3
-        width: 35
-        height: 25
+        width: 35  # 35
+        height: 30  # 25
       fontsizes:
         title: 28
-        tick_params: 25
-        x_label: 25
-        y_label: 25
+        tick_params: 20 # 25
+        x_label: 20 # 25
+        y_label: 20 #
       subplot_adjustments:
         left: 0.24
         wspace: 1.2

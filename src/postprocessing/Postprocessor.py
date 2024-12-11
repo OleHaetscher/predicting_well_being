@@ -33,6 +33,7 @@ class Postprocessor:
         self.cv_results_dct = {}
         self.metrics = self.var_cfg["postprocessing"]["metrics"]
         self.methods_to_apply = self.var_cfg["postprocessing"]["methods"]
+        self.datasets = self.var_cfg["general"]["datasets_to_be_included"]
 
         self.data_loader = DataLoader()
         self.logger = Logger(
@@ -113,10 +114,36 @@ class Postprocessor:
             )
 
         if "create_descriptives" in self.methods_to_apply:
-            # pass  TODO Bugfix
-            rel = self.descriptives_creator.compute_rel()
-            self.descriptives_creator.create_m_sd_feature_table()
-            self.descriptives_creator.create_wb_items_statistics()
+            # Do this for every dataset and then compute a table for each dataset that can be stacked
+            # In this way, we could also move "create_m_sd_feature_table" in the loop
+            # self.descriptives_creator.create_m_sd_feature_table()
+            for dataset in self.datasets:
+                state_rel_series, trait_rel_series = self.descriptives_creator.compute_rel(dataset=dataset)
+                state_dct, trait_dct = self.descriptives_creator.create_wb_items_statistics(
+                    dataset=dataset
+                )
+                # Note: Does this work with ZPID?
+                if state_dct:
+                    self.descriptives_creator.create_wb_items_table(
+                        dataset=dataset,
+                        data_type="state",
+                        rel=state_rel_series,
+                        m_sd_df=state_dct["m_sd"],
+                        icc1=state_dct["icc1"],
+                        icc2=state_dct["icc2"],
+                        bp_corr=state_dct["bp_corr"],
+                        wp_corr=state_dct["wp_corr"]
+                    )
+                    print()
+                if trait_dct:
+                    self.descriptives_creator.create_wb_items_table(
+                        dataset=dataset,
+                        data_type="trait",
+                        rel=trait_rel_series,
+                        m_sd_df=trait_dct["m_sd"],
+                    )
+
+
 
         if "conduct_significance_tests" in self.methods_to_apply:
             # TODO: Complete, with simulated data?
@@ -127,7 +154,8 @@ class Postprocessor:
                 for metric in self.var_cfg["postprocessing"]["plots"]["cv_results_plot"]["metrics"]:
                     self.plotter.plot_cv_results_plots_wrapper(
                         data_to_plot=self.cv_results_dct[metric],
-                        rel=None
+                        rel=None,
+                        metric=metric
                     )
             else:
                 raise ValueError("We must condense the cv results before creating the plot")
