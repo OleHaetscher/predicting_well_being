@@ -27,7 +27,7 @@ class Postprocessor:
         self.fix_cfg = fix_cfg
         self.var_cfg = var_cfg
         self.name_mapping = name_mapping
-        self.base_result_dir = self.var_cfg["postprocessing"]["raw_results_path"]
+        # self.base_result_dir = self.var_cfg["postprocessing"]["raw_results_path"]
         self.result_filenames = self.var_cfg["analysis"]["output_filenames"]
         self.processed_output_path = self.var_cfg["postprocessing"]["processed_results_path"]
         self.cv_results_dct = {}
@@ -54,7 +54,7 @@ class Postprocessor:
         )
         self.shap_processor = ShapProcessor(
             var_cfg=self.var_cfg,
-            base_result_dir=self.base_result_dir,
+            # base_result_dir=self.base_result_dir,
             processed_output_path=self.processed_output_path,
             name_mapping=self.name_mapping,
         )
@@ -84,11 +84,11 @@ class Postprocessor:
                     SHAP beeswarm plots representing the most imortant features for all feature combinations
                     SHAP importance plots TBA
         """
-        test_dir = "../results/test_ia_values/selected/wb_state/randomforestregressor/shap_ia_values_summary.pkl"
-        test_dir_2 = "../results/test_ia_values/selected/pa_state/randomforestregressor/shap_ia_values_summary.pkl"
-        test_1 = self.data_loader.read_pkl(test_dir)
-        test_2 = self.data_loader.read_pkl(test_dir_2)
-        print()
+        #test_dir = "../results/test_ia_values/selected/wb_state/randomforestregressor/shap_ia_values_summary.pkl"
+        #test_dir_2 = "../results/test_ia_values/selected/pa_state/randomforestregressor/shap_ia_values_summary.pkl"
+        #test_1 = self.data_loader.read_pkl(test_dir)
+        #test_2 = self.data_loader.read_pkl(test_dir_2)
+        #print()
 
         if "sanity_check_pred_vs_true" in self.methods_to_apply:
             self.sanity_check_pred_vs_true()
@@ -133,7 +133,7 @@ class Postprocessor:
                     self.descriptives_creator.create_wb_items_table(
                         dataset=dataset,
                         data_type="state",
-                        rel=state_rel_series,
+                        rel=None,
                         m_sd_df=state_dct["m_sd"],
                         icc1=state_dct["icc1"],
                         icc2=state_dct["icc2"],
@@ -149,10 +149,7 @@ class Postprocessor:
                         m_sd_df=trait_dct["m_sd"],
                     )
 
-
-
         if "conduct_significance_tests" in self.methods_to_apply:
-            # TODO: Complete, with simulated data?
             self.significance_testing.significance_testing()  # (dct=self.cv_results_dct.copy())
 
         if "create_cv_results_plots" in self.methods_to_apply:
@@ -167,8 +164,10 @@ class Postprocessor:
                 raise ValueError("We must condense the cv results before creating the plot")
 
         if "create_shap_plots" in self.methods_to_apply:
-            # TODO: we may do multiple calls with different parameters (paper plot, supplement, ia_values, etc)
-            self.plotter.plot_shap_beeswarm_plots(prepare_data_func=self.shap_processor.prepare_data)
+            self.plotter.plot_shap_beeswarm_plots(
+                prepare_shap_data_func=self.shap_processor.prepare_shap_data,
+                prepare_shap_ia_data_func=self.shap_processor.prepare_shap_ia_data,
+            )
 
     def sanity_check_pred_vs_true(self):
         """

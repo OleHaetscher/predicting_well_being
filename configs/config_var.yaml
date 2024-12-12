@@ -243,24 +243,25 @@ postprocessing:
   methods:
     #- sanity_check_pred_vs_true
 
-    #- condense_cv_results
+    - condense_cv_results
     #- condense_lin_model_coefs
     #- create_descriptives
     #- conduct_significance_tests
-    #- create_cv_results_plots
-    - create_shap_plots
+    - create_cv_results_plots
+    #- create_shap_plots
 
   # "../results/results_merged_onlycv"
-  raw_results_path: "../results/cluster_results_merged_2611"  # BASE RESULT DIR FOR RAW RESULTS  # shap or cv test_fs_shap
+  # raw_results_path: "../results/cluster_results_merged_2611"  # BASE RESULT DIR FOR RAW RESULTS  # shap or cv test_fs_shap
 
   # We do merging on the cluster, thus, we are currently only using the processed_results_path
   processed_results_path: "../results/run_0912"
+  shap_ia_values_path: "../results/test_ia_values"
 
   summarized_file_names:
     cv_results: "cv_results_summary.json"
     lin_model_coefs: "lin_model_coefs_summary.json"
     shap_values: "shap_values_summary.pkl"
-    shap_ia_values: "XXX"
+    shap_ia_values: "shap_ia_values_summary.pkl"
 
   cv_results:
     table_feature_combo_order:
@@ -312,7 +313,6 @@ postprocessing:
       t_val: "t"
       p_val: "p"
       p_val_fdr: "p (FDR-corrected)"
-
 
     compare_models: true
     compare_predictor_classes: true
@@ -372,6 +372,8 @@ postprocessing:
       pl_mac: "Personal + Societal"
       pl_srmc_mac: "Personal + Situational (ESM) + Societal"
       # all_in
+      mac_ia_values: "Societal - Interaction Values"
+      srmc_ia_values: "Situational (ESM) - Interaction Values"
 
       # Additional analyses
       pl_nnse: "Personal without neuroticism facets and self-esteem"
@@ -396,7 +398,7 @@ postprocessing:
         x_max: 0.70
         bar_width: 0.15
         title_pad: 30
-        legend_pos: [0.925, 0.18]
+        legend_pos: [0.955, 0.18]  # 0.925, 0.18
         empty_cells:
           - [ 3, 2 ]
           - [ 2, 2 ]
@@ -416,17 +418,25 @@ postprocessing:
         second_col: ["pl_srmc", "pl_sens", "pl_srmc_sens", "pl_mac"]
         third_col: ["pl_srmc_mac", "all_in"]
       titles:
-        - "Within Conceptual Levels"
-        - "Across Two Conceptual Levels"
-        - "Across Three Conceptual Levels"
-
+        - "a) Within Conceptual Levels"
+        - "b) Across Two Conceptual Levels"
+        - "c) Across Three Conceptual Levels"
 
     shap_beeswarm_plot:  # could define dpi, etc as well here
 
-      prediction_model: [randomforestregressor]  # must be iterable
+      prediction_model: [ randomforestregressor ]  # must be iterable
       crit: [wb_state] # must be iterable
-      samples_to_include: [ all ] # must be iterable
+      samples_to_include: [selected] # must be iterable
       num_to_display: 6
+      shap_ia_values:
+        add: true
+        position: [2, 2]  # below the "all_in"
+        feature_combination: "mac"
+        meta_stat_to_extract: "top_interactions"
+        stat_to_extract: "top_abs_interactions"
+        order_to_extract: 2
+        num_to_extract: 6
+
       figure:
         num_rows: 4  # 3
         num_cols: 3
@@ -438,10 +448,10 @@ postprocessing:
         x_label: 20 # 25
         y_label: 20 #
       subplot_adjustments:
-        left: 0.24
-        wspace: 1.2
-        hspace: 0.4
-        right: 0.95
+        left: 0.18 # 0.24
+        wspace: 1  # 1.2
+        hspace: 0.7  # 0.4
+        right: 0.97
 
       col_assignment:
         first_col: [ "pl", "srmc", "sens", "mac" ]

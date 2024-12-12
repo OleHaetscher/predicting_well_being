@@ -7,7 +7,7 @@ import matplotlib.patches as mpatches
 import matplotlib.pyplot as plt
 import numpy as np
 import shap
-from matplotlib.colors import LinearSegmentedColormap
+from matplotlib.colors import LinearSegmentedColormap, ListedColormap
 from matplotlib.ticker import FuncFormatter
 
 
@@ -21,6 +21,7 @@ class ResultPlotter:
         - Plotting the data
         - Adjusting the format
     """
+
     def __init__(self, var_cfg, plot_base_dir):
         self.var_cfg = var_cfg
         self.plot_cfg = self.var_cfg["postprocessing"]["plots"]
@@ -48,7 +49,7 @@ class ResultPlotter:
             feature_combinations.append(feature_combination_lst)
 
         titles = self.plot_cfg["cv_results_plot"]["titles"]
-        models = self.plot_cfg["cv_results_plot"]["models"]
+        models = self.plot_cfg["cv_results_plot"]["models"][::-1]  # so that ENR is displayed above RFR
         cv_results_figure_params = self.plot_cfg["cv_results_plot"]["figure"]
         cv_results_empty_cells = [tuple(cell) for cell in cv_results_figure_params['empty_cells']]
         cv_results_fontsizes = self.plot_cfg["cv_results_plot"]["fontsizes"]
@@ -96,7 +97,7 @@ class ResultPlotter:
                     figure_params=cv_results_figure_params,
                     metric=metric,
                     rel=rel,
-                    )
+                )
 
     def prepare_cv_results_plot_data(self, data_to_plot, crit, samples_to_include, models, feature_combinations):
         """
@@ -234,6 +235,7 @@ class ResultPlotter:
                     )
 
                 ax.set_xlim(figure_params["x_min"], figure_params["x_max"])
+
                 ax.set_title(
                     title if row_idx == 0 else "",
                     fontsize=fontsizes["tick_params"],
@@ -252,9 +254,11 @@ class ResultPlotter:
                 ax.tick_params(axis='y', labelsize=fontsizes["tick_params"])
 
         # Create a legend in the lower right corner
-        randomforest_patch = mpatches.Patch(facecolor='lightgray', edgecolor='black', label='RFR (Upper Bar)')
-        elasticnet_patch = mpatches.Patch(facecolor='gray', edgecolor='black', label='ENR (Lower Bar)')
-        legends_to_handle = [randomforest_patch, elasticnet_patch]
+        elasticnet_patch = mpatches.Patch(facecolor='lightgray', edgecolor='black', label='ENR (Upper Bar)')
+        randomforest_patch = mpatches.Patch(facecolor='gray', edgecolor='black', label='RFR (Lower Bar)')
+        personal_patch = mpatches.Patch(facecolor=color_dct["pl"], edgecolor='none', label='Personal Predictors')
+        situational_patch = mpatches.Patch(facecolor=color_dct["srmc"], edgecolor='none', label='Situational/Societal Predictors')
+        legends_to_handle = [elasticnet_patch, randomforest_patch, personal_patch, situational_patch]
         if rel:
             reliability_line = mlines.Line2D([], [], color='black', linestyle='--', linewidth=1.2, label='Reliability = .90')
             legends_to_handle.append(reliability_line)
@@ -269,9 +273,24 @@ class ResultPlotter:
             title="",
             fontsize=fontsizes["legend"]
         )
+        #line_x_positions = [0.1235, 0.437, 0.755]  # adjust these as needed
+        #line_y_positions = [[0.1, 0.9], [0.1, 0.9], [0.52, 0.9]]
+        line_x_positions = [0.09, 0.41, 0.728]
+        line_y_positions = [[0.1, 0.9], [0.1, 0.9], [0.52, 0.9]]
+
+        for x, y in zip(line_x_positions, line_y_positions):
+            line = mlines.Line2D(
+                xdata=[x, x],
+                ydata=y,
+                transform=fig.transFigure,
+                color='black',
+                linestyle='-',
+                linewidth=1
+            )
+            fig.add_artist(line)
 
         # Adjust layout for readability
-        plt.tight_layout(rect=figure_params["tight_layout"])   # (rect=[0, 0.05, 1, 0.95])
+        plt.tight_layout(rect=figure_params["tight_layout"])  # (rect=[0, 0.05, 1, 0.95])
         if self.store_plots:
             self.store_plot(
                 plot_name="cv_results",
@@ -319,7 +338,7 @@ class ResultPlotter:
             for j, feature in enumerate(order):
                 # Set color saturation to differentiate models
                 base_color = color_dct[feature]
-                alpha = 1 if model == "elasticnet" else 0.7
+                alpha = 1 if model == "randomforestregressor" else 0.7
 
                 model_key = f"{feature}_{model}"
                 value = data.get(model_key, {}).get(m_metric, 0)
@@ -386,7 +405,7 @@ class ResultPlotter:
                 base_feature = feature.split("_")[1]
                 other_feat_color = color_dct[base_feature]
                 pl_color = color_dct["pl"]
-                alpha = 1 if model == "elasticnet" else 0.7
+                alpha = 1 if model == "randomforestregressor" else 0.7
 
                 ax.barh(y_positions[j] + (i * bar_width), base_value, height=bar_width, color=pl_color,
                         align='center', edgecolor=None, alpha=alpha)
@@ -394,9 +413,9 @@ class ResultPlotter:
                     ax.barh(y_positions[j] + (i * bar_width), increment, left=base_value, height=bar_width,
                             xerr=error, color=other_feat_color, align='center', edgecolor=None, alpha=alpha,
                             capsize=5)
-                else:  # TODO Fix this for pl_sens -> negative
+                else: # if negative, just show the pl color and dislplay true results
                     ax.barh(y_positions[j] + (i * bar_width), 0, left=base_value, height=bar_width,
-                            xerr=error, color=other_feat_color, align='center', edgecolor=None, alpha=alpha, # hatch
+                            xerr=error, color=other_feat_color, align='center', edgecolor=None, alpha=alpha,  # hatch
                             capsize=5)
 
             self.format_bar_plot(
@@ -430,9 +449,11 @@ class ResultPlotter:
         # Map features to their group labels
         feature_combos = [feature_combo_mapping[feature] for feature in order]
         # Format feature combinations
-        feature_combos_str_format = [self.line_break_strings(combo, max_char_on_line=17)
+        feature_combos_str_format = [self.line_break_strings(combo, max_char_on_line=14, balance=False)
                                      for combo in feature_combos]
-        ax.set_yticklabels(feature_combos_str_format, fontsize=fontsizes["tick_params"])
+        ax.set_yticklabels(feature_combos_str_format,
+                           fontsize=fontsizes["tick_params"],
+                           horizontalalignment="left")
 
         ax.spines['left'].set_visible(False)
 
@@ -441,7 +462,7 @@ class ResultPlotter:
 
         # Set tick parameters
         ax.tick_params(axis='x', labelsize=fontsizes["tick_params"])
-        ax.tick_params(axis='y', which='major', pad=10, length=0)
+        ax.tick_params(axis='y', which='major', pad=90, length=0)
 
         # Set x-axis label based on the metric
         if row_idx == 3:
@@ -530,7 +551,7 @@ class ResultPlotter:
             ax.text(x_bracket + bracket_width * 1.5, (y1 + y2) / 2, sig_symbol, ha='left', va='center',
                     color='black', fontsize=12, transform=ax.transAxes, clip_on=True)
 
-    def create_grid(self, num_rows: int, num_cols: int, figsize: tuple[int]=(15, 20), empty_cells=None):
+    def create_grid(self, num_rows: int, num_cols: int, figsize: tuple[int] = (15, 20), empty_cells=None):
         """
         This function creates a flexible grid of subplots with customizable empty cells.
 
@@ -593,73 +614,13 @@ class ResultPlotter:
 
         return pl_margin_dict
 
-    def plot_shap_importance_plot(self, data: dict, crit: str, samples_to_include: str, model: str):
-        """
-        This function
-
-        Args:
-            data:
-            crit:
-            samples_to_include:
-            model:
-
-        Returns:
-
-        """  # TODO: Remove or include interactions, leave out for now
-        data_current = data[crit][samples_to_include][model]
-        fig, axes = self.create_grid(num_rows=4, num_cols=3, figsize=(20, 15), empty_cells=[(2, 2), (3, 2)])
-
-        # Define the arrangement of predictor combinations in the grid
-        first_col = ["pl", "srmc", "sens", "mac"]
-        second_col = ["pl_srmc", "pl_sens", "pl_srmc_sens", "pl_mac"]
-        third_col = ["pl_srmc_mac", "all_in"]
-
-        # Map predictor combinations to their positions in the grid
-        positions = {}
-        # First column
-        for row, predictor_combination in enumerate(first_col):
-            positions[(row, 0)] = predictor_combination
-        # Second column
-        for row, predictor_combination in enumerate(second_col):
-            positions[(row, 1)] = predictor_combination
-        # Third column
-        for row, predictor_combination in enumerate(third_col):
-            positions[(row, 2)] = predictor_combination
-        # Empty positions are at (2, 2) and (3, 2)
-
-        # Iterate over the positions and plot the SHAP importance plots
-        for (row, col), predictor_combination in positions.items():
-            if predictor_combination in data_current:
-                shap_values = data_current[predictor_combination]
-
-                ax = axes[row][col]
-                # Plot the SHAP importance plot in the specified subplot
-                shap.plots.bar(
-                    shap_values,
-                    max_display=6,
-                    order=shap.Explanation.abs,
-                    show=False,
-                    ax=ax,
-                )
-                # Set the title of the subplot to the predictor combination name
-                ax.set_title(predictor_combination)
-            else:
-                print(f"Predictor combination '{predictor_combination}' not found in data.")
-
-        # Adjust layout and display the figure
-        # Save the plot
-        plt.tight_layout()
-        plt.show()
-        #plot_name = f"{crit}_{model}_imp.png"
-        #plt.savefig(plot_name, format='png', dpi=300)  # You can adjust the format and DPI as needed
-        #plt.close()
-
-    def plot_shap_beeswarm_plots(self, prepare_data_func: Callable):
+    def plot_shap_beeswarm_plots(self, prepare_shap_data_func: Callable, prepare_shap_ia_data_func: Callable = None):
         """
         Plots SHAP beeswarm plots for different predictor combinations arranged in a grid.
 
         Args:
-            prepare_data_func
+            prepare_shap_data_func
+            prepare_shap_ia_data_func
 
         Returns:
             None
@@ -685,62 +646,71 @@ class ResultPlotter:
         beeswarm_figure_params = self.plot_cfg["shap_beeswarm_plot"]["figure"]
         beeswarm_fontsizes = self.plot_cfg["shap_beeswarm_plot"]["fontsizes"]
         beeswarm_subplot_adj = self.plot_cfg["shap_beeswarm_plot"]["subplot_adjustments"]
+        ia_data_current = None
 
         # Iterate over each combination of crit, samples_to_include, and model
         for crit in crits:
             for samples_to_include in samples_to_include_list:
                 for model in models:
                     print(f"### Plot combination: {samples_to_include}_{crit}_{model}")
-                    data_current = prepare_data_func(
+                    data_current = prepare_shap_data_func(
                         crit_to_plot=crit,
                         samples_to_include=samples_to_include,
                         model_to_plot=model,
                         col_assignment=col_assignment,
                     )
+                    if self.plot_cfg["shap_beeswarm_plot"]["shap_ia_values"]["add"] and model == "randomforestregressor":
+                        # Get IA data from other function
+                        ia_cfg = self.plot_cfg["shap_beeswarm_plot"]["shap_ia_values"]
+                        print("Now get ia values")
+                        ia_data_current = prepare_shap_ia_data_func(
+                            crit_to_plot=crit,
+                            samples_to_include=samples_to_include,
+                            model_to_plot=model,
+                            feature_combination=ia_cfg["feature_combination"],
+                            meta_stat_to_extract=ia_cfg["meta_stat_to_extract"],
+                            stat_to_extract=ia_cfg["stat_to_extract"],
+                            order_to_extract=ia_cfg["order_to_extract"],
+                            num_to_extract=ia_cfg["num_to_extract"]
+                        )
+                        ia_position = tuple(ia_cfg["position"])
+                        positions[ia_position] = next(iter(ia_data_current))
 
                     # Create a grid of subplots with specified empty cells
                     fig, axes = self.create_grid(
                         num_rows=beeswarm_figure_params["num_rows"],
                         num_cols=beeswarm_figure_params["num_cols"],
-                        figsize=(beeswarm_figure_params["width"],
-                                 beeswarm_figure_params["height"])
+                        figsize=(int(beeswarm_figure_params["width"]),
+                                 int(beeswarm_figure_params["height"]))
                     )
 
                     # Iterate over the positions and plot the SHAP beeswarm plots
                     for (row, col), predictor_combination in positions.items():
                         if predictor_combination in data_current:
                             shap_values = data_current[predictor_combination]
-                            ax = axes[row][col]
-                            plt.sca(ax)
-                            feature_names_formatted = [self.line_break_strings(feature_name, max_char_on_line=28)
-                                                       for feature_name in shap_values.feature_names]
-
-                            # Plot the SHAP beeswarm plot in the specified subplot
-                            shap.summary_plot(
-                                shap_values.values,
-                                shap_values.data,
-                                feature_names=feature_names_formatted,
-                                max_display=num_to_display,
-                                show=False,
-                                plot_size=None,
-                                color_bar=False,
-                                cmap=cmap
+                            self.plot_shap_beeswarm(
+                                shap_values=shap_values,
+                                ax=axes[row, col],
+                                beeswarm_fontsizes=beeswarm_fontsizes,
+                                num_to_display=num_to_display,
+                                cmap=cmap,
+                                feature_combo_name_mapping=feature_combo_name_mapping,
+                                predictor_combination=predictor_combination,
                             )
-                            # Set title and fontsizes
-                            ax.set_title(
-                                feature_combo_name_mapping[predictor_combination],
-                                fontsize=beeswarm_fontsizes["title"],
-                                weight="bold"
-                            )
-                            ax.tick_params(
-                                axis='both',
-                                which='major',
-                                labelsize=beeswarm_fontsizes["tick_params"]
-                            )
-                            ax.xaxis.label.set_size(beeswarm_fontsizes["x_label"])
-                            ax.yaxis.label.set_size(beeswarm_fontsizes["y_label"])
                         else:
-                            print(f"Predictor combination '{predictor_combination}' not found in data.")
+                            if predictor_combination in ia_data_current:
+                                shap_ia_data = ia_data_current[predictor_combination]
+                                self.plot_shap_beeswarm(
+                                    shap_values=shap_ia_data,
+                                    ax=axes[row, col],
+                                    beeswarm_fontsizes=beeswarm_fontsizes,
+                                    num_to_display=num_to_display,
+                                    cmap=cmap,
+                                    feature_combo_name_mapping=feature_combo_name_mapping,
+                                    predictor_combination=predictor_combination,
+                                )
+                            else:
+                                print(f"Predictor combination '{predictor_combination}' not found in shap data or shap ia data")
 
                     # Adjust layout and display the figure
                     plt.subplots_adjust(
@@ -749,24 +719,166 @@ class ResultPlotter:
                         hspace=beeswarm_subplot_adj["hspace"],
                         right=beeswarm_subplot_adj["right"]
                     )
+                    plt.tight_layout(rect=[0.01, 0.01, 0.99, 0.975])
                     if self.store_plots:
                         self.store_plot(
-                            plot_name="beeswarm",
+                            plot_name=f"beeswarm_{crit}_{samples_to_include}_{model}",
                             crit=crit,
                             samples_to_include=samples_to_include,
+                            plot_format="pdf",
                             model=model
                         )
                     else:
                         plt.show()
 
-    def plot_lin_model_coefs(self):
-        pass
+    def plot_shap_beeswarm(self,
+                           shap_values: shap.Explanation,
+                           ax,
+                           beeswarm_fontsizes: dict,
+                           num_to_display: int,
+                           cmap,
+                           feature_combo_name_mapping,
+                           predictor_combination,
+                           ia_values: bool = False,
+                           ):
+        """
 
-    def plot_shap_values(self):
-        pass
+        Returns:
 
-    def plot_shap_ia_values(self):
-        pass
+        """
+        plt.sca(ax)
+        feature_names_formatted = [self.line_break_strings(feature_name, max_char_on_line=28, balance=True)
+                                   for feature_name in shap_values.feature_names]
+
+        # Plot the SHAP beeswarm plot in the specified subplot
+        shap.summary_plot(
+            shap_values.values,
+            shap_values.data,
+            feature_names=feature_names_formatted,
+            max_display=num_to_display,
+            show=False,
+            plot_size=None,
+            color_bar=False,
+            cmap=cmap,
+        )
+        # Set title and fontsizes
+        if ia_values:
+            split_strng = "-"
+        else:
+            split_strng = "+"
+
+        formatted_title = self.line_break_strings(
+            strng=feature_combo_name_mapping[predictor_combination],
+            max_char_on_line=26,
+            split_strng=split_strng,
+        )
+        ax.set_title(
+            formatted_title,
+            fontsize=beeswarm_fontsizes["title"],
+            weight="bold"
+        )
+        ax.tick_params(
+            axis='both',
+            which='major',
+            labelsize=beeswarm_fontsizes["tick_params"]
+        )
+        ax.xaxis.label.set_size(beeswarm_fontsizes["x_label"])
+        ax.yaxis.label.set_size(beeswarm_fontsizes["y_label"])
+
+        if ia_values:
+            plt.set_cmap(cmap)
+
+    def plot_shap_importances(self,
+                              shap_ia_data: dict,
+                              ax,
+                              beeswarm_fontsizes: dict,
+                              num_to_display: int,
+                              cmap,
+                              feature_combo_name_mapping,
+                              predictor_combination,
+                              ):
+        """ # TODO: Idee: Farbe nach Vorzeichen (positive / negative Interactions)?
+        Plot a bar chart of SHAP-like feature importances.
+
+        Args:
+            shap_ia_data (dict): A dictionary of feature importances keyed by feature name.
+            ax (matplotlib.axes._axes.Axes): The axes object on which to plot.
+            beeswarm_fontsizes (dict): Dictionary specifying font sizes for title, tick_params, x_label, and y_label.
+            num_to_display (int): The number of top features to display.
+            cmap (matplotlib.colors.ListedColormap or str): Colormap for coloring the bars (fallback if feature not in color_dct).
+            feature_combo_name_mapping (dict): Dictionary mapping predictor combinations to a formatted string for the title.
+            predictor_combination (hashable): Key used to retrieve the appropriate title from `feature_combo_name_mapping`.
+            color_dct (dict): Dictionary mapping feature names to specific colors.
+
+        Returns:
+            None
+        """
+        plt.sca(ax)
+
+        # Extract feature names and values
+        features = list(shap_ia_data.keys())
+        values = [val["mean"] for val in list(shap_ia_data.values())]
+
+        # Limit the number of features displayed
+        if num_to_display < len(features):
+            features = features[:num_to_display]
+            values = values[:num_to_display]
+
+        # Format feature names
+        feature_names_formatted = [
+            self.line_break_strings(feature_name, max_char_on_line=33, balance=True)
+            for feature_name in features
+        ]
+
+        # Use provided colors from color_dct, fallback to a color from cmap if needed
+        if isinstance(cmap, str):
+            cmap = plt.get_cmap(cmap)
+
+        # Create positions for bars to increase space between them
+        # By spacing out the y positions, we can create more distance between bars
+        y_positions = range(len(feature_names_formatted))
+        bar_height = 0.6  # Reduce bar height to create more space
+
+        # Create the bar plot with specified height for spacing
+        ax.barh(y=y_positions, width=values, color="blue", edgecolor='black', height=bar_height)
+
+        # Invert y-axis for SHAP-like order
+        ax.invert_yaxis()
+
+        # Set custom y-ticks and labels
+        # We'll keep the labels, but remove tick marks. Tick labels help identify the features.
+        ax.set_yticks(y_positions)
+        ax.set_yticklabels(feature_names_formatted, fontsize=beeswarm_fontsizes["tick_params"])
+
+        # Remove the y-tick lines but keep the labels
+        ax.tick_params(axis='y', which='both', length=0)
+
+        # Show the y-axis line (left spine)
+        ax.spines['left'].set_visible(True)
+
+        # Keep the x-axis and label it
+        ax.set_xlabel("mean(|SHAP interaction value|)", fontsize=beeswarm_fontsizes["x_label"])
+        ax.xaxis.label.set_size(beeswarm_fontsizes["x_label"])
+
+        # Set title
+        formatted_title = self.line_break_strings(
+            strng="Societal - SHAP Interacion Values",
+            max_char_on_line=26,
+            split_strng="-"
+        )
+        ax.set_title(formatted_title, fontsize=beeswarm_fontsizes["title"], weight="bold")
+
+        # Adjust tick label size
+        ax.tick_params(axis='x', which='major', labelsize=beeswarm_fontsizes["tick_params"])
+
+        # Remove unnecessary spines except the left one (y-axis line)
+        ax.spines['top'].set_visible(False)
+        ax.spines['right'].set_visible(False)
+        ax.spines['bottom'].set_visible(True)  # Keep bottom spine (x-axis)
+        # Left spine is already visible for y-axis
+
+        # Optional grid for better readability
+        ax.grid(axis='x', linestyle='--', alpha=0.7)
 
     def plot_pred_true_parity(self, sample_data, feature_combination: str, samples_to_include: str, crit: str, model: str):
         """
@@ -813,54 +925,68 @@ class ResultPlotter:
         else:
             plt.show()
 
-    def line_break_strings(self, strng: str, max_char_on_line: int, split_strng: str = None) -> str:
-        """
-        This function formats a string so that no line exceeds `max_char_on_line` characters.
-        Priority for splitting:
-        1. If `split_strng` is given, it tries to split after this substring within the first `max_char_on_line` characters.
-        2. If `split_strng` is not found or not given, it attempts to break at a space before `max_char_on_line`.
-        3. If no space is found, it breaks exactly at `max_char_on_line`.
-
-        Args:
-            strng: The input string to format.
-            max_char_on_line: The maximum number of characters allowed per line.
-            split_strng: An optional string that, if present, we try to break after it first.
-
-        Returns:
-            A string with newline characters inserted so that each line is at most `max_char_on_line` characters long.
-        """
-        # Base case: If the string fits within the limit or is empty, return as is.
+    def line_break_strings(self, strng: str, max_char_on_line: int, split_strng: str = None, balance: bool = False) -> str:
         if len(strng) <= max_char_on_line:
             return strng
 
-        # Consider one character beyond max_char_on_line to detect split points right at the limit
         substring = strng[:max_char_on_line + 1]
 
         # Try to break at split_strng if provided
         if split_strng is not None:
             split_pos = substring.rfind(split_strng)
             if split_pos != -1:
-                # Found the split_strng before max_char_on_line. Break after it.
                 break_pos = split_pos + len(split_strng)
             else:
-                # If not found, fall back to space logic
                 break_pos = substring.rfind(' ')
                 if break_pos == -1:
-                    # No space found, break exactly at max_char_on_line
                     break_pos = max_char_on_line
         else:
-            # No split_strng provided, fallback to the original space logic directly
             break_pos = substring.rfind(' ')
             if break_pos == -1:
                 break_pos = max_char_on_line
 
-        # Extract the first line
+        # If balancing is requested and we have a large discrepancy, try to find a better break
+        if balance:
+            # Current first cut
+            first_line = strng[:break_pos].rstrip()
+            remainder = strng[break_pos:].lstrip()
+
+            # Only attempt balancing if there's actually a remainder to split
+            if remainder:
+                # Measure current imbalance
+                current_diff = abs(len(first_line) - len(remainder))
+
+                # Look around the current break_pos for a better space that reduces the difference
+                # We'll search both directions near break_pos to find a better balance
+                best_pos = break_pos
+                best_diff = current_diff
+
+                # Define a search range around break_pos (e.g., ±10 characters) for a better space
+                search_range = 10
+                start_search = max(break_pos - search_range, 1)
+                end_search = min(break_pos + search_range, len(strng) - 1)
+
+                for candidate_pos in range(start_search, end_search + 1):
+                    if candidate_pos != break_pos and candidate_pos < len(strng):
+                        # Check if this is a viable space or split_strng location
+                        # We'll still follow the same "break at space or exact" logic
+                        if strng[candidate_pos] == ' ' or (
+                                split_strng and strng[candidate_pos - len(split_strng) + 1:candidate_pos + 1] == split_strng):
+                            # Test this candidate
+                            test_first = strng[:candidate_pos].rstrip()
+                            test_rem = strng[candidate_pos:].lstrip()
+                            new_diff = abs(len(test_first) - len(test_rem))
+                            if new_diff < best_diff:
+                                best_diff = new_diff
+                                best_pos = candidate_pos
+
+                break_pos = best_pos
+
+        # After potentially adjusting break_pos for balance
         first_line = strng[:break_pos].rstrip()
-        # The remainder of the string, stripping leading spaces to avoid awkward spacing
         remainder = strng[break_pos:].lstrip()
 
-        # Recursively process the remainder
-        return first_line + '\n' + self.line_break_strings(remainder, max_char_on_line, split_strng)
+        return first_line + '\n' + self.line_break_strings(remainder, max_char_on_line, split_strng, balance)
 
     def store_plot(self,
                    plot_name: str,

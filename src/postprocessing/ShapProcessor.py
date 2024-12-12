@@ -7,7 +7,7 @@ import shap
 from shap import Explanation
 
 from src.utils.DataLoader import DataLoader
-from src.utils.utilfuncs import apply_name_mapping
+from src.utils.utilfuncs import apply_name_mapping, defaultdict_to_dict
 
 
 class ShapProcessor:
@@ -17,13 +17,15 @@ class ShapProcessor:
         - recreates the SHAP explanation objects for plotting
     """
 
-    def __init__(self, var_cfg, base_result_dir, processed_output_path, name_mapping):
+    def __init__(self, var_cfg, processed_output_path, name_mapping):
         self.var_cfg = var_cfg
         self.name_mapping = name_mapping
-        self.base_result_dir = base_result_dir
+        # self.base_result_dir = base_result_dir
         self.processed_output_path = processed_output_path
+        self.shap_ia_values_path = self.var_cfg["postprocessing"]["shap_ia_values_path"]
         self.data_loader = DataLoader()
         self.shap_values_file_name = self.var_cfg["postprocessing"]["summarized_file_names"]["shap_values"]
+        self.shap_ia_values_file_name = self.var_cfg["postprocessing"]["summarized_file_names"]["shap_ia_values"]
         self.meta_vars = ['other_unique_id', 'other_country', 'other_years_of_participation']
 
     @classmethod
@@ -31,7 +33,7 @@ class ShapProcessor:
         """Creates a nested defaultdict that can be used to create an arbitrary depth dictionary."""
         return defaultdict(cls.nested_dict)
 
-    def prepare_data(self, model_to_plot: str, crit_to_plot: str, samples_to_include: str, col_assignment: list[list]) -> dict:
+    def prepare_shap_data(self, model_to_plot: str, crit_to_plot: str, samples_to_include: str, col_assignment: list[list]) -> dict:
         """
         Prepares the data for SHAP visualization. Allows using custom sample inclusion
         values for specific feature combinations as specified in custom_affordances.
@@ -50,7 +52,7 @@ class ShapProcessor:
 
         # Traverse the directory structure
         for root, dirs, files in os.walk(self.processed_output_path):
-            if self.shap_values_file_name in files:   # 'shap_values_processed.pkl'
+            if self.shap_values_file_name in files:   # 'shap_values_summary.pkl'
 
                 # Extract the directory components based on the structure
                 relative_path = os.path.relpath(root, self.processed_output_path)
@@ -90,12 +92,77 @@ class ShapProcessor:
                             data=np.array(shap_values["data"]["mean"]),
                             feature_names=feature_names,
                         )
-
-                        # TODO: Does this work as expected?
-                        # Store explanation objects in the nested defaultdict structure
-                        # result_dct[crit][samples][model][predictor_combination] = shap_exp
                         result_dct[feature_combination] = shap_exp
         return result_dct
+
+    def prepare_shap_ia_data(self,
+                             model_to_plot: str,
+                             crit_to_plot: str,
+                             samples_to_include: str,
+                             feature_combination: str,
+                             meta_stat_to_extract: str,
+                             stat_to_extract: str,
+                             order_to_extract: int,
+                             num_to_extract: int) -> dict:
+        """
+        Prepares the data for SHAP visualization. Allows using custom sample inclusion
+        values for specific feature combinations as specified in custom_affordances.
+
+        Args:
+            model_to_plot (str): The model name to filter by.
+            crit_to_plot (str): The criterion name to filter by.
+            samples_to_include (str): Default samples to include.
+            col_assignment: list: Defined the position of a feature combination in the plot
+
+        Returns:
+            dict: Nested dictionary with SHAP explanation objects.
+        """
+        result_dct = self.nested_dict()
+
+        for root, dirs, files in os.walk(self.shap_ia_values_path):
+            print(files)
+            if str(self.shap_ia_values_file_name) in files:   # 'shap_ia_values_summary.pkl'
+                relative_path = os.path.relpath(root, self.shap_ia_values_path)
+                parts = relative_path.split(os.sep)
+
+                if len(parts) == 4:
+                    feature_combination, samples, crit, model = parts
+
+                    if crit == crit_to_plot and samples == samples_to_include and model == model_to_plot:
+                        shap_ia_values_path = os.path.join(str(root), str(self.shap_ia_values_file_name))
+                        shap_ia_values = self.data_loader.read_pkl(shap_ia_values_path)
+
+                        base_values = np.array(shap_ia_values["base_values_sample"]["mean"])
+                        # feature pairs as keys, shap ia values as values
+                        shap_ia_values_dct = {
+                            key: value['mean']
+                            for key, value in shap_ia_values['ia_values_sample'].items()
+                            if isinstance(key, tuple) and len(key) > 1
+                        }
+
+                        # Map the keys using the name_mapping function
+                        formatted_features_dct = {}
+                        for feature_pair, values in shap_ia_values_dct.items():
+                            # Get x seperated string of the two interacting variables
+                            mapped_key = " x ".join(apply_name_mapping([k], self.name_mapping, prefix=True)[0] for k in feature_pair)
+                            formatted_features_dct[mapped_key] = values
+
+                        shap_ia_values_arr = np.array([
+                            value for value in formatted_features_dct.values()
+                        ])
+                        data = np.random.rand(*shap_ia_values_arr.shape)
+
+                        # Recreate the explanation object (pretending this were ordinary shap values)
+                        shap_ia_exp = self.recreate_shap_exp_objects(
+                            shap_values=shap_ia_values_arr,
+                            base_values=base_values,
+                            feature_names=list(formatted_features_dct.keys()),
+                            data=data  # TODO: We may replace this with the actual data
+                        )
+
+                        result_dct[f"{feature_combination}_ia_values"] = shap_ia_exp
+
+        return defaultdict_to_dict(result_dct)
 
     @staticmethod
     def get_required_sample_for_combo(feature_combination: str, col_assignment: list[list]):
@@ -123,8 +190,8 @@ class ShapProcessor:
     def recreate_shap_exp_objects(
             shap_values: np.ndarray,
             base_values: np.ndarray,
-            data: np.ndarray,
-            feature_names: list
+            feature_names: list,
+            data: np.ndarray = None,
     ) -> Explanation:
         """
         This method recreates the SHAP explanation objects for more flexibility when plotting the data.

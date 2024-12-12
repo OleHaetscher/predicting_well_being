@@ -631,7 +631,7 @@ class DescriptiveStatistics:
 
     def create_wb_items_table(self,
                               dataset: str,
-                              data_type: str,
+                              # data_type: str,
                               rel: pd.Series,
                               m_sd_df: pd.DataFrame,
                               icc1: pd.Series = None,
