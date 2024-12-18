@@ -1,14 +1,19 @@
 import os
+import re
 from itertools import product
-from typing import Callable, Union
+from typing import Callable, Union, Collection
 
 import matplotlib.lines as mlines
 import matplotlib.patches as mpatches
 import matplotlib.pyplot as plt
 import numpy as np
 import shap
-from matplotlib.colors import LinearSegmentedColormap, ListedColormap
+from matplotlib.axes import Axes
+from matplotlib.colors import LinearSegmentedColormap
+from matplotlib.figure import Figure
 from matplotlib.ticker import FuncFormatter
+from numpy import ndarray
+from shap import Explanation
 
 
 class ResultPlotter:
@@ -25,156 +30,205 @@ class ResultPlotter:
     def __init__(self, var_cfg, plot_base_dir):
         self.var_cfg = var_cfg
         self.plot_cfg = self.var_cfg["postprocessing"]["plots"]
+
         self.plot_base_dir = os.path.join(plot_base_dir, "plots")  # this is the folder containing the processed final results
         self.store_plots = self.plot_cfg["store_plots"]
-        self.feature_combo_mapping = self.plot_cfg["feature_combo_name_mapping"]
+        # self.feature_combo_mapping = self.plot_cfg["feature_combo_name_mapping"]  # TODO adjust
+        self.feature_combo_mapping_cv_result_plot = self.plot_cfg["cv_results_plot"]["feature_combo_name_mapping"]
 
-    def plot_cv_results_plots_wrapper(self, data_to_plot: dict, metric: str, rel: Union[float, None] = None):
+    @property
+    def cv_plot_params(self):
+        """
+        This property extracts the changeable parameters for the cv_results plot from the config and stores them in a
+        dict as a class attribute.
+
+        Returns:
+            dict: Containing the config parameters for the cv_results plot.
+
+        """
+        return {"colors": self.plot_cfg["cv_results_plot"]["color_dct"],
+                "figure_params": self.plot_cfg["cv_results_plot"]["figure_params"],
+                "titles": self.plot_cfg["cv_results_plot"]["titles"],
+                "models": self.plot_cfg["cv_results_plot"]["models"][::-1],
+                "fontsizes": self.plot_cfg["cv_results_plot"]["fontsizes"],
+                "feature_combos": [feature_combination_lst for feature_combination_lst
+                                   in self.plot_cfg["cv_results_plot"]["col_assignment"].values()],
+                "feature_combo_mapping": self.plot_cfg["cv_results_plot"]["feature_combo_name_mapping"],
+                "metrics_to_plot": self.plot_cfg["cv_results_plot"]["metrics"],
+                "crits_to_plot": self.plot_cfg["cv_results_plot"]["crits"],
+                "samples_to_include_to_plot": self.plot_cfg["cv_results_plot"]["samples_to_include"],
+                "store_params": self.plot_cfg["cv_results_plot"]["store_params"],
+                }
+
+    @property
+    def shap_plot_params(self):
+        """
+        This property extracts the changeable parameters for the cv_results plot from the config and stores them in a
+        dict as a class attribute.
+        """
+        return {}
+
+    def plot_cv_results_plots_wrapper(
+                                      self,
+                                      cv_results_dct: dict[str, dict[str, dict[str, float]]],
+                                      rel: Union[float, None] = None) -> None:
         """
         Wrapper function for the "plot_cv_results_plots" function. It
-            - gets the data-indepdenent parameters for the plot from the config
-            - iterates over crit - samples_to_include combinations
-            - gets the specific data for a given combination
+            - iterates over metric - crit - samples_to_include combinations and creates a new base plot for each
+            - gets the specific data for a given combination (including increments and base values for comparison)
             - invokes the plot_cv_results_plots function for a given combination
 
         Args:
-            data_to_plot (dict): Dict containing the cv_results
-            metric:
+            cv_results_dct: Dict containing the cv_results (m/sd) for a given crit/feature_combo/samples_to_include/model
+                combination for each metric
             rel: Reliability of the specific crit, if None, it is not included in the plots
         """
-        # Get meta-params of the plot that are equal for all combinations. Could be a seperate method though
-        color_dct = self.plot_cfg["cv_results_plot"]["color_dct"]
-        feature_combinations = []
-        for col, feature_combination_lst in self.plot_cfg["cv_results_plot"]["col_assignment"].items():
-            feature_combinations.append(feature_combination_lst)
+        for metric in self.cv_plot_params["metrics_to_plot"]:
+            for crit in self.cv_plot_params["crits_to_plot"]:
+                for samples_to_include in self.cv_plot_params["samples_to_include_to_plot"]:
+                    fig, axes = self.create_grid(
+                        num_cols=self.cv_plot_params["figure_params"]["num_cols"],
+                        num_rows=self.cv_plot_params["figure_params"]["num_rows"],
+                        figsize=(self.cv_plot_params["figure_params"]["width"],
+                                 self.cv_plot_params["figure_params"]["height"]),
+                        empty_cells=[tuple(cell) for cell in self.cv_plot_params["figure_params"]['empty_cells']]
+                    )
 
-        titles = self.plot_cfg["cv_results_plot"]["titles"]
-        models = self.plot_cfg["cv_results_plot"]["models"][::-1]  # so that ENR is displayed above RFR
-        cv_results_figure_params = self.plot_cfg["cv_results_plot"]["figure"]
-        cv_results_empty_cells = [tuple(cell) for cell in cv_results_figure_params['empty_cells']]
-        cv_results_fontsizes = self.plot_cfg["cv_results_plot"]["fontsizes"]
+                    # Get the specific data to plot and extract the increment and base values for 2- and 3-level analyses
+                    filtered_metrics_col = self.prepare_cv_results_plot_data(
+                        cv_results_dct=cv_results_dct[metric],
+                        crit=crit,
+                        samples_to_include=samples_to_include,
+                        models=self.cv_plot_params["models"],
+                        feature_combinations=self.cv_plot_params["feature_combos"]
+                    )
+                    ref_dct = self.get_refs(
+                        cv_results_dct=cv_results_dct[metric],
+                        crit=crit,
+                        samples_to_include="all",
+                        ref_feature_combo="pl"
+                    )
+                    margin_dct = self.get_margins(
+                        cv_results_dct=cv_results_dct[metric],
+                        ref_dct=ref_dct,
+                        metric=metric,
+                        crit=crit,
+                        samples_to_include="all",
+                        ref_feature_combo="pl"
+                    )
 
-        # With this order, we can vary "samples_to_include" in one plot more easily
-        for crit in self.plot_cfg["cv_results_plot"]["crit"]:
-            for samples_to_include in self.plot_cfg["cv_results_plot"]["samples_to_include"]:
-                # Create a new figure for every combination
-                fig, axes = self.create_grid(
-                    num_cols=cv_results_figure_params["num_cols"],
-                    num_rows=cv_results_figure_params["num_rows"],
-                    figsize=(cv_results_figure_params["width"], cv_results_figure_params["height"]),
-                    empty_cells=cv_results_empty_cells
-                )
-                # Get the specific data to plot
-                filtered_metrics, filtered_metrics_col = self.prepare_cv_results_plot_data(
-                    data_to_plot=data_to_plot,
-                    crit=crit,
-                    samples_to_include=samples_to_include,
-                    models=models,
-                    feature_combinations=feature_combinations
-                )
-                # Create margin dct to display the incremental performance
-                pl_margin_dct = self.compute_pl_margin(filtered_metrics, metric)
+                    # Create plots for a given metric - crit - samples_to_include combination
+                    self.plot_cv_results_plots(
+                        feature_combinations=self.cv_plot_params["feature_combos"],
+                        crit=crit,
+                        samples_to_include=samples_to_include,
+                        titles=self.cv_plot_params["titles"],
+                        filtered_metrics_col=filtered_metrics_col,
+                        margin_dct=margin_dct,
+                        ref_dct=ref_dct,
+                        fig=fig,
+                        axes=axes,
+                        models=self.cv_plot_params["models"],
+                        color_dct=self.cv_plot_params["colors"],
+                        fontsizes=self.cv_plot_params["fontsizes"],
+                        figure_params=self.cv_plot_params["figure_params"],
+                        metric=metric,
+                        rel=rel,
+                    )
 
-                # Create dict with reference values for the incremental performance
-                pl_ref_dct = {
-                    "elasticnet": filtered_metrics_col[0]["pl_elasticnet"],
-                    "randomforestregressor": filtered_metrics_col[0]["pl_randomforestregressor"]
-                }
-
-                self.plot_cv_results_plots(
-                    feature_combinations=feature_combinations,
-                    crit=crit,
-                    samples_to_include=samples_to_include,
-                    titles=titles,
-                    filtered_metrics_col=filtered_metrics_col,
-                    pl_margin_dct=pl_margin_dct,
-                    pl_ref_dct=pl_ref_dct,
-                    fig=fig,
-                    axes=axes,
-                    models=models,
-                    color_dct=color_dct,
-                    fontsizes=cv_results_fontsizes,
-                    figure_params=cv_results_figure_params,
-                    metric=metric,
-                    rel=rel,
-                )
-
-    def prepare_cv_results_plot_data(self, data_to_plot, crit, samples_to_include, models, feature_combinations):
+    def prepare_cv_results_plot_data(self,
+                                     cv_results_dct: dict[str, dict[str, float]],
+                                     crit: str,
+                                     samples_to_include: str,
+                                     models: list[str],
+                                     feature_combinations: list[list[str]]) \
+            -> list[dict[str, dict[str, float]]]:
         """
         Prepares the filtered data for CV results plotting.
+            - Filters the data to include only the current crit / samples_to_include
+            - Extracts the right metrics for each subplot location on the base plot
+
+        Note:
+            For the "combo" scenario:
+            - The results for samples_to_include == "selected" are used in the first column (one-level analysis)
+            - The results for samples_to_include == "all" are used in the 2nd and 3rd column (two- and three-level analysis).
 
         Args:
-            data_to_plot (dict): The data to be filtered.
-            crit (str): The current criterion being processed.
-            samples_to_include (str): The sample type to include in the filtering.
-            models (list): List of models to include.
-            feature_combinations (list of lists): Feature groups to consider for filtering.
+            cv_results_dct: Dict containing the cv_results (m/sd) for a given crit/feature_combo/samples_to_include/model
+                and the metric specified
+            crit: The current criterion being processed.
+            samples_to_include: The sample type to include ("all", "selected", or "combo").
+            models: List of models to include.
+            feature_combinations: Feature groups to consider for filtering.
 
         Returns:
-            list of dict: Prepared metrics for each feature group.
+            tuple[dict, list[dict]]: (filtered_metrics, filtered_metrics_col)
         """
-        filtered_metrics = {}
-        filtered_metrics_col = []
-
-        if samples_to_include in ["all", "selected"]:
-            # Filter metrics to include only current crit / samples_to_include
-            filtered_metrics = {
-                key.replace(f"{crit}_", "").replace(f"_{samples_to_include}", ""): value
-                for key, value in data_to_plot.items()
-                if key.startswith(crit) and key.endswith(samples_to_include)
-            }
-            # Prepare filtered metrics for each bar to plot
-            filtered_metrics_col = [
-                {
-                    key: value for key, value in filtered_metrics.items()
-                    if key in [f"{prefix}_{model}" for prefix, model in product(group, models)]
-                }
-                for group in feature_combinations
-            ]
-        elif samples_to_include == "combo":
-            for i, group in enumerate(feature_combinations):
-                # Use "selected" for the first column (one-level) and "all" for the other coplumns (two/three-level)
-                if i == 0:
-                    sublist_sample = "selected"
-                else:
-                    sublist_sample = "all"
-
-                # Filter metrics for the current sublist_sample
-                filtered_metrics = {
-                    key.replace(f"{crit}_", "").replace(f"_{sublist_sample}", ""): value
-                    for key, value in data_to_plot.items()
-                    if key.startswith(crit) and key.endswith(sublist_sample)
-                }
-
-                # Filter metrics for the current feature group
-                group_metrics = {
-                    key: value for key, value in filtered_metrics.items()
-                    if key in [f"{prefix}_{model}" for prefix, model in product(group, models)]
-                }
-                filtered_metrics_col.append(group_metrics)
-        else:
+        if samples_to_include not in ["all", "selected", "combo"]:
             raise ValueError("Invalid value for samples_to_include. Must be one of ['all', 'selected', 'combo'].")
 
-        return filtered_metrics, filtered_metrics_col
+        filtered_metrics_col = []
+
+        for i, group in enumerate(feature_combinations):
+            if samples_to_include == "combo":
+                sublist_sample = "selected" if i == 0 else "all"
+            else:
+                sublist_sample = samples_to_include
+
+            filtered_metrics = self.filter_cv_results_data(
+                cv_results_dct=cv_results_dct,
+                crit=crit,
+                samples_to_include=sublist_sample
+            )
+            filtered_metric_col = {
+                key: value for key, value in filtered_metrics.items()
+                if key in [f"{prefix}_{model}" for prefix, model in product(group, models)]
+            }
+            filtered_metrics_col.append(filtered_metric_col)
+
+        return filtered_metrics_col
+
+    @staticmethod
+    def filter_cv_results_data(
+                               cv_results_dct: dict[str, dict[str, float]],
+                               crit: str,
+                               samples_to_include: str) -> dict[str, dict[str, float]]:
+        """
+        This function filters the cv_results_dct for a specific crit and samples_to_include
+
+        Args:
+            cv_results_dct:
+            crit:
+            samples_to_include:
+
+        Returns:
+            dict: Containing the filtered dict with adjusted keys
+
+        """
+        return {
+                key.replace(f"{crit}_", "").replace(f"_{samples_to_include}", ""): value
+                for key, value in cv_results_dct.items()
+                if key.startswith(crit) and key.endswith(samples_to_include)
+            }
 
     def plot_cv_results_plots(self,
                               feature_combinations: list[list[str]],
                               crit: str,
                               samples_to_include: str,
                               titles: list[str],
-                              filtered_metrics_col: list[dict],
-                              pl_margin_dct: dict,
-                              pl_ref_dct: dict,
-                              fig,
-                              axes,
-                              models,
-                              color_dct,
-                              fontsizes,
-                              figure_params,
-                              metric,
-                              rel=None,
-                              ):
-        """ # TODO: add significance brackets for both comparison (ENR / RFR as well as incremental change?)
+                              filtered_metrics_col: list[dict[str, dict[str, float]]],
+                              margin_dct: dict[str, dict[str, float]],
+                              ref_dct: dict[str, dict[str, float]],
+                              fig: Figure,
+                              axes: ndarray[Axes],
+                              models: list[str],
+                              color_dct: dict[str, Union[str, dict[str, float]]],  # dict[str, Union[str, dict[str, [float]]]],
+                              fontsizes: dict[str, int],
+                              figure_params: dict[str, Union[int, float, list[int], list[float]]],
+                              metric: str,
+                              rel: float = None,
+                              ) -> None:
+        """
         This function creates the cv_result bar plot for a given analysis (i.e., a samples_to_include / crit combination).
         As the meta-parameters of the plots are equal for all combinations, we pass them as arguments here.
 
@@ -184,13 +238,15 @@ class ResultPlotter:
             samples_to_include:
             titles:
             filtered_metrics_col:
-            pl_margin_dct:
+            margin_dct:
+            ref_dct
             fig:
             axes:
             models:
             color_dct:
             fontsizes:
             figure_params:
+            metric:
             rel:
         """
         # Loop over columns (one-level / two-level / three-level) and rows (different feature combinations)
@@ -201,8 +257,8 @@ class ResultPlotter:
                     f"{category}_{model}": metrics[f"{category}_{model}"] for model in models if
                     f"{category}_{model}" in metrics
                 }
-                if col_idx == 0:
-                    # Plot for the first column (Within Conceptual Levels)
+
+                if col_idx == 0:  # Plots of the first column (1-level predictions)
                     self.plot_bar_plot(
                         ax=ax,
                         row_idx=row_idx,
@@ -210,92 +266,79 @@ class ResultPlotter:
                         order=[category],
                         models=models,
                         color_dct=color_dct,
-                        feature_combo_mapping=self.feature_combo_mapping,
+                        feature_combo_mapping=self.feature_combo_mapping_cv_result_plot,
                         metric=metric,
                         fontsizes=fontsizes,
                         bar_width=figure_params["bar_width"],
                         rel=rel,
                     )
-                elif col_idx == 1 or col_idx == 2 and row_idx < 1:
-                    # Plot for the second and third column (Across Two Conceptual Levels)
+
+                elif col_idx == 1 or col_idx == 2 and row_idx < 2:  # Plots of the 2nd and 3rd columns (2- and 3-level predictions)
                     self.plot_incremental_bar_plot(
                         ax=ax,
                         row_idx=row_idx,
                         data=single_category_metrics,
-                        pl_margin_dct=pl_margin_dct,
+                        pl_margin_dct=margin_dct,
                         order=[category],
-                        feature_combo_mapping=self.feature_combo_mapping,
+                        feature_combo_mapping=self.feature_combo_mapping_cv_result_plot,
                         models=models,
                         color_dct=color_dct,
                         metric=metric,
                         fontsizes=fontsizes,
                         bar_width=figure_params["bar_width"],
                         rel=rel,
-                        pl_reference_dct=pl_ref_dct
+                        pl_reference_dct=ref_dct
                     )
 
+                # Set global title, axis labels, and formatting
                 ax.set_xlim(figure_params["x_min"], figure_params["x_max"])
-
                 ax.set_title(
                     title if row_idx == 0 else "",
                     fontsize=fontsizes["tick_params"],
                     pad=figure_params["title_pad"],
-                    fontweight="bold"
+                    fontweight="bold",
+                    loc="center"
                 )
-                # Remove frames around the plot
-                ax.spines['top'].set_visible(False)
-                ax.spines['right'].set_visible(False)
-                ax.spines['left'].set_visible(False)
+                ax.title.set_position(figure_params["title_pos"])
+                ax.set_xlim(figure_params["x_min"], figure_params["x_max"])
+                ax.tick_params(axis='y', labelsize=fontsizes["tick_params"])
 
-                # Show x-axis only for the bottom row
+                # Remove frames around the plot and show x-axis only for the bottom row
+                for spine in ['top', 'right', 'left']:
+                    ax.spines[spine].set_visible(False)
                 if row_idx < len(group) - 1:
                     ax.tick_params(axis='x', bottom=False, labelbottom=False)
                     ax.spines['bottom'].set_visible(False)
-                ax.tick_params(axis='y', labelsize=fontsizes["tick_params"])
 
-        # Create a legend in the lower right corner
-        elasticnet_patch = mpatches.Patch(facecolor='lightgray', edgecolor='black', label='ENR (Upper Bar)')
-        randomforest_patch = mpatches.Patch(facecolor='gray', edgecolor='black', label='RFR (Lower Bar)')
-        personal_patch = mpatches.Patch(facecolor=color_dct["pl"], edgecolor='none', label='Personal Predictors')
-        situational_patch = mpatches.Patch(facecolor=color_dct["srmc"], edgecolor='none', label='Situational/Societal Predictors')
-        legends_to_handle = [elasticnet_patch, randomforest_patch, personal_patch, situational_patch]
-        if rel:
-            reliability_line = mlines.Line2D([], [], color='black', linestyle='--', linewidth=1.2, label='Reliability = .90')
-            legends_to_handle.append(reliability_line)
-
-        # Add the custom legend to the figure
-        fig.legend(
-            handles=legends_to_handle,
-            loc='lower right',
-            bbox_to_anchor=tuple(figure_params["legend_pos"]),
-            ncol=1,
-            frameon=False,
-            title="",
-            fontsize=fontsizes["legend"]
+        self.add_cv_results_plot_legend(
+            fig=fig,
+            legend_loc=figure_params["legend_pos"],
+            legend_fontsize=fontsizes["legend"],
+            color_dct=color_dct,
+            model_legend=True,
+            feature_combo_legend=True,
+            rel=False
         )
-        #line_x_positions = [0.1235, 0.437, 0.755]  # adjust these as needed
-        #line_y_positions = [[0.1, 0.9], [0.1, 0.9], [0.52, 0.9]]
-        line_x_positions = [0.09, 0.41, 0.728]
-        line_y_positions = [[0.1, 0.9], [0.1, 0.9], [0.52, 0.9]]
 
-        for x, y in zip(line_x_positions, line_y_positions):
+        # Add a joint y-axis across all subplots
+        for x, y in zip(figure_params["y_axis_x_pos"], figure_params["y_axis_y_pos"]):
             line = mlines.Line2D(
                 xdata=[x, x],
                 ydata=y,
                 transform=fig.transFigure,
                 color='black',
                 linestyle='-',
-                linewidth=1
+                linewidth=1,
             )
             fig.add_artist(line)
 
-        # Adjust layout for readability
-        plt.tight_layout(rect=figure_params["tight_layout"])  # (rect=[0, 0.05, 1, 0.95])
+        # Adjust layout and store
+        plt.tight_layout(rect=figure_params["tight_layout"])
         if self.store_plots:
             self.store_plot(
-                plot_name="cv_results",
-                plot_format="pdf",  # TODO test
-                dpi=600,  # TODO test
+                plot_name=self.cv_plot_params["store_params"]["name"],
+                plot_format=self.cv_plot_params["store_params"]["format"],
+                dpi=self.cv_plot_params["store_params"]["dpi"],
                 crit=crit,
                 samples_to_include=samples_to_include,
                 model=None
@@ -303,21 +346,77 @@ class ResultPlotter:
         else:
             plt.show()
 
+    @staticmethod
+    def add_cv_results_plot_legend(fig: Figure,
+                                   legend_loc: tuple[float, float],
+                                   legend_fontsize: int,
+                                   color_dct: dict,
+                                   model_legend: bool = True,
+                                   feature_combo_legend: bool = True,
+                                   rel: bool = False) -> None:
+        """
+        This function adds a legend in the lower right corner of the cv_results plot. This includes
+            - a description of the bar location for the models
+            - a description of the colors for the feature groups
+
+        Returns:
+        """
+        legends_to_plot = []
+        if model_legend:
+            elasticnet_patch = mpatches.Patch(
+                facecolor='lightgray',
+                edgecolor='none',
+                label='ENR (Upper Bar)'
+            )
+            randomforest_patch = mpatches.Patch(
+                facecolor='gray',
+                edgecolor='none',
+                label='RFR (Lower Bar)'
+            )
+            legends_to_plot.extend([elasticnet_patch, randomforest_patch])
+        if feature_combo_legend:
+            personal_patch = mpatches.Patch(
+                facecolor=color_dct["pl"],
+                edgecolor='none',
+                label='Personal Predictors'
+            )
+            other_patch = mpatches.Patch(
+                facecolor=color_dct["other"],
+                edgecolor='none',
+                label='Situational/Societal Predictors'
+            )
+            legends_to_plot.extend([personal_patch, other_patch])
+
+        if rel:
+            reliability_line = mlines.Line2D([], [], color='black', linestyle='--', linewidth=1.2, label=f'Reliability = {rel}')
+            legends_to_plot.append(reliability_line)
+
+        # Add the custom legend to the figure
+        fig.legend(
+            handles=legends_to_plot,
+            loc='lower right',
+            bbox_to_anchor=legend_loc,  # tuple(figure_params["legend_pos"]),
+            ncol=1,
+            frameon=False,
+            title="",
+            fontsize=legend_fontsize
+        )
+
     def plot_bar_plot(self,
-                      ax,
-                      data,
-                      order,
-                      models,
-                      color_dct,
-                      feature_combo_mapping,
-                      fontsizes,
-                      metric,
-                      bar_width,
-                      row_idx,
-                      rel=None):
+                      ax: Axes,
+                      data: dict[str, dict[str, float]],
+                      order: list[str],
+                      models: list[str],
+                      color_dct: dict[str, Union[str, dict[str, float]]],
+                      feature_combo_mapping: dict[str, str],
+                      fontsizes: dict[str, int],
+                      metric: str,
+                      bar_width: float,
+                      row_idx: int,
+                      rel: float = None) -> None:
         """
         Plots a bar plot for the given data with error bars, with each feature group displayed separately.
-        Uses different saturation levels to differentiate models and adds a vertical line for `rel`.
+        Uses different saturation levels to differentiate models and adds a vertical line for `rel`, if provided
 
         Args:
             ax: matplotlib axis object to plot on.
@@ -325,33 +424,34 @@ class ResultPlotter:
             order: list of feature combinations (e.g., ['pl', 'srmc', 'mac', 'sens']) to control y-axis order.
             models: list of models (e.g., ['elasticnet', 'randomforestregressor']) to color the bars.
             color_dct: Optional dict of colors for each feature category.
+            feature_combo_mapping:
+            fontsizes
+            metric
+            bar_width
+            row_idx
             rel: vertical line value to indicate a threshold.
         """
         m_metric = f"m_{metric}"
         sd_metric = f"sd_{metric}"
-
-        # Generate bar positions for each feature group
         y_positions = np.arange(len(order))
 
         # Loop through each model and feature group
         for i, model in enumerate(models):
             for j, feature in enumerate(order):
                 # Set color saturation to differentiate models
-                base_color = color_dct[feature]
-                alpha = 1 if model == "randomforestregressor" else 0.7
+                if feature == "pl":
+                    base_color = color_dct["pl"]
+                else:
+                    base_color = color_dct["other"]
+                alpha = color_dct["bar_saturation"][model]
 
                 model_key = f"{feature}_{model}"
-                value = data.get(model_key, {}).get(m_metric, 0)
-                error = data.get(model_key, {}).get(sd_metric, 0)
+                value = data[model_key][m_metric]
+                error = data[model_key][sd_metric]
 
                 # Plot the bar with adjusted color
                 ax.barh(y_positions[j] + (i * bar_width), value, xerr=error, height=bar_width,
                         color=base_color, align='center', capsize=5, edgecolor=None, alpha=alpha)
-
-                # Define the coordinates for the bracket  TODO: Fix or remove
-                # left, right = ax.get_xlim()
-                # bottom, top = ax.get_ylim()
-                # may place some significance bracket here
 
         self.format_bar_plot(
             ax=ax,
@@ -366,29 +466,36 @@ class ResultPlotter:
         )
 
     def plot_incremental_bar_plot(self,
-                                  ax,
-                                  data,
-                                  pl_margin_dct,
-                                  pl_reference_dct,
-                                  order,
-                                  models,
-                                  color_dct,
-                                  feature_combo_mapping,
-                                  fontsizes,
-                                  metric,
-                                  row_idx,
-                                  bar_width,
-                                  rel=None):
+                                  ax: Axes,
+                                  data: dict[str, dict[str, float]],
+                                  pl_margin_dct: dict[str, dict[str, float]],
+                                  pl_reference_dct: dict[str, dict[str, float]],
+                                  order: list[str],
+                                  models: list[str],
+                                  color_dct: dict[str, Union[str, dict[str, float]]],
+                                  feature_combo_mapping: dict[str, str],
+                                  fontsizes: dict[str, int],
+                                  metric: str,
+                                  row_idx: int,
+                                  bar_width: float,
+                                  rel: float = None) -> None:
         """
         Plots an incremental bar plot, splitting each bar into 'pl' base and the incremental effect.
 
         Args:
             ax: matplotlib axis object to plot on.
             data: dict of feature-model combinations with metrics.
-            pl_margin_dct: dict from compute_pl_margin, containing incremental metrics.
+            pl_margin_dct: dict from get_margins, containing incremental metric values
+            pl_reference_dct: dict from get_refs, containing base metric values
             order: list of feature combinations.
             models: list of models.
             color_dct: Color dictionary for each feature.
+            feature_combo_mapping:
+            fontsizes
+            metric
+            bar_width
+            row_idx
+            rel: vertical line value to indicate a threshold.
         """
         print(metric)
         m_metric = f"m_{metric}"
@@ -397,26 +504,28 @@ class ResultPlotter:
 
         for i, model in enumerate(models):
             for j, feature in enumerate(order):
+
                 # Combination, plot incremental bar
-                base_value = pl_reference_dct[model][m_metric]
-                increment = pl_margin_dct.get(f"{feature}_{model}", {}).get(f"incremental_{m_metric}", 0)
+                base_value = pl_reference_dct[f"pl_{model}"][m_metric]
+                increment = pl_margin_dct[f"{feature}_{model}"][f"incremental_{m_metric}"]
                 error = data[f"{feature}_{model}"][sd_metric]
 
-                base_feature = feature.split("_")[1]
-                other_feat_color = color_dct[base_feature]
+                # Colors and saturation
+                alpha = color_dct["bar_saturation"][model]
+                other_feat_color = color_dct["other"]
                 pl_color = color_dct["pl"]
-                alpha = 1 if model == "randomforestregressor" else 0.7
 
-                ax.barh(y_positions[j] + (i * bar_width), base_value, height=bar_width, color=pl_color,
-                        align='center', edgecolor=None, alpha=alpha)
                 if increment > 0:
+                    ax.barh(y_positions[j] + (i * bar_width), base_value, height=bar_width, color=pl_color,
+                            align='center', edgecolor=None, alpha=alpha)
                     ax.barh(y_positions[j] + (i * bar_width), increment, left=base_value, height=bar_width,
                             xerr=error, color=other_feat_color, align='center', edgecolor=None, alpha=alpha,
                             capsize=5)
-                else: # if negative, just show the pl color and dislplay true results
-                    ax.barh(y_positions[j] + (i * bar_width), 0, left=base_value, height=bar_width,
-                            xerr=error, color=other_feat_color, align='center', edgecolor=None, alpha=alpha,  # hatch
-                            capsize=5)
+                else:
+                    print(f"{feature}_{model}, no increment, only plot blue bar for the combination")
+                    real_value = base_value + increment
+                    ax.barh(y_positions[j] + (i * bar_width), real_value, height=bar_width, color=pl_color,
+                            xerr=error, align='center', edgecolor=None, alpha=alpha, capsize=5)
 
             self.format_bar_plot(
                 ax=ax,
@@ -430,39 +539,56 @@ class ResultPlotter:
                 rel=rel
             )
 
-    def format_bar_plot(self, ax, row_idx, y_positions, bar_width, feature_combo_mapping, order, fontsizes, metric, rel=None):
+    def format_bar_plot(self,
+                        ax: Axes,
+                        row_idx: int,
+                        y_positions: ndarray,
+                        bar_width: float,
+                        feature_combo_mapping: dict[str, str],
+                        order: list[str],
+                        fontsizes: dict[str, int],
+                        metric: str,
+                        rel: float = None) -> None:
         """
         Formats the bar plot by setting y-ticks, x-axis label based on the metric, and an optional reference line.
 
         Args:
             ax: Matplotlib Axes object to format.
             y_positions: Array of y positions for the bars.
+            row_idx: row index of the subplot.
             bar_width: Width of the bars.
             feature_combo_mapping: Dictionary mapping features to their group labels.
             order: List of features in the desired order for the y-axis.
+            fontsizes: Dictionary of font sizes for the plot.
             metric: Metric for the x-axis label ("spearman", "pearson", or "r2").
             rel: Optional float, the reference line value to draw.
         """
         # Set y-ticks to the feature group labels in reversed order
         ax.set_yticks(y_positions + bar_width / 2)
 
-        # Map features to their group labels
+        # Map features to their group labels and format the strings
         feature_combos = [feature_combo_mapping[feature] for feature in order]
-        # Format feature combinations
-        feature_combos_str_format = [self.line_break_strings(combo, max_char_on_line=14, balance=False)
+        feature_combos_str_format = [self.line_break_strings(combo,
+                                                             max_char_on_line=14,
+                                                             balance=False,
+                                                             split_strng=";",
+                                                             force_split_strng=True)  # 14, False
                                      for combo in feature_combos]
+
+        # Display the formatted feature combinations with the sample_size n in italics
+        feature_combos_str_format = [
+            re.sub(r'\b[nN]\b', r'$\g<0>$', s) if re.search(r'[nN] =', s) else s
+            for s in feature_combos_str_format
+        ]
         ax.set_yticklabels(feature_combos_str_format,
                            fontsize=fontsizes["tick_params"],
                            horizontalalignment="left")
 
+        # Set and format axes
         ax.spines['left'].set_visible(False)
-
-        # Apply custom APA-style formatting to the x-axis
         ax.xaxis.set_major_formatter(FuncFormatter(lambda x, _: self.format_metric(x)))
-
-        # Set tick parameters
         ax.tick_params(axis='x', labelsize=fontsizes["tick_params"])
-        ax.tick_params(axis='y', which='major', pad=90, length=0)
+        ax.tick_params(axis='y', which='major', pad=90, length=0)  # 90, if fontsizes = 15
 
         # Set x-axis label based on the metric
         if row_idx == 3:
@@ -478,11 +604,11 @@ class ResultPlotter:
             ax.axvline(x=rel, color='black', linestyle='--', linewidth=1.2, label=f'Rel ({rel:.2f})')
 
     @staticmethod
-    def format_metric(metric: float) -> str:
+    def format_metric(metric: float) -> Union[str, int]:
         """
         Formats a given metric according to APA style:
-        - No leading zero for correlations or R² values (e.g., .85 instead of 0.85).
-        - Rounded to two decimal places.
+            - No leading zero for correlations or R² values (e.g., .85 instead of 0.85).
+            - Rounded to two decimal places.
 
         Args:
             metric: The metric to be formatted (e.g., a correlation or R² value).
@@ -496,15 +622,12 @@ class ResultPlotter:
         if not isinstance(metric, (float, int)):
             raise ValueError("The metric must be a numeric value.")
 
-        # Round to two decimals
         rounded_metric = round(metric, 2)
-
-        # Format without leading zero
         formatted_metric = f"{rounded_metric:.2f}".lstrip('0').replace('-.', '-0.')
 
         return formatted_metric
 
-    def apply_formatted_x_axis(self, ax):
+    def apply_formatted_x_axis(self, ax: Axes) -> None:
         """
         Applies the APA-style formatting to the x-axis of a plot.
 
@@ -514,113 +637,115 @@ class ResultPlotter:
         formatter = FuncFormatter(lambda x, _: self.format_metric(x))
         ax.xaxis.set_major_formatter(formatter)
 
-    def add_significance_bracket(self, ax, y1, y2, significance_level):
-        """  # TODO Not used ATM
-        Adds a vertical significance bracket with asterisks to the right of two bars, using
-        axis-relative positioning to avoid changing the layout.
-
-        Args:
-            ax: Matplotlib axis object where the bracket will be drawn.
-            y1: The y-coordinate of the bottom error bar (relative position within axis).
-            y2: The y-coordinate of the top error bar (relative position within axis).
-            significance_level: p-value for determining the number of asterisks.
-        """
-        # Determine the symbol based on the p-value
-        if significance_level < 0.001:
-            sig_symbol = "***"
-        elif significance_level < 0.01:
-            sig_symbol = "**"
-        elif significance_level <= 0.05:
-            sig_symbol = "*"
-        else:
-            sig_symbol = ""
-
-        if sig_symbol:  # Only add bracket if significance is <= 0.05
-            # Position x just beyond the right edge in relative coordinates
-            x_bracket = 1.05
-
-            # Plot vertical line for the bracket in relative coordinates
-            ax.plot([x_bracket, x_bracket], [y1, y2], lw=1.5, c='black', transform=ax.transAxes, clip_on=True)
-
-            # Draw short horizontal lines at the ends of the vertical line
-            bracket_width = 0.02  # Width of the horizontal lines in relative units
-            ax.plot([x_bracket, x_bracket + bracket_width], [y1, y1], lw=1.5, c='black', transform=ax.transAxes, clip_on=True)
-            ax.plot([x_bracket, x_bracket + bracket_width], [y2, y2], lw=1.5, c='black', transform=ax.transAxes, clip_on=True)
-
-            # Place the significance symbol next to the bracket
-            ax.text(x_bracket + bracket_width * 1.5, (y1 + y2) / 2, sig_symbol, ha='left', va='center',
-                    color='black', fontsize=12, transform=ax.transAxes, clip_on=True)
-
-    def create_grid(self, num_rows: int, num_cols: int, figsize: tuple[int] = (15, 20), empty_cells=None):
+    def create_grid(self,
+                    num_rows: int,
+                    num_cols: int,
+                    figsize: tuple[int] = (15, 20),
+                    empty_cells: Collection[tuple[int]] = None)\
+            -> tuple[Figure, ndarray[Axes]]:
         """
         This function creates a flexible grid of subplots with customizable empty cells.
 
         Args:
-            num_rows (int): Number of rows in the grid.
-            num_cols (int): Number of columns in the grid.
-            figsize (tuple): Figure size for the entire grid (default is (15, 20)).
-            empty_cells (list of tuples): List of (row, col) tuples where cells should be empty.
+            num_row: Number of rows in the grid.
+            num_cols: Number of columns in the grid.
+            figsize: Figure size for the entire grid (default is (15, 20)).
+            empty_cells: List of (row, col) tuples where cells should be empty.
 
         Returns:
-            fig (plt.Figure): Matplotlib figure object for the grid.
-            axes (np.ndarray): Array of axes objects for individual plots.
+            fig: Matplotlib figure object for the grid.
+            axes: Array of axes objects for individual plots.
         """
-        # Initialize figure and axes grid
         fig, axes = plt.subplots(num_rows, num_cols, figsize=figsize, squeeze=False)
-
-        # Set specified cells as empty
         if empty_cells:
             for (row, col) in empty_cells:
                 fig.delaxes(axes[row, col])  # Remove the axis for empty cells
-
-        # Return figure and axes array
         return fig, axes
 
-    def compute_pl_margin(self, filtered_metrics: dict, metric: str):
+    def get_margins(
+            self,
+            cv_results_dct: dict[str, dict[str, float]],
+            ref_dct: dict[str, dict[str, float]],
+            crit: str,
+            samples_to_include: str,
+            metric: str,
+            ref_feature_combo: str = "pl") -> dict[str, dict[str, float]]:
         """
         Computes the incremental performance difference for all combinations involving 'pl' (e.g., 'pl_srmc')
-        compared to the base 'pl' metric for each model.
+        compared to the base 'pl' metric for each model. It
+            - extracts the base metric and the combined metrics to compute the increment
+            - stores the increment and the standard deviation of the combined metric in a dict
 
         Args:
-            filtered_metrics (dict): Dictionary containing metrics for each model and feature combination.
+            cv_results_dct: Dictionary containing metrics for each model and feature combination.
+            ref_dct: Dict containing the reference values for both models (e.g., pl_elasticnet).
+            crit: e.g., wb_state
+            samples_to_include: e.g., all
+            metric: The metric to compute the incremental performance difference for.
+            ref_feature_combo: The reference feature combination to compare the incremental performance to (default is 'pl').
 
         Returns:
             dict: Dictionary containing incremental performance differences for each 'pl' combination and model.
         """
-        # Initialize a dictionary to store the incremental performance margins
-        pl_margin_dict = {}
+        margin_dict = {}
         m_metric = f"m_{metric}"
         sd_metric = f"sd_{metric}"
+        ref = f"{ref_feature_combo}_"
 
-        # Get base metrics for 'pl' only (e.g., 'pl_elasticnet' and 'pl_randomforestregressor')
-        base_metrics = {key: value for key, value in filtered_metrics.items() if key.startswith("pl_") and "_" not in key[len("pl_"):]}
+        filtered_metrics = self.filter_cv_results_data(
+            cv_results_dct=cv_results_dct,
+            crit=crit,
+            samples_to_include=samples_to_include,
+        )
 
-        # Loop over each key in the filtered_metrics that contains 'pl_' but is not the base 'pl'
+        # Loop over each key in the filtered_metrics that contains ref but is not ref (e.g., pl_srmc vs. pl)
         for key, value in filtered_metrics.items():
-            if key.startswith("pl_") and key not in base_metrics:
+            if key.startswith(ref) and key not in ref_dct or key.startswith("all_in"):
                 model = key.split('_')[-1]
-                base_key = f"pl_{model}"
+                base_key = f"{ref}{model}"
 
-                # Check if the base metric exists
-                if base_key in base_metrics:
-                    # Calculate the difference in metric  for the combination vs the base 'pl'
-                    incremental_difference = value[m_metric] - base_metrics[base_key][m_metric]
-
-                    # Store the incremental difference with the key indicating the combination and model
-                    pl_margin_dict[key] = {
+                if base_key in ref_dct:
+                    incremental_difference = value[m_metric] - ref_dct[base_key][m_metric]
+                    margin_dict[key] = {
                         f'incremental_m_{metric}': incremental_difference,
-                        sd_metric: value[sd_metric]  # Keep the standard deviation of the combination
+                        sd_metric: value[sd_metric]  # Note: We need the SD of the combined metric for the plots
                     }
 
-        return pl_margin_dict
+        return margin_dict
+
+    @staticmethod
+    def get_refs(cv_results_dct: dict[str, dict[str, float]],  # TODO check
+                 crit: str,
+                 samples_to_include: str,
+                 ref_feature_combo: str = "pl") -> dict[str, dict[str, float]]:
+        """
+        This function extracts the reference values for the two- and three-level analysis in the cv_result plots.
+
+        Args:
+            cv_results_dct: Dict containing the M and SD for a given feature_combo/crit/samples_to_include/model combination
+                and a predefined metric
+            crit: e.g., "wb_state"
+            samples_to_include: e.g., "all"
+            ref_feature_combo: e.g., "pl"
+
+        Returns:
+            dict: Contaning the reference values used in the plot for both models
+
+        """
+        return {
+            f"{ref_feature_combo}_elasticnet":
+                cv_results_dct[f"{crit}_{ref_feature_combo}_elasticnet_{samples_to_include}"],
+            f"{ref_feature_combo}_randomforestregressor":
+                cv_results_dct[f"{crit}_{ref_feature_combo}_randomforestregressor_{samples_to_include}"]
+        }
 
     def plot_shap_beeswarm_plots(self, prepare_shap_data_func: Callable, prepare_shap_ia_data_func: Callable = None):
         """
         Plots SHAP beeswarm plots for different predictor combinations arranged in a grid.
 
         Args:
-            prepare_shap_data_func
-            prepare_shap_ia_data_func
+            prepare_shap_data_func:
+            prepare_shap_ia_data_func:
 
         Returns:
             None
@@ -667,7 +792,7 @@ class ResultPlotter:
                             crit_to_plot=crit,
                             samples_to_include=samples_to_include,
                             model_to_plot=model,
-                            feature_combination=ia_cfg["feature_combination"],
+                            feature_combination_to_plot=ia_cfg["feature_combination"],
                             meta_stat_to_extract=ia_cfg["meta_stat_to_extract"],
                             stat_to_extract=ia_cfg["stat_to_extract"],
                             order_to_extract=ia_cfg["order_to_extract"],
@@ -677,11 +802,12 @@ class ResultPlotter:
                         positions[ia_position] = next(iter(ia_data_current))
 
                     # Create a grid of subplots with specified empty cells
+                    beeswarm_width = beeswarm_figure_params["width"]
+                    beeswarm_height = beeswarm_figure_params["height"]
                     fig, axes = self.create_grid(
                         num_rows=beeswarm_figure_params["num_rows"],
                         num_cols=beeswarm_figure_params["num_cols"],
-                        figsize=(int(beeswarm_figure_params["width"]),
-                                 int(beeswarm_figure_params["height"]))
+                        figsize=(beeswarm_width, beeswarm_height)
                     )
 
                     # Iterate over the positions and plot the SHAP beeswarm plots
@@ -691,41 +817,71 @@ class ResultPlotter:
                             self.plot_shap_beeswarm(
                                 shap_values=shap_values,
                                 ax=axes[row, col],
+                                row=row,
                                 beeswarm_fontsizes=beeswarm_fontsizes,
                                 num_to_display=num_to_display,
                                 cmap=cmap,
                                 feature_combo_name_mapping=feature_combo_name_mapping,
                                 predictor_combination=predictor_combination,
                             )
+                            # Add the main title (first-row axes only)
+                            if row == 0:
+                                first_row_heading = self.plot_cfg["shap_beeswarm_plot"]["titles"]["shap_values"][col]
+                                axes[row, col].text(
+                                    0.32, 1.35,  # 0.35
+                                    first_row_heading,
+                                    fontsize=beeswarm_fontsizes["main_title"],
+                                    fontweight="bold",
+                                    ha="center",
+                                    va="bottom",
+                                    transform=axes[row, col].transAxes,  # Use axes-relative coordinates
+                                )
                         else:
                             if predictor_combination in ia_data_current:
                                 shap_ia_data = ia_data_current[predictor_combination]
                                 self.plot_shap_beeswarm(
                                     shap_values=shap_ia_data,
                                     ax=axes[row, col],
+                                    row=row,
                                     beeswarm_fontsizes=beeswarm_fontsizes,
                                     num_to_display=num_to_display,
                                     cmap=cmap,
                                     feature_combo_name_mapping=feature_combo_name_mapping,
                                     predictor_combination=predictor_combination,
+                                    ia_values=True,
+                                )
+                                ia_heading = self.plot_cfg["shap_beeswarm_plot"]["titles"]["shap_ia_values"][0]
+                                axes[row, col].text(
+                                    0.48, 1.31,
+                                    ia_heading,
+                                    fontsize=beeswarm_fontsizes["main_title"],
+                                    fontweight="bold",
+                                    ha="center",  # Align horizontally
+                                    va="bottom",  # Align vertically
+                                    transform=axes[row, col].transAxes,  # Use axes-relative coordinates
                                 )
                             else:
                                 print(f"Predictor combination '{predictor_combination}' not found in shap data or shap ia data")
 
+                    # Hide empty subplot
+                    fig.delaxes(axes[2, 2])
+
                     # Adjust layout and display the figure
                     plt.subplots_adjust(
+                        top=beeswarm_subplot_adj["top"],
                         left=beeswarm_subplot_adj["left"],
                         wspace=beeswarm_subplot_adj["wspace"],
                         hspace=beeswarm_subplot_adj["hspace"],
                         right=beeswarm_subplot_adj["right"]
                     )
-                    plt.tight_layout(rect=[0.01, 0.01, 0.99, 0.975])
+
                     if self.store_plots:
                         self.store_plot(
                             plot_name=f"beeswarm_{crit}_{samples_to_include}_{model}",
                             crit=crit,
                             samples_to_include=samples_to_include,
-                            plot_format="pdf",
+                            plot_format="png",  # "pdf"
+                            dpi=450,
                             model=model
                         )
                     else:
@@ -734,11 +890,13 @@ class ResultPlotter:
     def plot_shap_beeswarm(self,
                            shap_values: shap.Explanation,
                            ax,
+                           row,
                            beeswarm_fontsizes: dict,
                            num_to_display: int,
                            cmap,
                            feature_combo_name_mapping,
                            predictor_combination,
+                           title_line_dct: dict,
                            ia_values: bool = False,
                            ):
         """
@@ -747,13 +905,38 @@ class ResultPlotter:
 
         """
         plt.sca(ax)
-        feature_names_formatted = [self.line_break_strings(feature_name, max_char_on_line=28, balance=True)
-                                   for feature_name in shap_values.feature_names]
+        if ia_values:
+            # max_char_on_line = 44
+            # split_string = "x"
+
+            # Currently, we just use the abbreviations # TODO make more flexible
+            feature_names_formatted = [f"IA{num_ia}" for num_ia in range(1, num_to_display + 1)]
+
+            # Step 1: Compute the mean absolute SHAP values for each feature
+            mean_abs_shap = np.abs(shap_values.values).mean(axis=0)
+
+            # Step 2: Get the indices that would sort the features by mean absolute SHAP values in descending order
+            sorted_indices = np.argsort(mean_abs_shap)[::-1][:num_to_display]
+
+            # Step 3: Select the top features and corresponding SHAP values and data
+            shap_values_to_plot = shap_values.values[:, sorted_indices]
+            data_to_plot = shap_values.data[:, sorted_indices]
+
+        else:
+            max_char_on_line = self.plot_cfg["shap_beeswarm_plot"]["titles"]["split_strng"]
+            split_string = None
+            feature_names_formatted = [self.line_break_strings(strng=feature_name,
+                                                               max_char_on_line=max_char_on_line,
+                                                               balance=True,
+                                                               split_strng=split_string)
+                                       for feature_name in shap_values.feature_names]
+            shap_values_to_plot = shap_values.values
+            data_to_plot = shap_values.data
 
         # Plot the SHAP beeswarm plot in the specified subplot
         shap.summary_plot(
-            shap_values.values,
-            shap_values.data,
+            shap_values_to_plot,
+            data_to_plot,
             feature_names=feature_names_formatted,
             max_display=num_to_display,
             show=False,
@@ -763,148 +946,103 @@ class ResultPlotter:
         )
         # Set title and fontsizes
         if ia_values:
-            split_strng = "-"
+            split_strng = self.plot_cfg["shap_beeswarm_plot"]["shap_ia_values"]["title_split_strng"]  # : TODO: Check if it works
         else:
-            split_strng = "+"
+            split_strng = self.plot_cfg["shap_beeswarm_plot"]["titles"]["split_strng"]  # +
 
         formatted_title = self.line_break_strings(
             strng=feature_combo_name_mapping[predictor_combination],
-            max_char_on_line=26,
+            max_char_on_line=self.plot_cfg["shap_beeswarm_plot"]["max_char_on_line"],
             split_strng=split_strng,
         )
+
+        # make a second mapping for the n-values and add them to the title
+        n_sample_mapping = self.plot_cfg["shap_beeswarm_plot"]["n_samples_mapping"]
+        n_samples_formatted = n_sample_mapping[predictor_combination]
+
+        print(n_samples_formatted)
+        n_samples_formatted = re.sub(r'\bn\b', r'$n$', n_samples_formatted, flags=re.IGNORECASE)
+        formatted_title += f"\n{n_samples_formatted}"
+
+        # Determine the maximum line count for the current row
+        max_lines_in_row = title_line_dct[f"row_{row}"]
+        current_title_line_count = formatted_title.count("\n") + 1
+        y_position = 1.0 + 0.05 * (max_lines_in_row - current_title_line_count)
+
         ax.set_title(
             formatted_title,
             fontsize=beeswarm_fontsizes["title"],
-            weight="bold"
+            y=y_position
         )
+
+        # Align fontsizes and labels
         ax.tick_params(
             axis='both',
             which='major',
             labelsize=beeswarm_fontsizes["tick_params"]
         )
+        if ia_values:
+            ax.set_xlabel("SHAP IA value (impact on model output)", fontsize=beeswarm_fontsizes["x_label"])  # Custom x-axis label
         ax.xaxis.label.set_size(beeswarm_fontsizes["x_label"])
         ax.yaxis.label.set_size(beeswarm_fontsizes["y_label"])
 
-        if ia_values:
-            plt.set_cmap(cmap)
+        # Set xlim to a fix value
+        if self.plot_cfg["shap_beeswarm_plot"]["figure"]["fix_x_lim"]:
+            ax.set_xlim(tuple(self.plot_cfg["shap_beeswarm_plot"]["figure"]["xlim"]))
 
-    def plot_shap_importances(self,
-                              shap_ia_data: dict,
-                              ax,
-                              beeswarm_fontsizes: dict,
-                              num_to_display: int,
-                              cmap,
-                              feature_combo_name_mapping,
-                              predictor_combination,
-                              ):
-        """ # TODO: Idee: Farbe nach Vorzeichen (positive / negative Interactions)?
-        Plot a bar chart of SHAP-like feature importances.
+    def get_n_most_important_features(self, shap_values: Explanation, n: int) -> tuple[ndarray, ndarray, list[str]]:
+        """
+        This function extracts the n most important features from the SHAP values. It
+            - gets the abbreviation for plotting SHAP values from the config
+            - computes the mean absolute SHAP values / SHAP IA values for each feature
+            - gets the indices for the n most important features
+            - select the top features and corresponding SHAP values, data, and feature names
 
         Args:
-            shap_ia_data (dict): A dictionary of feature importances keyed by feature name.
-            ax (matplotlib.axes._axes.Axes): The axes object on which to plot.
-            beeswarm_fontsizes (dict): Dictionary specifying font sizes for title, tick_params, x_label, and y_label.
-            num_to_display (int): The number of top features to display.
-            cmap (matplotlib.colors.ListedColormap or str): Colormap for coloring the bars (fallback if feature not in color_dct).
-            feature_combo_name_mapping (dict): Dictionary mapping predictor combinations to a formatted string for the title.
-            predictor_combination (hashable): Key used to retrieve the appropriate title from `feature_combo_name_mapping`.
-            color_dct (dict): Dictionary mapping feature names to specific colors.
+            shap_values: Explanation objects for a given analysis setting
+            n: number of features to extract
 
         Returns:
-            None
+            tuple Containing the shape values to plot, the data to plot, and the formatted feature names
         """
-        plt.sca(ax)
+        abbr = self.plot_cfg["shap_beeswarm_plot"]["shap_ia_values"]["abbr"]
+        feature_names_formatted = [f"{abbr}{num_ia}" for num_ia in range(1, n + 1)]
 
-        # Extract feature names and values
-        features = list(shap_ia_data.keys())
-        values = [val["mean"] for val in list(shap_ia_data.values())]
+        mean_abs_shap = np.abs(shap_values.values).mean(axis=0)
+        sorted_indices = np.argsort(mean_abs_shap)[::-1][:n]
 
-        # Limit the number of features displayed
-        if num_to_display < len(features):
-            features = features[:num_to_display]
-            values = values[:num_to_display]
+        shap_values_to_plot = shap_values.values[:, sorted_indices]
+        data_to_plot = shap_values.data[:, sorted_indices]
 
-        # Format feature names
-        feature_names_formatted = [
-            self.line_break_strings(feature_name, max_char_on_line=33, balance=True)
-            for feature_name in features
-        ]
+        return shap_values_to_plot, data_to_plot, feature_names_formatted
 
-        # Use provided colors from color_dct, fallback to a color from cmap if needed
-        if isinstance(cmap, str):
-            cmap = plt.get_cmap(cmap)
-
-        # Create positions for bars to increase space between them
-        # By spacing out the y positions, we can create more distance between bars
-        y_positions = range(len(feature_names_formatted))
-        bar_height = 0.6  # Reduce bar height to create more space
-
-        # Create the bar plot with specified height for spacing
-        ax.barh(y=y_positions, width=values, color="blue", edgecolor='black', height=bar_height)
-
-        # Invert y-axis for SHAP-like order
-        ax.invert_yaxis()
-
-        # Set custom y-ticks and labels
-        # We'll keep the labels, but remove tick marks. Tick labels help identify the features.
-        ax.set_yticks(y_positions)
-        ax.set_yticklabels(feature_names_formatted, fontsize=beeswarm_fontsizes["tick_params"])
-
-        # Remove the y-tick lines but keep the labels
-        ax.tick_params(axis='y', which='both', length=0)
-
-        # Show the y-axis line (left spine)
-        ax.spines['left'].set_visible(True)
-
-        # Keep the x-axis and label it
-        ax.set_xlabel("mean(|SHAP interaction value|)", fontsize=beeswarm_fontsizes["x_label"])
-        ax.xaxis.label.set_size(beeswarm_fontsizes["x_label"])
-
-        # Set title
-        formatted_title = self.line_break_strings(
-            strng="Societal - SHAP Interacion Values",
-            max_char_on_line=26,
-            split_strng="-"
-        )
-        ax.set_title(formatted_title, fontsize=beeswarm_fontsizes["title"], weight="bold")
-
-        # Adjust tick label size
-        ax.tick_params(axis='x', which='major', labelsize=beeswarm_fontsizes["tick_params"])
-
-        # Remove unnecessary spines except the left one (y-axis line)
-        ax.spines['top'].set_visible(False)
-        ax.spines['right'].set_visible(False)
-        ax.spines['bottom'].set_visible(True)  # Keep bottom spine (x-axis)
-        # Left spine is already visible for y-axis
-
-        # Optional grid for better readability
-        ax.grid(axis='x', linestyle='--', alpha=0.7)
-
-    def plot_pred_true_parity(self, sample_data, feature_combination: str, samples_to_include: str, crit: str, model: str):
+    def plot_pred_true_parity(self,
+                              sample_data: dict[str, dict[str, float]],
+                              samples_to_include: str,
+                              crit: str,
+                              model: str) -> None:
         """
-        This function creates a parity plot of predicted vs. true values for all samples.
-        Different samples are plotted with different colors.
+        This function creates a parity plot of predicted vs. true values for all samples. This can
+        be used to analyze unexpected patterns in the prediction results.
 
         Args:
-            sample_data (dict): Dictionary of samples to plot
-            feature_combination: e.g., "pl_srmc"
+            sample_data (dict): Nested dictionary that contain predicted and true values for each sample
             samples_to_include: e.g., "all"
-            crit: e.g., "state_wb"
+            crit: e.g., "wb_state"
             model: e.g., "randomforestregressor"
         """
-
-        # After collecting data, create the parity plot
-        fig, ax = plt.subplots(figsize=(8, 8))
+        # Create figure
+        width = self.plot_cfg["pred_true_parity_plot"]["figure"]["width"]
+        height = self.plot_cfg["pred_true_parity_plot"]["figure"]["height"]
+        fig, ax = plt.subplots(figsize=(width, height))
 
         # Assign colors to samples
         samples = list(sample_data.keys())
         num_samples = len(samples)
-
-        # Get style fitting colors
         colors = self.plot_cfg["custom_cmap_colors"]
-        # This works for any number of samples, as it loops through available colors
         colors = [colors[i % len(colors)] for i in range(num_samples)]
 
+        # Plot scatter plot
         for i, sample_name in enumerate(samples):
             color = colors[i % 10]
             pred_values = sample_data[sample_name]['pred']
@@ -916,6 +1054,7 @@ class ResultPlotter:
         max_val = max([max(sample_data[s]['true'] + sample_data[s]['pred']) for s in samples])
         ax.plot([min_val, max_val], [min_val, max_val], 'k--', label='Ideal')
 
+        # Set label, axes, title
         ax.set_xlabel('True Value')
         ax.set_ylabel('Predicted Value')
         ax.set_title(f'Pred vs True - {samples_to_include} - {crit} - {model}')
@@ -925,54 +1064,90 @@ class ResultPlotter:
         else:
             plt.show()
 
-    def line_break_strings(self, strng: str, max_char_on_line: int, split_strng: str = None, balance: bool = False) -> str:
-        if len(strng) <= max_char_on_line:
-            return strng
+    def line_break_strings(
+            self,
+            strng: str,
+            max_char_on_line: int,
+            split_strng: str = None,
+            balance: bool = False,
+            force_split_strng: bool = False
+    ) -> str:
+        """
+        This function recursively breaks a string into multiple lines based on a maximum character limit.
+        This is used in the plots to create a balanced layout. Multiple parameters can be adjusted for customization.
 
+        Args:
+            strng: The input string to be broken into lines.
+            max_char_on_line: Maximum number of characters allowed per line.
+            balance (bool, optional): If True, attempts to balance lines for better readability.
+            split_strng: If provided, the function aims to split at this string if possible.
+            force_split_strng: If True, enforces splitting at `split_strng` for the last line regardless of line length.
+
+        Returns:
+            str: The formatted string with line breaks.
+        """
+        if len(strng) <= max_char_on_line:
+            if force_split_strng and split_strng and split_strng in strng:
+                # Attempt to split at the last occurrence of split_strng
+                split_pos = strng.rfind(split_strng)
+                if split_pos != -1:
+                    break_pos = split_pos + len(split_strng)
+                    first_line = strng[:break_pos].rstrip()
+                    remainder = strng[break_pos:].lstrip()
+                    if remainder:
+                        return first_line + '\n' + remainder
+                    else:
+                        return first_line
+            return strng  # Return as-is if no forced split is needed
+
+        # Consider a substring up to max_char_on_line + 1 to include potential split_strng
         substring = strng[:max_char_on_line + 1]
 
-        # Try to break at split_strng if provided
-        if split_strng is not None:
-            split_pos = substring.rfind(split_strng)
-            if split_pos != -1:
-                break_pos = split_pos + len(split_strng)
+        # Determine where to split
+        if split_strng:
+            if force_split_strng:
+                # Always attempt to split at split_strng
+                split_pos = substring.rfind(split_strng)
+                if split_pos != -1:
+                    break_pos = split_pos + len(split_strng)
+                else:
+                    # If split_strng not found in substring, fallback to space or max_char_on_line
+                    split_pos = substring.rfind(' ')
+                    break_pos = split_pos if split_pos != -1 else max_char_on_line
             else:
-                break_pos = substring.rfind(' ')
-                if break_pos == -1:
-                    break_pos = max_char_on_line
+                # If not force_split_strng: prefer split_strng, then space, then max_char_on_line
+                split_pos = substring.rfind(split_strng)
+                if split_pos != -1:
+                    break_pos = split_pos + len(split_strng)
+                else:
+                    split_pos = substring.rfind(' ')
+                    break_pos = split_pos if split_pos != -1 else max_char_on_line
         else:
-            break_pos = substring.rfind(' ')
-            if break_pos == -1:
-                break_pos = max_char_on_line
+            # If no split_strng provided, split at the last space or max_char_on_line
+            split_pos = substring.rfind(' ')
+            break_pos = split_pos if split_pos != -1 else max_char_on_line
 
-        # If balancing is requested and we have a large discrepancy, try to find a better break
+        # Balancing Logic
         if balance:
-            # Current first cut
             first_line = strng[:break_pos].rstrip()
             remainder = strng[break_pos:].lstrip()
 
-            # Only attempt balancing if there's actually a remainder to split
             if remainder:
-                # Measure current imbalance
                 current_diff = abs(len(first_line) - len(remainder))
 
-                # Look around the current break_pos for a better space that reduces the difference
-                # We'll search both directions near break_pos to find a better balance
                 best_pos = break_pos
                 best_diff = current_diff
 
-                # Define a search range around break_pos (e.g., ±10 characters) for a better space
                 search_range = 10
                 start_search = max(break_pos - search_range, 1)
                 end_search = min(break_pos + search_range, len(strng) - 1)
 
                 for candidate_pos in range(start_search, end_search + 1):
                     if candidate_pos != break_pos and candidate_pos < len(strng):
-                        # Check if this is a viable space or split_strng location
-                        # We'll still follow the same "break at space or exact" logic
                         if strng[candidate_pos] == ' ' or (
-                                split_strng and strng[candidate_pos - len(split_strng) + 1:candidate_pos + 1] == split_strng):
-                            # Test this candidate
+                                split_strng and
+                                strng[candidate_pos - len(split_strng) + 1:candidate_pos + 1] == split_strng
+                        ):
                             test_first = strng[:candidate_pos].rstrip()
                             test_rem = strng[candidate_pos:].lstrip()
                             new_diff = abs(len(test_first) - len(test_rem))
@@ -981,12 +1156,21 @@ class ResultPlotter:
                                 best_pos = candidate_pos
 
                 break_pos = best_pos
+                first_line = strng[:break_pos].rstrip()
+                remainder = strng[break_pos:].lstrip()
+        else:
+            first_line = strng[:break_pos].rstrip()
+            remainder = strng[break_pos:].lstrip()
 
-        # After potentially adjusting break_pos for balance
-        first_line = strng[:break_pos].rstrip()
-        remainder = strng[break_pos:].lstrip()
+        next_force_split_strng = True
 
-        return first_line + '\n' + self.line_break_strings(remainder, max_char_on_line, split_strng, balance)
+        return first_line + '\n' + self.line_break_strings(
+            remainder,
+            max_char_on_line,
+            split_strng,
+            balance,
+            force_split_strng=next_force_split_strng
+        )
 
     def store_plot(self,
                    plot_name: str,

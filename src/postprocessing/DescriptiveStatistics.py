@@ -159,7 +159,7 @@ class DescriptiveStatistics:
         """
         bin_stats = df[binary_vars].apply(lambda x: x.value_counts(dropna=True)).transpose()
         # bin_stats['Variable'] = bin_stats.index.str.replace(prefix, '', regex=False)
-        bin_stats['Variable'] = bin_stats.index # .str.replace(prefix, '', regex=False)
+        bin_stats['Variable'] = bin_stats.index  # .str.replace(prefix, '', regex=False)
 
         if "%" in stats:
             bin_stats['Frequency'] = np.nan
@@ -192,7 +192,7 @@ class DescriptiveStatistics:
         continuous_cols = [col for col in df.columns if col not in binary_cols]  # ordered as in df
         return binary_cols, continuous_cols
 
-    def create_wb_items_statistics(self, dataset: str):
+    def create_wb_items_stats_per_dataset(self, dataset: str):
         """
 
         Args:
@@ -201,11 +201,10 @@ class DescriptiveStatistics:
         Returns:
 
         """
-        state_df = None
-        trait_df = None
-
-        state_dct = {}
-        trait_dct = {}
+        wb_items_df = None
+        result_dct = {}
+        esm_id_col = self.var_cfg["preprocessing"]["esm_id_col"][dataset]
+        esm_tp_col = self.var_cfg["preprocessing"]["esm_timestamp_col"][dataset]
 
         print("XX")
         path_to_state_df = os.path.join(self.data_base_path, f"wb_items_{dataset}")
@@ -213,52 +212,129 @@ class DescriptiveStatistics:
 
         try:
             state_df = self.data_loader.read_pkl(path_to_state_df)
+            state_df = state_df.drop(columns=["wb_state", "pa_state", "na_state"], errors="ignore")
+
+            if dataset == "emotions":
+                state_df = self.merge_wb_items(state_df, prefix_a="occup_", prefix_b="int_")
+
+            # Apply name mapping to state_df
+            state_df.columns = apply_name_mapping(
+                features=state_df.columns,
+                name_mapping=self.name_mapping,
+                prefix=False
+            )
+            # Reorder the columns
+            state_wb_items_col_order = self.desc_cfg["wb_items"]["state_order"]
+            wb_item_cols_ordered = [col for col in state_wb_items_col_order if col in state_df.columns]
+            other_cols = [col for col in state_df if col not in state_wb_items_col_order]
+            state_df = state_df[other_cols + wb_item_cols_ordered]
+
+            state_df.columns = [f"state_{col}" if col not in [esm_id_col, esm_tp_col] else col
+                                for col in state_df.columns]
         except FileNotFoundError:
             print(f"No state_df found for {dataset}")
+            state_df = None
 
         try:
             trait_df = self.data_loader.read_pkl(path_to_trait_df)
+            trait_df = trait_df.drop(columns=["wb_trait", "pa_trait", "na_trait"], errors="ignore")
+            # Apply name mapping to state_df
+            trait_df.columns = apply_name_mapping(
+                features=trait_df.columns,
+                name_mapping=self.name_mapping,
+                prefix=False
+            )
+            # Reorder the columns
+            trait_wb_items_col_order = self.desc_cfg["wb_items"]["trait_order"]
+            wb_item_cols_ordered = [col for col in trait_wb_items_col_order if col in trait_df.columns]
+            other_cols = [col for col in trait_df if col not in trait_wb_items_col_order]
+            trait_df = trait_df[other_cols + wb_item_cols_ordered]
+
+            trait_df.columns = [f"trait_{col}" for col in trait_df.columns]
         except FileNotFoundError:
             print(f"No trait_df found for {dataset}")
+            trait_df = None
 
-        if state_df is not None:
-            state_df.columns = apply_name_mapping(
-                            features=state_df.columns,
-                            name_mapping=self.name_mapping,
-                            prefix=False
-                        )
-            state_df_no_id = state_df.drop(columns=self.var_cfg["preprocessing"]["esm_id_col"][dataset])
-            m_sd_df_state_wb_items = self.calculate_cont_descriptive_stats(
-                df=state_df_no_id,
-                continuous_vars=state_df_no_id.select_dtypes(include=[np.number]).columns,
+        # Concatenate state_df and trait_df if they exist
+        if state_df is not None or trait_df is not None:
+            wb_items_df = pd.concat([state_df, trait_df], axis=0, ignore_index=True)
+
+            # Calculate descriptive statistics
+            m_sd_df_wb_items = self.calculate_cont_descriptive_stats(
+                df=wb_items_df.drop(columns=esm_id_col, errors="ignore"),
+                continuous_vars=wb_items_df
+                    .drop(columns=esm_id_col, errors="ignore")
+                    .select_dtypes(include=[np.number])
+                    .columns,
                 stats=self.desc_cfg["cont_agg_dct"],
                 var_as_index=True,
             )
-            state_dct["m_sd"] = m_sd_df_state_wb_items
-            wp_corr, bp_corr, icc1, icc2 = self.calc_bp_wp_statistics(
-                df=state_df,
-                id_col=self.esm_id_col_dct[dataset],
-                tp_col=self.esm_tp_col_dct[dataset],
-            )
-            state_dct["wp_corr"] = wp_corr
-            state_dct["bp_corr"] = bp_corr
-            state_dct["icc1"] = icc1
-            state_dct["icc2"] = icc2
+            result_dct["m_sd"] = m_sd_df_wb_items
 
-        if trait_df is not None:
-            trait_df.columns = apply_name_mapping(
-                            features=trait_df.columns,
-                            name_mapping=self.name_mapping,
-                            prefix=False
-                        )
-            m_sd_df_trait_wb_items = self.calculate_cont_descriptive_stats(
-                df=trait_df,
-                continuous_vars=trait_df.select_dtypes(include=[np.number]).columns,
-                stats=self.desc_cfg["cont_agg_dct"]
-            )
-            trait_dct["m_sd"] = m_sd_df_trait_wb_items
+            # Calculate BP/WP statistics if state_df specific columns are available
+            if state_df is not None and dataset in self.esm_id_col_dct and dataset in self.esm_tp_col_dct:
+                wp_corr, bp_corr, icc1, icc2 = self.calc_bp_wp_statistics(
+                    df=state_df,
+                    id_col=self.esm_id_col_dct[dataset],
+                    tp_col=self.esm_tp_col_dct[dataset],
+                )
+                result_dct["wp_corr"] = wp_corr
+                result_dct["bp_corr"] = bp_corr
+                result_dct["icc1"] = icc1
+                result_dct["icc2"] = icc2
 
-        return state_dct, trait_dct
+            if trait_df is not None:
+                result_dct["trait_corr"] = trait_df.corr()
+            else:
+                result_dct["trait_corr"] = None
+
+        return result_dct
+
+    def merge_wb_items(self, state_df, prefix_a, prefix_b):
+        """
+        Merges columns in `state_df` that differ only by the specified prefixes.
+        The new column will have the same name without the prefix and contain the mean of the two columns.
+
+        Args:
+            state_df (pd.DataFrame): The input DataFrame containing columns to merge.
+            prefix_a (str): The first prefix to look for in column names.
+            prefix_b (str): The second prefix to look for in column names.
+
+        Returns:
+            pd.DataFrame: A new DataFrame with merged columns.
+        """
+        # Ensure prefixes are strings
+        if not isinstance(prefix_a, str) or not isinstance(prefix_b, str):
+            raise ValueError("prefix_a and prefix_b must be strings.")
+
+        # Extract column names that start with prefix_a and prefix_b
+        cols_a = [col for col in state_df.columns if col.startswith(prefix_a)]
+        cols_b = [col for col in state_df.columns if col.startswith(prefix_b)]
+
+        # Remove prefixes to get the suffixes
+        suffixes_a = {col[len(prefix_a):] for col in cols_a}
+        suffixes_b = {col[len(prefix_b):] for col in cols_b}
+
+        # Find common suffixes present in both prefix_a and prefix_b
+        common_suffixes = suffixes_a.intersection(suffixes_b)
+
+        if not common_suffixes:
+            print("No common suffixes found between the provided prefixes.")
+            return state_df.copy()
+
+        # Initialize a copy of the DataFrame to avoid modifying the original
+        merged_df = state_df.copy()
+
+        for suffix in common_suffixes:
+            col_a = prefix_a + suffix
+            col_b = prefix_b + suffix
+            new_col = suffix  # New column without prefix
+
+            # Compute the mean of the two columns
+            merged_df[new_col] = state_df[[col_a, col_b]].mean(axis=1)
+            merged_df.drop([col_a, col_b], axis=1, inplace=True)
+
+        return merged_df
 
     @staticmethod
     def calc_bp_wp_statistics(df, id_col, tp_col):
@@ -319,8 +395,6 @@ class DescriptiveStatistics:
         # Initialize dictionaries to store mean squares and ICCs
         MSb_dict = {}
         MSw_dict = {}
-        #ICC1_dict = {}
-        #ICC2_dict = {}
         # Initialize empty Series for ICC1 and ICC2
         ICC1_series = pd.Series(dtype=float)
         ICC2_series = pd.Series(dtype=float)
@@ -631,14 +705,13 @@ class DescriptiveStatistics:
 
     def create_wb_items_table(self,
                               dataset: str,
-                              # data_type: str,
-                              rel: pd.Series,
                               m_sd_df: pd.DataFrame,
                               icc1: pd.Series = None,
                               icc2: pd.Series = None,
+                              rel: pd.Series = None,
                               bp_corr: pd.DataFrame = None,
                               wp_corr: pd.DataFrame = None,
-                              ):
+                              trait_corr: pd.DataFrame = None):
         """
         Creates a classical item descriptives table in APA style. This includes:
             - A column with the item names (index from m_sd_df)
@@ -647,41 +720,33 @@ class DescriptiveStatistics:
             - A column with ICC2 (if provided)
             - A column with reliability (rel) if provided
             - A correlation table on the rightmost side:
-                * Upper triangular from bp_corr
-                * Lower triangular from wp_corr
+                * For state items: Upper triangular from bp_corr and lower triangular from wp_corr
+                * For trait items: Upper triangular from trait_corr
 
         The final table is indexed by the wb_items. All Series and DataFrames must share the same index.
+        We only retain items present in m_sd_df to avoid extraneous empty columns.
         """
-        # Collect all indices that appear in any input
-        indices = set(m_sd_df.index)
-        if rel is not None:
-            indices.update(rel.index)
-        if icc1 is not None:
-            indices.update(icc1.index)
-        if icc2 is not None:
-            indices.update(icc2.index)
-        if bp_corr is not None:
-            indices.update(bp_corr.index)
-            indices.update(bp_corr.columns)
-        if wp_corr is not None:
-            indices.update(wp_corr.index)
-            indices.update(wp_corr.columns)
 
-        # Create a unified index
-        unified_index = pd.Index(sorted(indices))
+        # Use only the items present in m_sd_df as the final unified index
+        unified_index = m_sd_df.index
 
-        # Reindex main df
+        # Reindex main df if needed (should already match but just to be safe)
         table = m_sd_df.reindex(unified_index)
 
-        # Join reliability, ICC1, ICC2 if provided (outer join ensures all unified indices stay)
+        # Join reliability, ICC1, ICC2 if provided
         if rel is not None:
+            rel = rel.reindex(unified_index)
             table = table.join(rel.rename("Rel"), how="left")
+
         if icc1 is not None:
+            icc1 = icc1.reindex(unified_index)
             table = table.join(icc1.rename("ICC1"), how="left")
+
         if icc2 is not None:
+            icc2 = icc2.reindex(unified_index)
             table = table.join(icc2.rename("ICC2"), how="left")
 
-        # Handle correlation matrices
+        # Handle correlation matrices for state items (bp_corr and wp_corr)
         if bp_corr is not None and wp_corr is not None:
             # Reindex both correlation matrices
             bp_corr = bp_corr.reindex(index=unified_index, columns=unified_index)
@@ -700,7 +765,6 @@ class DescriptiveStatistics:
             combined_corr = pd.DataFrame(combined_values,
                                          index=unified_index,
                                          columns=unified_index)
-
             table = table.join(combined_corr, how="left", rsuffix="_corr")
 
         elif bp_corr is not None:
@@ -711,17 +775,32 @@ class DescriptiveStatistics:
             wp_corr = wp_corr.reindex(index=unified_index, columns=unified_index)
             table = table.join(wp_corr, how="left", rsuffix="_wp")
 
+        # Handle trait correlations (upper triangular only)
+        if trait_corr is not None:
+            trait_corr = trait_corr.reindex(index=unified_index, columns=unified_index)
+            mask_lower = np.tril(np.ones((len(unified_index), len(unified_index)), dtype=bool), k=-1)
+            trait_corr_values = trait_corr.values.copy()
+            trait_corr_values[mask_lower] = np.nan
+            trait_corr = pd.DataFrame(trait_corr_values,
+                                      index=unified_index,
+                                      columns=unified_index)
+            table = table.join(trait_corr, how="left", rsuffix="_trait_corr")
+
+        table = table.dropna(axis=1, how='all')
+
+        # Format the table
         table = format_df(
             df=table,
             capitalize=False,
             decimals=2
         )
+
         if self.desc_cfg["store"]:
             self.save_file(
                 data=table,
                 filetype="xlsx",
                 file_path=os.path.join(self.desc_results_base_path, dataset),
-                file_name=f"wb_item_desc_table_{data_type}",
+                file_name=f"wb_item_desc_table_{dataset}",
                 index=True,
             )
 

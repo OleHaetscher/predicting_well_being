@@ -84,11 +84,13 @@ class Postprocessor:
                     SHAP beeswarm plots representing the most imortant features for all feature combinations
                     SHAP importance plots TBA
         """
-        #test_dir = "../results/test_ia_values/selected/wb_state/randomforestregressor/shap_ia_values_summary.pkl"
-        #test_dir_2 = "../results/test_ia_values/selected/pa_state/randomforestregressor/shap_ia_values_summary.pkl"
-        #test_1 = self.data_loader.read_pkl(test_dir)
-        #test_2 = self.data_loader.read_pkl(test_dir_2)
-        #print()
+        test_dir = "../results/ia_values_0912/srmc/selected/wb_state/randomforestregressor/shap_ia_values_summary.pkl"
+        test_dir_2 = "../results/ia_values_0912/srmc/selected/wb_trait/randomforestregressor/shap_ia_values_summary.pkl"
+        test_dir_3 = "../results/ia_values_0912/srmc/selected/pa_state/randomforestregressor/shap_ia_values_summary.pkl"
+        test_1 = self.data_loader.read_pkl(test_dir)
+        test_2 = self.data_loader.read_pkl(test_dir_2)
+        test_3 = self.data_loader.read_pkl(test_dir_3)
+        print()
 
         if "sanity_check_pred_vs_true" in self.methods_to_apply:
             self.sanity_check_pred_vs_true()
@@ -123,43 +125,37 @@ class Postprocessor:
             # Do this for every dataset and then compute a table for each dataset that can be stacked
             # In this way, we could also move "create_m_sd_feature_table" in the loop
             # self.descriptives_creator.create_m_sd_feature_table()
+
+            # Also a function that creates
             for dataset in self.datasets:
                 state_rel_series, trait_rel_series = self.descriptives_creator.compute_rel(dataset=dataset)
-                state_dct, trait_dct = self.descriptives_creator.create_wb_items_statistics(
+                # TODO DO we need the rel here?
+
+                wb_items_dct = self.descriptives_creator.create_wb_items_stats_per_dataset(
                     dataset=dataset
                 )
                 # Note: Does this work with ZPID?
-                if state_dct:
-                    self.descriptives_creator.create_wb_items_table(
-                        dataset=dataset,
-                        data_type="state",
-                        rel=None,
-                        m_sd_df=state_dct["m_sd"],
-                        icc1=state_dct["icc1"],
-                        icc2=state_dct["icc2"],
-                        bp_corr=state_dct["bp_corr"],
-                        wp_corr=state_dct["wp_corr"]
-                    )
-                    print()
-                if trait_dct:
-                    self.descriptives_creator.create_wb_items_table(
-                        dataset=dataset,
-                        data_type="trait",
-                        rel=trait_rel_series,
-                        m_sd_df=trait_dct["m_sd"],
-                    )
+                self.descriptives_creator.create_wb_items_table(
+                    dataset=dataset,
+                    m_sd_df=wb_items_dct["m_sd"],
+                    icc1=wb_items_dct["icc1"],
+                    icc2=wb_items_dct["icc2"],
+                    bp_corr=wb_items_dct["bp_corr"],
+                    wp_corr=wb_items_dct["wp_corr"],
+                    trait_corr=wb_items_dct["trait_corr"]
+                )
 
         if "conduct_significance_tests" in self.methods_to_apply:
             self.significance_testing.significance_testing()  # (dct=self.cv_results_dct.copy())
 
         if "create_cv_results_plots" in self.methods_to_apply:
             if self.cv_results_dct:
-                for metric in self.var_cfg["postprocessing"]["plots"]["cv_results_plot"]["metrics"]:
-                    self.plotter.plot_cv_results_plots_wrapper(
-                        data_to_plot=self.cv_results_dct[metric],
-                        rel=None,
-                        metric=metric
-                    )
+                # for metric in self.var_cfg["postprocessing"]["plots"]["cv_results_plot"]["metrics"]:
+                self.plotter.plot_cv_results_plots_wrapper(
+                    cv_results_dct=self.cv_results_dct, # self.cv_results_dct[metric],
+                    rel=None,
+                    # metric=metric,
+                )
             else:
                 raise ValueError("We must condense the cv results before creating the plot")
 

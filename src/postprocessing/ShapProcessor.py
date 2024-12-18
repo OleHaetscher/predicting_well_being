@@ -3,12 +3,14 @@ from collections import defaultdict
 from typing import Union
 
 import numpy as np
+import pandas as pd
 import shap
+from matplotlib import pyplot as plt
 from shap import Explanation
 
 from src.utils.DataLoader import DataLoader
 from src.utils.utilfuncs import apply_name_mapping, defaultdict_to_dict
-
+from mpl_toolkits.mplot3d import Axes3D
 
 class ShapProcessor:
     """
@@ -71,6 +73,10 @@ class ShapProcessor:
                     else:
                         required_samples = samples_to_include
 
+                    # Make better
+                    if feature_combination == "all_in":
+                        required_samples = "all"
+
                     # Only load if all filters match
                     if crit == crit_to_plot and samples == required_samples and model == model_to_plot:
                         shap_values_path = os.path.join(root, self.shap_values_file_name)
@@ -99,7 +105,7 @@ class ShapProcessor:
                              model_to_plot: str,
                              crit_to_plot: str,
                              samples_to_include: str,
-                             feature_combination: str,
+                             feature_combination_to_plot: str,
                              meta_stat_to_extract: str,
                              stat_to_extract: str,
                              order_to_extract: int,
@@ -120,7 +126,6 @@ class ShapProcessor:
         result_dct = self.nested_dict()
 
         for root, dirs, files in os.walk(self.shap_ia_values_path):
-            print(files)
             if str(self.shap_ia_values_file_name) in files:   # 'shap_ia_values_summary.pkl'
                 relative_path = os.path.relpath(root, self.shap_ia_values_path)
                 parts = relative_path.split(os.sep)
@@ -128,17 +133,29 @@ class ShapProcessor:
                 if len(parts) == 4:
                     feature_combination, samples, crit, model = parts
 
-                    if crit == crit_to_plot and samples == samples_to_include and model == model_to_plot:
+                    if (crit == crit_to_plot and samples == samples_to_include and
+                            model == model_to_plot and feature_combination == feature_combination_to_plot):
+
                         shap_ia_values_path = os.path.join(str(root), str(self.shap_ia_values_file_name))
                         shap_ia_values = self.data_loader.read_pkl(shap_ia_values_path)
 
-                        base_values = np.array(shap_ia_values["base_values_sample"]["mean"])
-                        # feature pairs as keys, shap ia values as values
+                        # TODO Processing the samples values, not the aggregates!!
+                        # base_values = np.array(shap_ia_values["base_values_sample"]["mean"])
+                        base_value = self.get_base_values(root)
+
                         shap_ia_values_dct = {
                             key: value['mean']
-                            for key, value in shap_ia_values['ia_values_sample'].items()
+                            for key, value
+                            in shap_ia_values["top_interactions"]["top_abs_interactions_of_sample"].items()
                             if isinstance(key, tuple) and len(key) > 1
                         }
+                        # Sort the dictionary by absolute mean values of NumPy arrays
+                        shap_ia_values_dct = dict(sorted(
+                            shap_ia_values_dct.items(),
+                            key=lambda item: abs(np.mean(item[1])),
+                            reverse=True  # Optional: Sort in descending order
+                        ))
+                        feature_tuples = list(shap_ia_values_dct.keys())
 
                         # Map the keys using the name_mapping function
                         formatted_features_dct = {}
@@ -150,19 +167,81 @@ class ShapProcessor:
                         shap_ia_values_arr = np.array([
                             value for value in formatted_features_dct.values()
                         ])
-                        data = np.random.rand(*shap_ia_values_arr.shape)
+                        feature_names = list(formatted_features_dct.keys())
+
+                        # get data
+                        data = self.get_ia_feature_data(root_path=root, top_n_interactions=feature_tuples)
 
                         # Recreate the explanation object (pretending this were ordinary shap values)
                         shap_ia_exp = self.recreate_shap_exp_objects(
-                            shap_values=shap_ia_values_arr,
-                            base_values=base_values,
-                            feature_names=list(formatted_features_dct.keys()),
-                            data=data  # TODO: We may replace this with the actual data
+                            shap_values=shap_ia_values_arr.T,
+                            base_values=base_value,
+                            feature_names=feature_names,
+                            data=data.values
                         )
 
                         result_dct[f"{feature_combination}_ia_values"] = shap_ia_exp
 
         return defaultdict_to_dict(result_dct)
+
+    def get_ia_feature_data(self, root_path, top_n_interactions: list[tuple[str]]):
+        """
+        This method loads the feature values corresponding to the current SHAP interaction analysis and
+        takes the mean of both features to display the SHAP beeswarm plots
+
+        Args:
+            root_path (str): Path to load the data
+            top_n_interactions (list[tuple[str]]): List of tuples containing the n strongest abs order 2 interactions
+
+        Returns:
+            pd.DataFrame: DataFrame with new columns representing the mean of feature pairs from top_n_interactions
+        """
+        # Load SHAP values file
+        file_name = os.path.join(root_path, self.shap_values_file_name)
+        shap_values = self.data_loader.read_pkl(file_name)
+
+        # Extract relevant data
+        data = shap_values["data"]["mean"]
+        feature_names = shap_values["feature_names"][3:]
+
+        # Create a DataFrame from the data
+        feature_df = pd.DataFrame(data, columns=feature_names)
+
+        # Add new columns based on mean of the specified feature pairs in top_n_interactions
+        for interaction in top_n_interactions:
+            if len(interaction) != 2:
+                raise ValueError(f"Each interaction must contain exactly two feature names. Invalid entry: {interaction}")
+
+            feature1, feature2 = interaction
+            if feature1 not in feature_df.columns or feature2 not in feature_df.columns:
+                raise ValueError(f"Features {feature1} and {feature2} must be present in the DataFrame columns.")
+
+            # Create a new column name for the interaction
+            interaction_col_name = (feature1, feature2)
+
+            # Calculate the mean of the two features and add as a new column
+            feature_df[interaction_col_name] = feature_df[[feature1, feature2]].mean(axis=1)
+
+        feature_df = feature_df.drop(columns=feature_names)
+
+        return feature_df
+
+    def get_base_values(self, root_path):
+        """
+
+        Args:
+            root_path:
+
+        Returns:
+
+        """
+        # Load SHAP values file
+        file_name = os.path.join(root_path, self.shap_values_file_name)
+        shap_values = self.data_loader.read_pkl(file_name)
+
+        # Extract relevant data
+        base_values = shap_values["base_values"]["mean"]
+        return base_values
 
     @staticmethod
     def get_required_sample_for_combo(feature_combination: str, col_assignment: list[list]):
@@ -190,7 +269,7 @@ class ShapProcessor:
     def recreate_shap_exp_objects(
             shap_values: np.ndarray,
             base_values: np.ndarray,
-            feature_names: list,
+            feature_names: list = None,
             data: np.ndarray = None,
     ) -> Explanation:
         """
