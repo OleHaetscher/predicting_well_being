@@ -241,19 +241,16 @@ analysis:
 
 postprocessing:
   methods:
+    - calculate_lin_models
     #- sanity_check_pred_vs_true
-
-    - condense_cv_results
+    #- condense_cv_results
     #- condense_lin_model_coefs
     #- create_descriptives
     #- conduct_significance_tests
-    - create_cv_results_plots
-    #- create_shap_plots
+    #- create_cv_results_plots
+    - create_shap_plots
 
-  # "../results/results_merged_onlycv"
-  # raw_results_path: "../results/cluster_results_merged_2611"  # BASE RESULT DIR FOR RAW RESULTS  # shap or cv test_fs_shap
-
-  # We do merging on the cluster, thus, we are currently only using the processed_results_path
+  # We do merging on the cluster, thus, we have only one result path with the processed results
   processed_results_path: "../results/run_1312"
   shap_ia_values_path: "../results/ia_values_0912"
 
@@ -370,6 +367,25 @@ postprocessing:
         - all
         - selected
         - control
+  linear_regressor:
+    feature_combinations:
+      - pl
+      - srmc
+      - sens
+      - mac
+      - pl_srmc
+      - pl_sens
+      - pl_srmc_sens
+      - pl_mac
+      - pl_srmc_mac
+      - all_in
+    samples_to_include:
+      - selected
+    crits:
+      - wb_state
+    models:
+      - randomforestregressor
+    num_features: 10
 
   plots:  # TODO: Adhere to NHB Style
     store_plots: false

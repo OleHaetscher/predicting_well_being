@@ -8,6 +8,7 @@ from scipy.stats import spearmanr
 from sklearn.metrics import r2_score
 
 from src.postprocessing.DescriptiveStatistics import DescriptiveStatistics
+from src.postprocessing.LinearRegressor import LinearRegressor
 from src.postprocessing.ResultPlotter import ResultPlotter
 from src.postprocessing.ShapProcessor import ShapProcessor
 from src.postprocessing.SignificanceTesting import SignificanceTesting
@@ -54,7 +55,6 @@ class Postprocessor:
         )
         self.shap_processor = ShapProcessor(
             var_cfg=self.var_cfg,
-            # base_result_dir=self.base_result_dir,
             processed_output_path=self.processed_output_path,
             name_mapping=self.name_mapping,
         )
@@ -84,13 +84,25 @@ class Postprocessor:
                     SHAP beeswarm plots representing the most imortant features for all feature combinations
                     SHAP importance plots TBA
         """
-        test_dir = "../results/ia_values_0912/srmc/selected/wb_state/randomforestregressor/shap_ia_values_summary.pkl"
-        test_dir_2 = "../results/ia_values_0912/srmc/selected/wb_trait/randomforestregressor/shap_ia_values_summary.pkl"
-        test_dir_3 = "../results/ia_values_0912/srmc/selected/pa_state/randomforestregressor/shap_ia_values_summary.pkl"
-        test_1 = self.data_loader.read_pkl(test_dir)
-        test_2 = self.data_loader.read_pkl(test_dir_2)
-        test_3 = self.data_loader.read_pkl(test_dir_3)
-        print()
+        if "calculate_lin_models" in self.methods_to_apply:
+            df = pd.read_pickle(os.path.join(self.var_cfg["preprocessing"]["path_to_preprocessed_data"], "full_data"))
+
+            for feature_combination in self.var_cfg["postprocessing"]["linear_regressor"]["feature_combinations"]:
+                for samples_to_include in self.var_cfg["postprocessing"]["linear_regressor"]["samples_to_include"]:
+                    for crit in self.var_cfg["postprocessing"]["linear_regressor"]["crits"]:
+                        for model_for_features in self.var_cfg["postprocessing"]["linear_regressor"]["models"]:
+                            linearregressor = LinearRegressor(
+                                var_cfg=self.var_cfg,
+                                processed_output_path=self.processed_output_path,
+                                df=df,
+                                feature_combination=feature_combination,
+                                crit=crit,
+                                samples_to_include=samples_to_include,
+                                model_for_features=model_for_features,
+                            )
+                            linearregressor.get_regression_data()
+                            linearregressor.compute_regression_models()
+                            linearregressor.store_regression_results()
 
         if "sanity_check_pred_vs_true" in self.methods_to_apply:
             self.sanity_check_pred_vs_true()
@@ -122,19 +134,15 @@ class Postprocessor:
             )
 
         if "create_descriptives" in self.methods_to_apply:
-            # Do this for every dataset and then compute a table for each dataset that can be stacked
-            # In this way, we could also move "create_m_sd_feature_table" in the loop
-            # self.descriptives_creator.create_m_sd_feature_table()
+            self.descriptives_creator.create_m_sd_feature_table()
+            print()
 
             # Also a function that creates
             for dataset in self.datasets:
                 state_rel_series, trait_rel_series = self.descriptives_creator.compute_rel(dataset=dataset)
-                # TODO DO we need the rel here?
-
                 wb_items_dct = self.descriptives_creator.create_wb_items_stats_per_dataset(
                     dataset=dataset
                 )
-                # Note: Does this work with ZPID?
                 self.descriptives_creator.create_wb_items_table(
                     dataset=dataset,
                     m_sd_df=wb_items_dct["m_sd"],

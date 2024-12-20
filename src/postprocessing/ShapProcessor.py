@@ -3,6 +3,7 @@ from collections import defaultdict
 from typing import Union
 
 import numpy as np
+from numpy import ndarray
 import pandas as pd
 import shap
 from matplotlib import pyplot as plt
@@ -20,14 +21,23 @@ class ShapProcessor:
     """
 
     def __init__(self, var_cfg, processed_output_path, name_mapping):
+        """
+
+        Args:
+            var_cfg:
+            processed_output_path:
+            name_mapping:
+        """
         self.var_cfg = var_cfg
         self.name_mapping = name_mapping
-        # self.base_result_dir = base_result_dir
+
         self.processed_output_path = processed_output_path
         self.shap_ia_values_path = self.var_cfg["postprocessing"]["shap_ia_values_path"]
+
         self.data_loader = DataLoader()
         self.shap_values_file_name = self.var_cfg["postprocessing"]["summarized_file_names"]["shap_values"]
         self.shap_ia_values_file_name = self.var_cfg["postprocessing"]["summarized_file_names"]["shap_ia_values"]
+
         self.meta_vars = ['other_unique_id', 'other_country', 'other_years_of_participation']
 
     @classmethod
@@ -83,10 +93,10 @@ class ShapProcessor:
                         shap_values = self.data_loader.read_pkl(shap_values_path)
 
                         # Filter out meta vars from feature names
-                        feature_names = [feature for feature in shap_values["feature_names"]
+                        feature_names_raw = [feature for feature in shap_values["feature_names"]
                                          if feature not in self.meta_vars]
-                        feature_names = apply_name_mapping(
-                            features=feature_names,
+                        feature_names_formatted = apply_name_mapping(
+                            features=feature_names_raw,
                             name_mapping=self.name_mapping,
                             prefix=True
                         )
@@ -96,10 +106,50 @@ class ShapProcessor:
                             shap_values=np.array(shap_values["shap_values"]["mean"]),
                             base_values=np.array(shap_values["base_values"]["mean"]),
                             data=np.array(shap_values["data"]["mean"]),
-                            feature_names=feature_names,
+                            feature_names=feature_names_formatted,
                         )
                         result_dct[feature_combination] = shap_exp
+
+                        # Store most important features
+                        self.get_most_important_features(
+                            shap_values=shap_exp.values,
+                            feature_names=feature_names_raw,  # use feature_names from code
+                            root=root,
+                            n=10,
+                            store=True
+                        )
         return result_dct
+
+    def get_most_important_features(self,
+                                    shap_values: ndarray,
+                                    feature_names: list,
+                                    root: str,
+                                    n: int = 10,
+                                    store: bool = True
+                                    ):
+        """
+        Args:
+            shap_exp: SHAP Explanation object containing attributes `values` and `feature_names`.
+            root: str, directory path where the output file will be stored.
+            n: int, number of top features to select. Defaults to 10.
+            store: If true, store the feature_names in the give folder
+
+        Returns:
+            None
+        """
+        # Compute mean absolute SHAP values per feature
+        mean_abs_values = np.mean(np.abs(shap_values), axis=0)
+
+        # Get top n features
+        top_indices = np.argsort(-mean_abs_values)[:n]
+        top_features = [feature_names[i] for i in top_indices]
+
+        # Write the top feature names to a file in the current folder "root"
+        if store:
+            output_file = os.path.join(root, f"top_{n}_features.txt")
+            with open(output_file, 'w') as f:
+                for feature in top_features:
+                    f.write(feature + '\n')
 
     def prepare_shap_ia_data(self,
                              model_to_plot: str,

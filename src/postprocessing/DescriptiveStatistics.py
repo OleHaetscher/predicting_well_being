@@ -1,4 +1,6 @@
 import os
+from typing import Union
+
 import numpy as np
 import pandas as pd
 from src.utils.DataLoader import DataLoader
@@ -81,10 +83,24 @@ class DescriptiveStatistics:
         # Combine all results
         final_table = pd.concat(results, ignore_index=True)
 
-        # Rename feature categories
+        # Format dataframe
+        final_table = format_df(
+            df=final_table,
+            capitalize=False,
+            decimals=2
+        )
+
+        # Rename feature categories and reorder the columns
         final_table["Group"] = final_table["Group"].replace(self.name_mapping["category_names"])
-        # Reorder columns 
         final_table = final_table[["Group"] + [col for col in final_table.columns if col != "Group"]]
+
+        # Create a joint column containing M (SD) and %
+        final_table['M (SD)'] = final_table.apply(lambda row: f"{row['M']} ({row['SD']})", axis=1)
+        final_table['M (SD) / %'] = final_table.apply(
+            lambda row: row['M (SD)'] if pd.notna(row['M']) else row['%'],
+            axis=1
+        )
+        final_table = final_table.drop(columns=["M", "SD", "%", "M (SD)"])
 
         # Rename Features
         final_table["Variable"] = apply_name_mapping(
@@ -92,14 +108,12 @@ class DescriptiveStatistics:
             name_mapping=self.name_mapping,
             prefix=True
         )
-
-        # Format dataframe
-        final_table = format_df(
-            df=final_table,
-            capitalize=False,
-            decimals=2
+        # Get scale endpoints for each feature #TODO we could do this more explicit.
+        final_table["scale_endpoints"] = final_table["Variable"].apply(
+            lambda feat: self.get_scale_endpoints(self.fix_cfg.copy(), feat)
         )
         final_table = final_table.reset_index(drop=True)
+        print()
 
         # If defined in the cfg, store results
         if self.desc_cfg["store"]:
@@ -109,6 +123,42 @@ class DescriptiveStatistics:
                 file_path=self.desc_results_base_path,
                 filetype="xlsx"
             )
+
+    def get_scale_endpoints(self, data: dict, feature_name: str) -> Union[np.nan, tuple[float, float]]:
+        """
+        Recursively searches a nested dictionary/list structure to find an entry
+        where "name" == target_name and returns the "scale_endpoints" as a (min, max) tuple.
+
+        Args:
+            data:
+            feature_name:
+
+        Returns:
+            np.nan if no match is found, or the scale endpoints as a tuple (min, max).
+
+        """
+        # If data is a dictionary
+        if isinstance(data, dict):
+            # Check if this dict matches the feature name
+            if data.get("name") == feature_name:
+                scale_endpoints = data.get("scale_endpoints")
+                if scale_endpoints is not None:
+                    return (scale_endpoints["min"], scale_endpoints["max"])
+            # If not matched at this level, check all values
+            for key, value in data.items():
+                result = self.get_scale_endpoints(value, feature_name)
+                if result is not None:
+                    return result
+
+        # If data is a list, check each element
+        elif isinstance(data, list):
+            for item in data:
+                result = self.get_scale_endpoints(item, feature_name)
+                if result is not None:
+                    return result
+
+        # If we get here, this branch has no match. Return None to indicate "no result"
+        return None
             
     @staticmethod
     def calculate_cont_descriptive_stats(df, continuous_vars, stats, var_as_index=True, prefix=None):
@@ -174,7 +224,7 @@ class DescriptiveStatistics:
             bin_stats['Total'] = df[binary_vars].notna().sum().values
             bin_stats['%'] = (bin_stats['Frequency'] / bin_stats['Total']) * 100
             bin_stats['Group'] = prefix.rstrip('_')
-            bin_stats = bin_stats[['Group', 'Variable', 'Frequency', 'Total', '%']].reset_index(drop=True)
+            bin_stats = bin_stats[['Group', 'Variable', '%']].reset_index(drop=True)
 
         return bin_stats
 
