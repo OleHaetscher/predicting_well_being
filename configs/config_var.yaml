@@ -241,17 +241,17 @@ analysis:
 
 postprocessing:
   methods:
-    - calculate_lin_models
+    #- calculate_lin_models
     #- sanity_check_pred_vs_true
-    #- condense_cv_results
+    - condense_cv_results
     #- condense_lin_model_coefs
     #- create_descriptives
     #- conduct_significance_tests
     #- create_cv_results_plots
-    - create_shap_plots
+    #- create_shap_plots
 
   # We do merging on the cluster, thus, we have only one result path with the processed results
-  processed_results_path: "../results/run_1312"
+  processed_results_path: "../results/run_2012"
   shap_ia_values_path: "../results/ia_values_0912"
 
   summarized_file_names:

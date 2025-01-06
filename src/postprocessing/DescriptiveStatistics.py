@@ -102,16 +102,17 @@ class DescriptiveStatistics:
         )
         final_table = final_table.drop(columns=["M", "SD", "%", "M (SD)"])
 
+        final_table["scale_endpoints"] = final_table["Variable"].apply(
+            lambda feat: self.get_scale_endpoints(self.fix_cfg.copy(), feat)
+        )
+
         # Rename Features
         final_table["Variable"] = apply_name_mapping(
             features=list(final_table["Variable"]),
             name_mapping=self.name_mapping,
             prefix=True
         )
-        # Get scale endpoints for each feature #TODO we could do this more explicit.
-        final_table["scale_endpoints"] = final_table["Variable"].apply(
-            lambda feat: self.get_scale_endpoints(self.fix_cfg.copy(), feat)
-        )
+
         final_table = final_table.reset_index(drop=True)
         print()
 
@@ -137,27 +138,33 @@ class DescriptiveStatistics:
             np.nan if no match is found, or the scale endpoints as a tuple (min, max).
 
         """
-        # If data is a dictionary
+        # Remove prefix
+        if any(feature_name.startswith(prefix) for prefix in ["pl_", "srmc_", "mac_", "sens:"]):
+            feature_name_no_prefix = feature_name.split('_', 1)[-1]
+        else:
+            feature_name_no_prefix = feature_name
+
         if isinstance(data, dict):
-            # Check if this dict matches the feature name
-            if data.get("name") == feature_name:
+            # Check if this dictionary node has the target feature name
+            if data.get("name") == feature_name_no_prefix:
                 scale_endpoints = data.get("scale_endpoints")
                 if scale_endpoints is not None:
                     return (scale_endpoints["min"], scale_endpoints["max"])
-            # If not matched at this level, check all values
+
+            # If not matched at this level, recursively search all values
             for key, value in data.items():
-                result = self.get_scale_endpoints(value, feature_name)
+                result = self.get_scale_endpoints(value, feature_name_no_prefix)
                 if result is not None:
                     return result
 
-        # If data is a list, check each element
         elif isinstance(data, list):
+            # If data is a list, search each element
             for item in data:
-                result = self.get_scale_endpoints(item, feature_name)
+                result = self.get_scale_endpoints(item, feature_name_no_prefix)
                 if result is not None:
                     return result
 
-        # If we get here, this branch has no match. Return None to indicate "no result"
+        # If we reach here, no match was found in this branch
         return None
             
     @staticmethod
