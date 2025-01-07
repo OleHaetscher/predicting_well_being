@@ -3,6 +3,10 @@ from typing import Sequence
 
 import pandas as pd
 
+from typing import Union, Any
+
+# Define nested typing aliases for nested dictionaries
+NestedDict = dict[str, Any]
 
 def apply_name_mapping(features: list, name_mapping: dict, prefix: bool) -> list:
     """

@@ -1,35 +1,74 @@
+import re
 from copy import deepcopy
-from functools import reduce
 
 import numpy as np
+import pandas as pd
 
 from src.preprocessing.BasePreprocessor import BasePreprocessor
-import pandas as pd
-import re
+from src.utils.utilfuncs import NestedDict
 
 
 class CocoesmPreprocessor(BasePreprocessor):
-    def __init__(self, fix_cfg: dict, var_cfg: dict):
+    """
+    Preprocessor for the "cocoesm" dataset, inheriting from BasePreprocessor.
+
+    This class implements preprocessing logic specific to the "cocoesm" dataset.
+    It inherits all the attributes and methods of BasePreprocessor, including:
+    - Configuration files (`fix_cfg`, `var_cfg`).
+    - Logging and timing utilities (`logger`, `timer`).
+    - Data loading, processing, and sanity checking methods.
+
+    Attributes:
+        dataset (str): Specifies the current dataset as "cocoesm".
+        relationship (Optional[pd.DataFrame]): Reserved for storing relationship-specific data, assigned during processing.
+    """
+    def __init__(self, fix_cfg: NestedDict, var_cfg: NestedDict) -> None:
         """
-        Constructor method of the LassoAnalyzer class.
+        Initializes the CocoesmPreprocessor with dataset-specific configurations.
 
         Args:
-            config: YAML config determining specifics of the analysis
-            output_dir: Specific directory where the results are stored
+            fix_cfg: Fixed configuration data loaded from YAML.
+            var_cfg: Variable configuration data loaded from YAML.
         """
         super().__init__(fix_cfg=fix_cfg, var_cfg=var_cfg)
         self.dataset = "cocoesm"
-        self.relationship = None  # will be assigned and holded
+        self.relationship = None  # will be assigned stored for later use
 
-    def merge_traits(self, df_dct):
+    def merge_traits(self, df_dct: dict[str, pd.DataFrame]) -> pd.DataFrame:
+        """
+        Merges the trait data from the provided dictionary of DataFrames.
+
+        This method extracts and returns the "data_traits" DataFrame from the input dictionary. No special
+        preprocessing necessary for 'cocoesm'.
+
+        Args:
+            df_dct: A dictionary where keys are dataset names and values are DataFrames.
+
+        Returns:
+            pd.DataFrame: The DataFrame containing trait data.
+        """
         return df_dct["data_traits"]
 
-    def merge_states(self, df_dct):
+    def merge_states(self, df_dct: dict[str, pd.DataFrame]) -> pd.DataFrame:
+        """
+        Merges ESM and daily ESM data into a single DataFrame.
+
+        The method processes the `data_esm` and `data_esm_daily` DataFrames by:
+        - Parsing the `created_individual` column to extract the date.
+        - Merging the two DataFrames on the `participant` and `date` columns using a left join.
+        - Adding suffixes to distinguish overlapping columns from both DataFrames.
+
+        Args:
+            df_dct: A dictionary containing `data_esm` and `data_esm_daily` DataFrames.
+
+        Returns:
+            pd.DataFrame: The merged DataFrame with ESM and daily ESM data combined.
+        """
         data_esm = df_dct["data_esm"]
         data_esm_daily = df_dct["data_esm_daily"]
         data_esm['date'] = pd.to_datetime(data_esm['created_individual']).dt.date
         data_esm_daily['date'] = pd.to_datetime(data_esm_daily['created_individual']).dt.date
-        # Merge the DataFrames based on 'participant' and 'date' columns
+
         merged_df = pd.merge(
             data_esm,
             data_esm_daily,
@@ -37,96 +76,97 @@ class CocoesmPreprocessor(BasePreprocessor):
             on=['participant', 'date'],
             suffixes=("_esm", "_daily"),
         )
+
         return merged_df
 
     def clean_trait_col_duplicates(self, df_traits: pd.DataFrame) -> pd.DataFrame:
         """
-        Removes a specified suffix from all column names in the DataFrame if the suffix is present.
-        Additionally, removes the 'r' in column names that match a regex pattern of a number followed by 'r'.
+        Cleans trait DataFrame column names by:
+        - Removing a specified suffix (e.g., "_t1") from column names if present.
+        - Removing the 'r' from column names that match a regex pattern of a number followed by 'r'
+            (e.g., "10r" for 10th item recoded).
+
+        The suffix pattern is defined in the configuration (`var_cfg`).
 
         Args:
-            df_traits: A pandas DataFrame whose column names need to be updated.
-            suffix: A string suffix to be removed from the column names. Default is '_t1'.
-            regex_pattern: A regex pattern to match and remove the 'r' after a number. Default is r'(\d)r$'.
+            df_traits: The DataFrame containing trait data with column names to be updated.
 
         Returns:
-            A pandas DataFrame with the updated column names.
+            pd.DataFrame: A DataFrame with cleaned column names.
         """
-        trait_suffix = "_t1"
+        trait_suffix = self.var_cfg["preprocessing"]["pl_suffixes"]["cocoesm"]
         regex_pattern: str = r'(\d)r$'
         updated_columns = []
+
         for col in df_traits.columns:
-            # Remove suffix if present
             if col.endswith(trait_suffix):
                 col = col[:-len(trait_suffix)]
-            # Remove 'r' from columns matching the regex pattern
             col = re.sub(regex_pattern, r'\1', col)
             updated_columns.append(col)
         df_traits.columns = updated_columns
+
         return df_traits
 
     def dataset_specific_trait_processing(self, df_traits: pd.DataFrame) -> pd.DataFrame:
         """
-        This method may be adjusted in specific subclasses that need dataset-specific processing
-        that applies to special usecases. In CoCo ESM, this includes
-        - Filling NaNs in 'living_other', 'living_partner', and 'living_children' with zero
-          if 'living_alone' == 1.
+        Applies dataset-specific processing to the trait DataFrame.
+
+        For the "CoCo ESM" dataset, this includes:
+        - Setting the `relationship_household` column to '0' for rows where `quantity_household` equals 1.
 
         Args:
-            df_traits (pd.DataFrame): The DataFrame containing trait data.
+            df_traits: The DataFrame containing trait data.
 
         Returns:
-            pd.DataFrame: The modified DataFrame after dataset-specific processing.
+            pd.DataFrame: The modified DataFrame after applying dataset-specific processing.
         """
-        # Define the columns to fill if the condition is met
         df_traits.loc[df_traits['quantity_household'] == 1, "relationship_household"] = '0'
-        test = df_traits[["quantity_household", "relationship_household"]]
         return df_traits
 
     def dataset_specific_state_processing(self, df_states: pd.DataFrame) -> pd.DataFrame:
         """
-        No custom adjustments necessary in cocoesm.
+        Applies dataset-specific processing to the state DataFrame.
+
+        For the "CoCo ESM" dataset, this includes:
+        - Creating a relationship column using the `create_relationship` method.
 
         Args:
-            df_states:
+            df_states: The DataFrame containing state data.
 
         Returns:
-            pd.DataFrame
+            pd.DataFrame: The modified DataFrame after applying dataset-specific processing.
         """
-        df_states = self.create_relationship(df_states=df_states)
+        df_states = self._create_relationship(df_states=df_states)
         return df_states
 
-    def create_relationship(self, df_states: pd.DataFrame) -> pd.DataFrame:
+    def _create_relationship(self, df_states: pd.DataFrame) -> pd.DataFrame:
         """
-        Infers the relationship status from the ESM surveys based on interactions with a partner. If any row for a
-        person has a value of 4 in the "selection_partners" column, all rows for that person are inferred to be in a
-        relationship. Otherwise, the relationship status is set to 0.
+        Infers relationship status from ESM survey data by analyzing interactions with a partner.
+
+        If any row for a person has a specific value (e.g., `4`) in the partner interaction column (as defined in the
+        configuration), the person is considered to be in a relationship. The relationship status is stored in a
+        new column, `relationship`.
 
         Args:
-            df_states (pd.DataFrame): The DataFrame containing the ESM data with interaction information.
+            df_states: The DataFrame containing ESM survey data.
+
+        Returns:
+            pd.DataFrame: The modified DataFrame with a new `relationship` column.
         """
-        # Parse the configuration for the relationship status (can be useful for future expansion)
         relationship_cfg = self.config_parser(self.fix_cfg["esm_based"]["self_reported_micro_context"],
                                               "binary",
                                               "relationship")[0]
         ia_partner_col = relationship_cfg["item_names"]["cocoesm"]
         ia_partner_val = relationship_cfg["special_mappings"]["cocoesm"]
 
-        # Check if 'selection_partners' exists in the DataFrame
         if ia_partner_col in df_states.columns:
-            # Apply the _map_comma_separated function to each row to check for interaction
             df_states['interaction'] = df_states[ia_partner_col].apply(
                 lambda x: self._map_comma_separated(x, {ia_partner_val: 1})
             )
-
-            # Group by person ID (self.raw_esm_id_col) and check if any interaction occurred for the person
             partner_interaction = df_states.groupby(self.raw_esm_id_col)['interaction'].transform('max')
-
-            # Assign 1 to 'relationship' if the person interacted with their partner in any row, otherwise 0
             df_states['relationship'] = np.where(partner_interaction == 1, 1, 0)
-
-            # Drop the intermediate 'interaction' column
             df_states.drop(columns=['interaction'], inplace=True)
+
         else:
             raise KeyError(f"Column {ia_partner_col} not in {self.dataset}")
 
@@ -135,12 +175,17 @@ class CocoesmPreprocessor(BasePreprocessor):
 
     def dataset_specific_post_processing(self, df: pd.DataFrame) -> pd.DataFrame:
         """
+        Applies post-processing steps specific to the dataset.
+
+        For "CoCo ESM," this includes:
+        - Merging the `relationship` information into the DataFrame.
+        - Filling missing country-level data using the `fill_country_nans` method.
 
         Args:
-            df:
+            df: The DataFrame containing processed data.
 
         Returns:
-            pd.DataFrame
+            pd.DataFrame: The modified DataFrame after applying post-processing.
         """
         df = df.merge(self.relationship, on=self.raw_esm_id_col, how="left")
         df = self.fill_country_nans(df)
@@ -148,18 +193,15 @@ class CocoesmPreprocessor(BasePreprocessor):
 
     def fill_country_nans(self, df: pd.DataFrame) -> pd.DataFrame:
         """
-        This method fills potential missings in the country column from the trait df with the
-        according country as assessed in the state df
+        Fills missing values in the `country` column using the corresponding values from the `country_esm` column.
 
         Args:
-            df:
+            df: The DataFrame containing both trait-level and state-level country information.
 
         Returns:
-
+            pd.DataFrame: The DataFrame with missing `country` values filled.
         """
-        # TODO: Move to config
-        state_country_col = "country_esm"
-        trait_country_col = "country"
-        # Fill NaN values in the 'country' column using the 'country_esm' column values
+        state_country_col = self.var_cfg["preprocessing"]["country_col"]["cocoesm"]["state"]
+        trait_country_col = self.var_cfg["preprocessing"]["country_col"]["cocoesm"]["trait"]
         df[trait_country_col] = df[trait_country_col].fillna(df[state_country_col])
         return df

@@ -1,16 +1,17 @@
 general:
-  datasets_to_be_included: [ cocoesm, cocoms, cocout, emotions, pia, zpid ] # cocoesm, cocoms, cocout, emotions, pia, zpid
-  log_dir: "../logs/0912"  # only for preprocessing, analysis logs are stored in the result folders
-  log_name: 0912
+  datasets_to_be_included: [cocoesm, cocoms, cocout, emotions, pia, zpid ] # cocoesm, cocoms, cocout, emotions, pia, zpid
+  log_dir: "../logs/TEST_PRETTY_0701"  # only for preprocessing, analysis logs are stored in the result folders
+  log_name: x
 
   steps:
-    preprocessing: false
+    preprocessing: true
     analysis: false
-    postprocessing: true
+    postprocessing: false
 
 preprocessing:
   path_to_raw_data: "../data/raw"
-  store_data: false  # stores the full preprocessed df
+  store_data: true  # stores the full preprocessed df
+  store_wb_items: true  # stores the wb_items for calculating descriptives
   path_to_preprocessed_data: "../data/preprocessed"
   min_num_esm_measures: 5  # 5
   nrows: 999999 # only for descriptives
@@ -39,6 +40,18 @@ preprocessing:
     emotions: [ 2020 ]
     cocout: [ 2020, 2021 ]
     pia: [ 2021 ]
+
+  pl_suffixes:
+    cocoesm: "_t1"
+    cocoms: ["_t1", "_t2"]
+    cocout: "_t1"
+    emotions: ["_t2", "_t3", "_t4"]
+    pia: ["_t2", "_t3", "_t4"]
+
+  country_col:
+    cocoesm:
+      trait: "country"
+      state: "country_esm"
 
   sensing:
     app_substring:
