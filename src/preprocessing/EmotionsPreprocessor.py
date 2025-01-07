@@ -22,6 +22,7 @@ class EmotionsPreprocessor(BasePreprocessor):
         dataset (str): Specifies the current dataset as "emotions".
         close_interactions (Any): Stores data related to close interactions, assigned during preprocessing.
     """
+
     def __init__(self, fix_cfg: NestedDict, var_cfg: NestedDict) -> None:
         """
         Initializes the EmotionsPreprocessor with dataset-specific configurations.
@@ -50,11 +51,15 @@ class EmotionsPreprocessor(BasePreprocessor):
             pd.DataFrame: A single DataFrame containing the 'traits' data with duplicates removed.
         """
         trait_esm_df = df_dct["data_traits_esm"]
-        df_traits = trait_esm_df.drop_duplicates(subset=self.raw_trait_id_col, keep="first").reset_index(drop=True)
+        df_traits = trait_esm_df.drop_duplicates(
+            subset=self.raw_trait_id_col, keep="first"
+        ).reset_index(drop=True)
 
         return df_traits
 
-    def clean_trait_col_duplicates(self, df_traits: pd.DataFrame) -> pd.DataFrame:  # TODO: Is this in PreReg / Paper? Check
+    def clean_trait_col_duplicates(
+        self, df_traits: pd.DataFrame
+    ) -> pd.DataFrame:  # TODO: Is this in PreReg / Paper? Check
         """
         Cleans up column names in a trait DataFrame by handling duplicates and suffixes.
 
@@ -80,7 +85,7 @@ class EmotionsPreprocessor(BasePreprocessor):
         suffix_pattern = re.compile(r"_t\d$")
 
         for col in df_traits.columns:
-            base_col = re.sub(suffix_pattern, '', col)
+            base_col = re.sub(suffix_pattern, "", col)
 
             if base_col not in df_traits.columns:
                 df_traits[base_col] = np.nan
@@ -93,11 +98,15 @@ class EmotionsPreprocessor(BasePreprocessor):
                         df_traits[base_col].fillna(df_traits[suffix_col], inplace=True)
                         df_traits = df_traits.drop(columns=suffix_col)
 
-        assert len(df_traits.columns) == len(set(df_traits.columns)), "Duplicate column names found after renaming!"
+        assert len(df_traits.columns) == len(
+            set(df_traits.columns)
+        ), "Duplicate column names found after renaming!"
 
         return df_traits
 
-    def dataset_specific_trait_processing(self, df_traits: pd.DataFrame) -> pd.DataFrame:
+    def dataset_specific_trait_processing(
+        self, df_traits: pd.DataFrame
+    ) -> pd.DataFrame:
         """
         Processes trait data specific to Emotions by creating and populating new columns:
          - "country": Assigned a constant value of "germany".
@@ -132,13 +141,16 @@ class EmotionsPreprocessor(BasePreprocessor):
         state_df = df_dct["data_traits_esm"]
         grouped = state_df.groupby(self.raw_esm_id_col)
 
-        varying_columns = [col for col in state_df.columns
-                           if grouped[col].nunique().gt(1).any()]
+        varying_columns = [
+            col for col in state_df.columns if grouped[col].nunique().gt(1).any()
+        ]
         state_df_filtered = state_df[varying_columns + [self.raw_esm_id_col] + ["wave"]]
 
         return state_df_filtered
 
-    def dataset_specific_state_processing(self, df_states: pd.DataFrame) -> pd.DataFrame:
+    def dataset_specific_state_processing(
+        self, df_states: pd.DataFrame
+    ) -> pd.DataFrame:
         """
         Applies dataset-specific processing steps to state-level data.
 
@@ -183,9 +195,14 @@ class EmotionsPreprocessor(BasePreprocessor):
         Raises:
             KeyError: If any required interaction partner columns are missing in the DataFrame.
         """
-        close_interaction_cfg = [entry for entry in self.fix_cfg["esm_based"]["self_reported_micro_context"]
-                                 if entry["name"] == "close_interactions"][0]
-        int_partner_cols = close_interaction_cfg["special_mappings"]["emotions"]["columns"]
+        close_interaction_cfg = [
+            entry
+            for entry in self.fix_cfg["esm_based"]["self_reported_micro_context"]
+            if entry["name"] == "close_interactions"
+        ][0]
+        int_partner_cols = close_interaction_cfg["special_mappings"]["emotions"][
+            "columns"
+        ]
         cat_mapping = close_interaction_cfg["special_mappings"]["emotions"]["mapping"]
 
         for col in int_partner_cols:
@@ -194,15 +211,22 @@ class EmotionsPreprocessor(BasePreprocessor):
         # Close interaction partner is 1, 0 is weak
         all_close_mask = df_states[int_partner_cols].isin([1, np.nan]).all(axis=1)
         all_weak_mask = df_states[int_partner_cols].isin([0, np.nan]).all(axis=1)
-        df_states['close_interactions_raw'] = np.where(all_close_mask, 1,
-                                                       np.where(all_weak_mask, 0, np.nan))
-
-        interaction_stats = df_states.groupby(self.raw_esm_id_col)['close_interactions_raw'].apply(
-            lambda x: x.sum() / x.count() if x.count() > 0 else np.nan
+        df_states["close_interactions_raw"] = np.where(
+            all_close_mask, 1, np.where(all_weak_mask, 0, np.nan)
         )
 
-        df_states['close_interactions'] = df_states[self.raw_esm_id_col].map(interaction_stats)
-        self.close_interactions = deepcopy(df_states[["close_interactions", self.raw_esm_id_col]].drop_duplicates(keep="first"))
+        interaction_stats = df_states.groupby(self.raw_esm_id_col)[
+            "close_interactions_raw"
+        ].apply(lambda x: x.sum() / x.count() if x.count() > 0 else np.nan)
+
+        df_states["close_interactions"] = df_states[self.raw_esm_id_col].map(
+            interaction_stats
+        )
+        self.close_interactions = deepcopy(
+            df_states[["close_interactions", self.raw_esm_id_col]].drop_duplicates(
+                keep="first"
+            )
+        )
 
         return df_states
 
@@ -230,7 +254,9 @@ class EmotionsPreprocessor(BasePreprocessor):
             int_col = f'int_{item.split("_")[1]}'
 
             if occup_col in df_states.columns and int_col in df_states.columns:
-                df_states[occup_col] = df_states[occup_col].combine_first(df_states[int_col])
+                df_states[occup_col] = df_states[occup_col].combine_first(
+                    df_states[int_col]
+                )
                 df_states[int_col] = df_states[occup_col]
 
         return df_states

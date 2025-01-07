@@ -18,6 +18,7 @@ class CocoutPreprocessor(BasePreprocessor):
     Attributes:
         dataset (str): Specifies the current dataset as "cocout".
     """
+
     def __init__(self, fix_cfg: NestedDict, var_cfg: NestedDict) -> None:
         """
         Initializes the CocoutPreprocessor with dataset-specific configurations.
@@ -50,29 +51,65 @@ class CocoutPreprocessor(BasePreprocessor):
         """
         dataset_lst = []
         for dataset in ["ut1", "ut2"]:
-            df_dct[f"data_personality_{dataset}"] = df_dct[f"data_personality_{dataset}"].add_suffix('_bfi')
-            df_dct[f"data_personality_{dataset}"] = df_dct[f"data_personality_{dataset}"].dropna(subset="pID_bfi")
-            df_dct[f"data_self_esteem_{dataset}"] = df_dct[f"data_self_esteem_{dataset}"].add_suffix('_se')
-            df_dct[f"data_self_esteem_{dataset}"] = df_dct[f"data_self_esteem_{dataset}"].dropna(subset="pID_se")
-            df_dct[f"data_demographics_{dataset}"] = df_dct[f"data_demographics_{dataset}"].add_suffix('_dem')
-            df_dct[f"data_demographics_{dataset}"] = df_dct[f"data_demographics_{dataset}"].dropna(subset="pID_dem")
+            df_dct[f"data_personality_{dataset}"] = df_dct[
+                f"data_personality_{dataset}"
+            ].add_suffix("_bfi")
+            df_dct[f"data_personality_{dataset}"] = df_dct[
+                f"data_personality_{dataset}"
+            ].dropna(subset="pID_bfi")
+            df_dct[f"data_self_esteem_{dataset}"] = df_dct[
+                f"data_self_esteem_{dataset}"
+            ].add_suffix("_se")
+            df_dct[f"data_self_esteem_{dataset}"] = df_dct[
+                f"data_self_esteem_{dataset}"
+            ].dropna(subset="pID_se")
+            df_dct[f"data_demographics_{dataset}"] = df_dct[
+                f"data_demographics_{dataset}"
+            ].add_suffix("_dem")
+            df_dct[f"data_demographics_{dataset}"] = df_dct[
+                f"data_demographics_{dataset}"
+            ].dropna(subset="pID_dem")
 
             if dataset == "ut2":
                 self.fix_col_name_issues(df_dct)
 
             df_traits = (
                 df_dct[f"data_traits_t1_{dataset}"]
-                .merge(df_dct[f"data_traits_t2_{dataset}"], left_on="id", right_on="id", how="outer", validate='1:1',
-                       suffixes=(None, "_postsurv"))
+                .merge(
+                    df_dct[f"data_traits_t2_{dataset}"],
+                    left_on="id",
+                    right_on="id",
+                    how="outer",
+                    validate="1:1",
+                    suffixes=(None, "_postsurv"),
+                )
                 .dropna(subset="id")
                 .reset_index(drop=True)
-                .merge(df_dct[f"data_personality_{dataset}"], left_on="id", right_on="pID_bfi", how="outer", validate='1:1')
+                .merge(
+                    df_dct[f"data_personality_{dataset}"],
+                    left_on="id",
+                    right_on="pID_bfi",
+                    how="outer",
+                    validate="1:1",
+                )
                 .dropna(subset="id")
                 .reset_index(drop=True)
-                .merge(df_dct[f"data_demographics_{dataset}"], left_on="id", right_on="pID_dem", how="outer", validate='1:m')
+                .merge(
+                    df_dct[f"data_demographics_{dataset}"],
+                    left_on="id",
+                    right_on="pID_dem",
+                    how="outer",
+                    validate="1:m",
+                )
                 .dropna(subset="id")
                 .reset_index(drop=True)
-                .merge(df_dct[f"data_self_esteem_{dataset}"], left_on="id", right_on="pID_se", how="outer", validate='1:1')
+                .merge(
+                    df_dct[f"data_self_esteem_{dataset}"],
+                    left_on="id",
+                    right_on="pID_se",
+                    how="outer",
+                    validate="1:1",
+                )
                 .dropna(subset="id")
                 .reset_index(drop=True)
             )
@@ -102,8 +139,12 @@ class CocoutPreprocessor(BasePreprocessor):
 
         cmq_cols = [col for col in df_t1.columns if "cms_" in col]
 
-        df_t1 = df_t1.rename(columns={col: col.replace("cms_", "cmq_") for col in cmq_cols})
-        df_t2 = df_t2.rename(columns={col: col.replace("cms_", "cmq_") for col in cmq_cols})
+        df_t1 = df_t1.rename(
+            columns={col: col.replace("cms_", "cmq_") for col in cmq_cols}
+        )
+        df_t2 = df_t2.rename(
+            columns={col: col.replace("cms_", "cmq_") for col in cmq_cols}
+        )
 
         df_dct[f"data_traits_t1_{dataset}"] = df_t1
         df_dct[f"data_traits_t2_{dataset}"] = df_t2
@@ -127,13 +168,15 @@ class CocoutPreprocessor(BasePreprocessor):
 
         for col in df_traits.columns:
             if col.endswith(trait_suffix):
-                col = col[:-len(trait_suffix)]
+                col = col[: -len(trait_suffix)]
             updated_columns.append(col)
 
         df_traits.columns = updated_columns
         return df_traits
 
-    def dataset_specific_trait_processing(self, df_traits: pd.DataFrame) -> pd.DataFrame:
+    def dataset_specific_trait_processing(
+        self, df_traits: pd.DataFrame
+    ) -> pd.DataFrame:
         """
         Processes trait data specific to CoCo UT by creating and populating new columns:
         - "professional_status": Assigned a constant value of 1.
@@ -170,14 +213,16 @@ class CocoutPreprocessor(BasePreprocessor):
         for dataset in ["ut1", "ut2"]:
             data_esm = df_dct[f"data_esm_{dataset}"]
             data_esm_daily = df_dct[f"data_esm_daily_{dataset}"]
-            data_esm['date'] = pd.to_datetime(data_esm['RecordedDateConvert']).dt.date
-            data_esm_daily['date'] = pd.to_datetime(data_esm_daily['RecordedDateConvert']).dt.date
+            data_esm["date"] = pd.to_datetime(data_esm["RecordedDateConvert"]).dt.date
+            data_esm_daily["date"] = pd.to_datetime(
+                data_esm_daily["RecordedDateConvert"]
+            ).dt.date
 
             merged_df = pd.merge(
                 data_esm,
                 data_esm_daily,
-                how='left',
-                on=['id', 'date'],
+                how="left",
+                on=["id", "date"],
                 suffixes=("_esm", "_daily"),
             )
             df_lst.append(merged_df)
@@ -186,7 +231,9 @@ class CocoutPreprocessor(BasePreprocessor):
 
         return concatenated_esm
 
-    def dataset_specific_state_processing(self, df_states: pd.DataFrame) -> pd.DataFrame:
+    def dataset_specific_state_processing(
+        self, df_states: pd.DataFrame
+    ) -> pd.DataFrame:
         """
         Applies dataset-specific processing to the state-level data for CoCo UT datasets.
 
@@ -205,7 +252,9 @@ class CocoutPreprocessor(BasePreprocessor):
 
         return df_states
 
-    def clean_number_interaction_partners(self, df_states: pd.DataFrame) -> pd.DataFrame:
+    def clean_number_interaction_partners(
+        self, df_states: pd.DataFrame
+    ) -> pd.DataFrame:
         """
         Cleans the 'number_interaction_partners' column for CoCo UT datasets by:
         - Converting unambiguous strings (e.g., "one") to numerical values.
@@ -217,13 +266,17 @@ class CocoutPreprocessor(BasePreprocessor):
         Returns:
             pd.DataFrame: The modified DataFrame with a cleaned 'number_interaction_partners' column.
         """
-        number_int_partners_cfg = [entry for entry in self.fix_cfg["esm_based"]["self_reported_micro_context"]
-                                   if entry["name"] == "number_interaction_partners"][0]
+        number_int_partners_cfg = [
+            entry
+            for entry in self.fix_cfg["esm_based"]["self_reported_micro_context"]
+            if entry["name"] == "number_interaction_partners"
+        ][0]
         col_name = number_int_partners_cfg["item_names"]["cocout"]
 
         df_states[col_name] = df_states[col_name].replace(
-            number_int_partners_cfg["special_mappings"]["cocout"]["str_to_num"])
-        df_states[col_name] = pd.to_numeric(df_states[col_name], errors='coerce')
+            number_int_partners_cfg["special_mappings"]["cocout"]["str_to_num"]
+        )
+        df_states[col_name] = pd.to_numeric(df_states[col_name], errors="coerce")
 
         return df_states
 

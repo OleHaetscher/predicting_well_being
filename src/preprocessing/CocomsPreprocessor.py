@@ -27,6 +27,7 @@ class CocomsPreprocessor(BasePreprocessor):
         societal_conversations (Optional[pd.DataFrame]): Stores data related to societal conversations.
         close_interactions: (Optional[pd.DataFrame]): Stores close interaction data.
     """
+
     def __init__(self, fix_cfg: NestedDict, var_cfg: NestedDict) -> None:
         """
         Initializes the CocomsPreprocessor with dataset-specific configurations.
@@ -63,13 +64,15 @@ class CocomsPreprocessor(BasePreprocessor):
         """
         df_dct_proc = self.cocoms_processing_before_merging(deepcopy(df_dct))
 
-        traits_dfs = [df for key, df in df_dct_proc.items() if 'traits' in key]
+        traits_dfs = [df for key, df in df_dct_proc.items() if "traits" in key]
         concatenated_traits = pd.concat(traits_dfs, axis=0).reset_index(drop=True)
 
         return concatenated_traits
 
     @staticmethod
-    def cocoms_processing_before_merging(df_dct: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:
+    def cocoms_processing_before_merging(
+        df_dct: dict[str, pd.DataFrame]
+    ) -> dict[str, pd.DataFrame]:
         """
         Applies dataset-specific preprocessing to the CoCoMS trait DataFrames before merging.
 
@@ -90,15 +93,21 @@ class CocomsPreprocessor(BasePreprocessor):
         df_w3 = df_dct["data_traits_w3"]
 
         # Rename hexaco cols (hex_60 in w1,w2; hex60 in w3)
-        df_w3.columns = [re.sub(r'^hex60', 'hex_60', col) for col in df_w3.columns]
+        df_w3.columns = [re.sub(r"^hex60", "hex_60", col) for col in df_w3.columns]
 
-        df_w1["professional_status_t1"] = df_w1["professional_status_student_t1"].apply(lambda x: 5 if x in [2, 3, 4] else 0)
-        df_w2["professional_status_t1"] = df_w2["professional_status_student_t1"].apply(lambda x: 5 if x in [2, 3, 4] else 0)
+        df_w1["professional_status_t1"] = df_w1["professional_status_student_t1"].apply(
+            lambda x: 5 if x in [2, 3, 4] else 0
+        )
+        df_w2["professional_status_t1"] = df_w2["professional_status_student_t1"].apply(
+            lambda x: 5 if x in [2, 3, 4] else 0
+        )
         df_w3["professional_status_t1"] = df_w3["professional_status_booster_t1"]
 
         df_w1["professional_status_student_t1"] = 1
         df_w2["professional_status_student_t1"] = 1
-        df_w3["professional_status_student_t1"] = pd.notna(df_w3["professional_status_student_t1"]).astype(int)
+        df_w3["professional_status_student_t1"] = pd.notna(
+            df_w3["professional_status_student_t1"]
+        ).astype(int)
 
         df_dct["data_esm_w1"] = df_w1
         df_dct["data_esm_w2"] = df_w2
@@ -121,7 +130,7 @@ class CocomsPreprocessor(BasePreprocessor):
         Returns:
             pd.DataFrame: A single concatenated DataFrame containing all ESM-related data.
         """
-        esm_dfs = [df for key, df in df_dct.items() if 'esm' in key]
+        esm_dfs = [df for key, df in df_dct.items() if "esm" in key]
         concatenated_esm = pd.concat(esm_dfs, axis=0).reset_index(drop=True)
 
         return concatenated_esm
@@ -150,7 +159,7 @@ class CocomsPreprocessor(BasePreprocessor):
 
             for suffix in trait_suffixes:
                 if col.endswith(suffix):
-                    base_col_name = col[:-len(suffix)]
+                    base_col_name = col[: -len(suffix)]
 
                     if suffix == "_t2" and base_col_name in updated_columns:
                         columns_to_fill[base_col_name] = original_col
@@ -166,11 +175,15 @@ class CocomsPreprocessor(BasePreprocessor):
                     df_traits[t1_col].fillna(df_traits[t2_col], inplace=True)
 
         df_traits.columns = updated_columns
-        assert len(df_traits.columns) == len(set(df_traits.columns)), "Duplicate column names found after renaming!"
+        assert len(df_traits.columns) == len(
+            set(df_traits.columns)
+        ), "Duplicate column names found after renaming!"
 
         return df_traits
 
-    def dataset_specific_trait_processing(self, df_traits: pd.DataFrame) -> pd.DataFrame:
+    def dataset_specific_trait_processing(
+        self, df_traits: pd.DataFrame
+    ) -> pd.DataFrame:
         """
         Processes trait-level data for the CoCoMS dataset.
 
@@ -185,15 +198,22 @@ class CocomsPreprocessor(BasePreprocessor):
         Returns:
             pd.DataFrame: The updated DataFrame with processed trait-level data.
         """
-        party_number_map = [entry["party_num_mapping"] for entry in self.fix_cfg["person_level"]["personality"]
-                            if "party_num_mapping" in entry.keys()][0]["cocoms"]
+        party_number_map = [
+            entry["party_num_mapping"]
+            for entry in self.fix_cfg["person_level"]["personality"]
+            if "party_num_mapping" in entry.keys()
+        ][0]["cocoms"]
 
-        df_traits['vote_general'] = df_traits['vote_general'].map(party_number_map).fillna(np.nan)
+        df_traits["vote_general"] = (
+            df_traits["vote_general"].map(party_number_map).fillna(np.nan)
+        )
         df_traits["country"] = "germany"
 
         return df_traits
 
-    def dataset_specific_state_processing(self, df_states: pd.DataFrame) -> pd.DataFrame:
+    def dataset_specific_state_processing(
+        self, df_states: pd.DataFrame
+    ) -> pd.DataFrame:
         """
         Processes state-level data specific to the CoCoMS dataset.
 
@@ -240,41 +260,70 @@ class CocomsPreprocessor(BasePreprocessor):
         Returns:
             pd.DataFrame: The updated DataFrame with "close_interactions_raw" and "close_interactions" columns.
         """
-        close_interaction_cfg = self.config_parser(self.fix_cfg["esm_based"]["self_reported_micro_context"],
-                                                   "percentage",
-                                                   "close_interactions"
-                                                   )[0]
-        wave1_weak_ties_col_lst = close_interaction_cfg["special_mappings"]["cocoms"]["wave1"]["weak_ties"]
-        wave1_close_ties_col_lst = close_interaction_cfg["special_mappings"]["cocoms"]["wave1"]["close_ties"]
+        close_interaction_cfg = self.config_parser(
+            self.fix_cfg["esm_based"]["self_reported_micro_context"],
+            "percentage",
+            "close_interactions",
+        )[0]
+        wave1_weak_ties_col_lst = close_interaction_cfg["special_mappings"]["cocoms"][
+            "wave1"
+        ]["weak_ties"]
+        wave1_close_ties_col_lst = close_interaction_cfg["special_mappings"]["cocoms"][
+            "wave1"
+        ]["close_ties"]
         wave3_mapping = close_interaction_cfg["special_mappings"]["cocoms"]["wave3"]
 
         # Wave 1
-        close_tie_mask = df_states.loc[df_states['studyWave'] == 1, wave1_close_ties_col_lst].max(axis=1) == 1
-        weak_tie_mask = df_states.loc[df_states['studyWave'] == 1, wave1_weak_ties_col_lst].max(axis=1) == 1
-        df_states.loc[df_states['studyWave'] == 1, 'close_interactions_raw'] = np.where(
-            close_tie_mask & ~weak_tie_mask, 1,
-            np.where(weak_tie_mask & ~close_tie_mask, 0, np.nan)
+        close_tie_mask = (
+            df_states.loc[df_states["studyWave"] == 1, wave1_close_ties_col_lst].max(
+                axis=1
+            )
+            == 1
+        )
+        weak_tie_mask = (
+            df_states.loc[df_states["studyWave"] == 1, wave1_weak_ties_col_lst].max(
+                axis=1
+            )
+            == 1
+        )
+        df_states.loc[df_states["studyWave"] == 1, "close_interactions_raw"] = np.where(
+            close_tie_mask & ~weak_tie_mask,
+            1,
+            np.where(weak_tie_mask & ~close_tie_mask, 0, np.nan),
         )
 
         # Wave 3
-        df_states.loc[df_states['studyWave'] == 3, 'close_interactions_raw'] = df_states.loc[
-            df_states['studyWave'] == 3, 'selection_partners_01'].replace(wave3_mapping)
-        df_states.loc[(df_states['studyWave'] == 3) & (df_states['close_interactions_raw'] == -1),
-        'close_interactions_raw'] = np.nan
-
-        interaction_stats = df_states.groupby(self.raw_esm_id_col)['close_interactions_raw'].apply(
-            lambda x: x.sum() / x.count() if x.count() > 0 else np.nan
+        df_states.loc[
+            df_states["studyWave"] == 3, "close_interactions_raw"
+        ] = df_states.loc[df_states["studyWave"] == 3, "selection_partners_01"].replace(
+            wave3_mapping
         )
+        df_states.loc[
+            (df_states["studyWave"] == 3) & (df_states["close_interactions_raw"] == -1),
+            "close_interactions_raw",
+        ] = np.nan
+
+        interaction_stats = df_states.groupby(self.raw_esm_id_col)[
+            "close_interactions_raw"
+        ].apply(lambda x: x.sum() / x.count() if x.count() > 0 else np.nan)
 
         # Wave 2
-        df_states.loc[df_states['studyWave'] == 2, 'close_interactions'] = np.nan
+        df_states.loc[df_states["studyWave"] == 2, "close_interactions"] = np.nan
 
-        df_states['close_interactions'] = df_states[self.raw_esm_id_col].map(interaction_stats)
-        self.close_interactions = deepcopy(df_states[['close_interactions', self.raw_esm_id_col]].drop_duplicates(keep="first"))
+        df_states["close_interactions"] = df_states[self.raw_esm_id_col].map(
+            interaction_stats
+        )
+        self.close_interactions = deepcopy(
+            df_states[["close_interactions", self.raw_esm_id_col]].drop_duplicates(
+                keep="first"
+            )
+        )
 
         return df_states
 
-    def create_conversation_topic_columns(self, df_states: pd.DataFrame) -> pd.DataFrame:
+    def create_conversation_topic_columns(
+        self, df_states: pd.DataFrame
+    ) -> pd.DataFrame:
         """
         Creates columns for conversation topics:
             - work_conversations
@@ -296,48 +345,81 @@ class CocomsPreprocessor(BasePreprocessor):
         Returns:
             pd.DataFrame: The updated DataFrame with columns for conversation topics and their percentages.
         """
-        conv_topic_vars = self.config_parser(self.fix_cfg["esm_based"]["self_reported_micro_context"],
-                                                     "percentage",
-                                                     "work_conversations",
-                                                     "personal_conversations",
-                                                     "societal_conversations"
-                                                     )
+        conv_topic_vars = self.config_parser(
+            self.fix_cfg["esm_based"]["self_reported_micro_context"],
+            "percentage",
+            "work_conversations",
+            "personal_conversations",
+            "societal_conversations",
+        )
         conversation_configs = {
             "work_conversations": {
-                "cols": conv_topic_vars[0]["special_mappings"]["cocoms"]["wave1"]["work_columns"],
-                "other_cols": conv_topic_vars[0]["special_mappings"]["cocoms"]["wave1"]["other_columns"]
+                "cols": conv_topic_vars[0]["special_mappings"]["cocoms"]["wave1"][
+                    "work_columns"
+                ],
+                "other_cols": conv_topic_vars[0]["special_mappings"]["cocoms"]["wave1"][
+                    "other_columns"
+                ],
             },
             "personal_conversations": {
-                "cols": conv_topic_vars[1]["special_mappings"]["cocoms"]["wave1"]["pers_columns"],
-                "other_cols": conv_topic_vars[1]["special_mappings"]["cocoms"]["wave1"]["other_columns"]
+                "cols": conv_topic_vars[1]["special_mappings"]["cocoms"]["wave1"][
+                    "pers_columns"
+                ],
+                "other_cols": conv_topic_vars[1]["special_mappings"]["cocoms"]["wave1"][
+                    "other_columns"
+                ],
             },
             "societal_conversations": {
-                "cols": conv_topic_vars[2]["special_mappings"]["cocoms"]["wave1"]["soc_columns"],
-                "other_cols": conv_topic_vars[2]["special_mappings"]["cocoms"]["wave1"]["other_columns"]
-            }
+                "cols": conv_topic_vars[2]["special_mappings"]["cocoms"]["wave1"][
+                    "soc_columns"
+                ],
+                "other_cols": conv_topic_vars[2]["special_mappings"]["cocoms"]["wave1"][
+                    "other_columns"
+                ],
+            },
         }
 
         for conversation_type, config in conversation_configs.items():
-            topic_mask = (
-                    (df_states[config["cols"]].max(axis=1) == 1) & (df_states[config["other_cols"]].max(axis=1) == 0)
+            topic_mask = (df_states[config["cols"]].max(axis=1) == 1) & (
+                df_states[config["other_cols"]].max(axis=1) == 0
             )
-            other_mask = (
-                    (df_states[config["other_cols"]].max(axis=1) == 1) & (df_states[config["cols"]].max(axis=1) == 0)
+            other_mask = (df_states[config["other_cols"]].max(axis=1) == 1) & (
+                df_states[config["cols"]].max(axis=1) == 0
             )
-            df_states[conversation_type] = np.where(topic_mask, 1, np.where(other_mask, 0, np.nan))
+            df_states[conversation_type] = np.where(
+                topic_mask, 1, np.where(other_mask, 0, np.nan)
+            )
 
-        df_states.loc[df_states['studyWave'] != 1, ['work_conversations', 'personal_conversations',
-                                                    "societal_conversations"]] = np.nan
+        df_states.loc[
+            df_states["studyWave"] != 1,
+            ["work_conversations", "personal_conversations", "societal_conversations"],
+        ] = np.nan
 
-        for col in ['work_conversations', 'personal_conversations', 'societal_conversations']:
+        for col in [
+            "work_conversations",
+            "personal_conversations",
+            "societal_conversations",
+        ]:
             interaction_stats = df_states.groupby(self.raw_esm_id_col)[col].apply(
                 lambda x: x.sum() / x.count() if x.count() > 0 else np.nan
             )
             df_states[col] = df_states[self.raw_esm_id_col].map(interaction_stats)
 
-        self.work_conversations = deepcopy(df_states[["work_conversations", self.raw_esm_id_col]].drop_duplicates(keep="first"))
-        self.personal_conversations = deepcopy(df_states[["personal_conversations", self.raw_esm_id_col]].drop_duplicates(keep="first"))
-        self.societal_conversations = deepcopy(df_states[["societal_conversations", self.raw_esm_id_col]].drop_duplicates(keep="first"))
+        self.work_conversations = deepcopy(
+            df_states[["work_conversations", self.raw_esm_id_col]].drop_duplicates(
+                keep="first"
+            )
+        )
+        self.personal_conversations = deepcopy(
+            df_states[["personal_conversations", self.raw_esm_id_col]].drop_duplicates(
+                keep="first"
+            )
+        )
+        self.societal_conversations = deepcopy(
+            df_states[["societal_conversations", self.raw_esm_id_col]].drop_duplicates(
+                keep="first"
+            )
+        )
 
         return df_states
 
@@ -359,38 +441,48 @@ class CocomsPreprocessor(BasePreprocessor):
             pd.DataFrame: The modified DataFrame with an added 'relationship' column indicating inferred relationship status.
         """
 
-        relationship_cfg = self.config_parser(self.fix_cfg["esm_based"]["self_reported_micro_context"],
-                                              "binary", "relationship")[0]
+        relationship_cfg = self.config_parser(
+            self.fix_cfg["esm_based"]["self_reported_micro_context"],
+            "binary",
+            "relationship",
+        )[0]
         waves_config = {
             1: {
-                'column': relationship_cfg["item_names"][self.dataset]["wave1"],
-                'partner_value': relationship_cfg["special_mappings"][self.dataset]["wave1"]
+                "column": relationship_cfg["item_names"][self.dataset]["wave1"],
+                "partner_value": relationship_cfg["special_mappings"][self.dataset][
+                    "wave1"
+                ],
             },
             3: {
-                'column': relationship_cfg["item_names"][self.dataset]["wave3"],
-                'partner_value': relationship_cfg["special_mappings"][self.dataset]["wave3"]
-            }
+                "column": relationship_cfg["item_names"][self.dataset]["wave3"],
+                "partner_value": relationship_cfg["special_mappings"][self.dataset][
+                    "wave3"
+                ],
+            },
         }
 
-        df_states['relationship'] = np.nan
+        df_states["relationship"] = np.nan
 
         for wave, config in waves_config.items():
-            ia_partner_col = config['column']
-            ia_partner_val = config['partner_value']
+            ia_partner_col = config["column"]
+            ia_partner_val = config["partner_value"]
 
             if ia_partner_col in df_states.columns:
-                partner_interaction = (df_states
-                                       .groupby(self.raw_esm_id_col)[ia_partner_col]
-                                       .agg(lambda x: (x == ia_partner_val).any()
-                                            )
-                                       )
-                df_states.loc[df_states['studyWave'] == wave, 'relationship'] = df_states[self.raw_esm_id_col].map(
-                    partner_interaction).astype(int)
+                partner_interaction = df_states.groupby(self.raw_esm_id_col)[
+                    ia_partner_col
+                ].agg(lambda x: (x == ia_partner_val).any())
+                df_states.loc[df_states["studyWave"] == wave, "relationship"] = (
+                    df_states[self.raw_esm_id_col].map(partner_interaction).astype(int)
+                )
 
             else:
                 raise KeyError(f"Column {ia_partner_col} not in {self.dataset}")
 
-        self.relationship = deepcopy(df_states[["relationship", self.raw_esm_id_col]].drop_duplicates(keep="first"))
+        self.relationship = deepcopy(
+            df_states[["relationship", self.raw_esm_id_col]].drop_duplicates(
+                keep="first"
+            )
+        )
 
         return df_states
 
@@ -415,21 +507,32 @@ class CocomsPreprocessor(BasePreprocessor):
         Returns:
             pd.DataFrame: The adjusted DataFrame with updated 'selection_medium_00' column.
         """
-        df_states[self.esm_timestamp] = df_states[self.esm_timestamp].apply(lambda x: x.split('.')[0] if isinstance(x, str) else x)
-        df_states[f"{self.esm_timestamp}_dt"] = pd.to_datetime(df_states[self.esm_timestamp])
-
-        df_states['esm_timedelta'] = df_states[f"{self.esm_timestamp}_dt"].dt.hour * 3600 + \
-                                     df_states[f"{self.esm_timestamp}_dt"].dt.minute * 60 + \
-                                     df_states[f"{self.esm_timestamp}_dt"].dt.second
-        df_states['esm_timedelta'] = pd.to_timedelta(df_states['esm_timedelta'], unit='s')
-        df_states['interaction_time'] = df_states['time_social_interaction'].apply(
-            lambda x: timedelta(hours=int(x), minutes=int((x % 1) * 60)) if pd.notna(x) else pd.NaT
+        df_states[self.esm_timestamp] = df_states[self.esm_timestamp].apply(
+            lambda x: x.split(".")[0] if isinstance(x, str) else x
+        )
+        df_states[f"{self.esm_timestamp}_dt"] = pd.to_datetime(
+            df_states[self.esm_timestamp]
         )
 
-        df_states['selection_medium_00'] = df_states.apply(
-            lambda row: 1 if (row['esm_timedelta'] - row['interaction_time']) > timedelta(hours=1)
-            else row['selection_medium_00'],
-            axis=1
+        df_states["esm_timedelta"] = (
+            df_states[f"{self.esm_timestamp}_dt"].dt.hour * 3600
+            + df_states[f"{self.esm_timestamp}_dt"].dt.minute * 60
+            + df_states[f"{self.esm_timestamp}_dt"].dt.second
+        )
+        df_states["esm_timedelta"] = pd.to_timedelta(
+            df_states["esm_timedelta"], unit="s"
+        )
+        df_states["interaction_time"] = df_states["time_social_interaction"].apply(
+            lambda x: timedelta(hours=int(x), minutes=int((x % 1) * 60))
+            if pd.notna(x)
+            else pd.NaT
+        )
+
+        df_states["selection_medium_00"] = df_states.apply(
+            lambda row: 1
+            if (row["esm_timedelta"] - row["interaction_time"]) > timedelta(hours=1)
+            else row["selection_medium_00"],
+            axis=1,
         )
 
         return df_states
@@ -454,7 +557,9 @@ class CocomsPreprocessor(BasePreprocessor):
 
         return df
 
-    def dataset_specific_sensing_processing(self, df_sensing: pd.DataFrame) -> pd.DataFrame:
+    def dataset_specific_sensing_processing(
+        self, df_sensing: pd.DataFrame
+    ) -> pd.DataFrame:
         """
         Performs dataset-specific processing of sensing data for CoCoMS. This includes adjustments to
         the day cut-off times as the time is coded differently compared to zpid.
@@ -485,12 +590,14 @@ class CocomsPreprocessor(BasePreprocessor):
         Returns:
             pd.DataFrame: Updated DataFrame with adjusted 'Screen_firstEvent' and 'Screen_lastEvent' columns.
         """
-        df_sensing["Screen_firstEvent"] = df_sensing["Screen_firstEvent"].apply(lambda x: x + 24 if x < 3 else x)
-        df_sensing["Screen_lastEvent"] = df_sensing["Screen_lastEvent"].apply(lambda x: x + 24 if x < 3 else x)
+        df_sensing["Screen_firstEvent"] = df_sensing["Screen_firstEvent"].apply(
+            lambda x: x + 24 if x < 3 else x
+        )
+        df_sensing["Screen_lastEvent"] = df_sensing["Screen_lastEvent"].apply(
+            lambda x: x + 24 if x < 3 else x
+        )
 
         df_sensing["Screen_firstEvent"] = (df_sensing["Screen_firstEvent"] - 3) * 60
         df_sensing["Screen_lastEvent"] = (df_sensing["Screen_lastEvent"] - 3) * 60
 
         return df_sensing
-
-

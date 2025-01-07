@@ -22,6 +22,7 @@ class CocoesmPreprocessor(BasePreprocessor):
         dataset (str): Specifies the current dataset as "cocoesm".
         relationship (Optional[pd.DataFrame]): Reserved for storing relationship-specific data, assigned during processing.
     """
+
     def __init__(self, fix_cfg: NestedDict, var_cfg: NestedDict) -> None:
         """
         Initializes the CocoesmPreprocessor with dataset-specific configurations.
@@ -66,14 +67,16 @@ class CocoesmPreprocessor(BasePreprocessor):
         """
         data_esm = df_dct["data_esm"]
         data_esm_daily = df_dct["data_esm_daily"]
-        data_esm['date'] = pd.to_datetime(data_esm['created_individual']).dt.date
-        data_esm_daily['date'] = pd.to_datetime(data_esm_daily['created_individual']).dt.date
+        data_esm["date"] = pd.to_datetime(data_esm["created_individual"]).dt.date
+        data_esm_daily["date"] = pd.to_datetime(
+            data_esm_daily["created_individual"]
+        ).dt.date
 
         merged_df = pd.merge(
             data_esm,
             data_esm_daily,
-            how='left',
-            on=['participant', 'date'],
+            how="left",
+            on=["participant", "date"],
             suffixes=("_esm", "_daily"),
         )
 
@@ -95,19 +98,21 @@ class CocoesmPreprocessor(BasePreprocessor):
             pd.DataFrame: A DataFrame with cleaned column names.
         """
         trait_suffix = self.var_cfg["preprocessing"]["pl_suffixes"]["cocoesm"]
-        regex_pattern: str = r'(\d)r$'
+        regex_pattern: str = r"(\d)r$"
         updated_columns = []
 
         for col in df_traits.columns:
             if col.endswith(trait_suffix):
-                col = col[:-len(trait_suffix)]
-            col = re.sub(regex_pattern, r'\1', col)
+                col = col[: -len(trait_suffix)]
+            col = re.sub(regex_pattern, r"\1", col)
             updated_columns.append(col)
         df_traits.columns = updated_columns
 
         return df_traits
 
-    def dataset_specific_trait_processing(self, df_traits: pd.DataFrame) -> pd.DataFrame:
+    def dataset_specific_trait_processing(
+        self, df_traits: pd.DataFrame
+    ) -> pd.DataFrame:
         """
         Applies dataset-specific processing to the trait DataFrame.
 
@@ -120,10 +125,14 @@ class CocoesmPreprocessor(BasePreprocessor):
         Returns:
             pd.DataFrame: The modified DataFrame after applying dataset-specific processing.
         """
-        df_traits.loc[df_traits['quantity_household'] == 1, "relationship_household"] = '0'
+        df_traits.loc[
+            df_traits["quantity_household"] == 1, "relationship_household"
+        ] = "0"
         return df_traits
 
-    def dataset_specific_state_processing(self, df_states: pd.DataFrame) -> pd.DataFrame:
+    def dataset_specific_state_processing(
+        self, df_states: pd.DataFrame
+    ) -> pd.DataFrame:
         """
         Applies dataset-specific processing to the state DataFrame.
 
@@ -153,24 +162,32 @@ class CocoesmPreprocessor(BasePreprocessor):
         Returns:
             pd.DataFrame: The modified DataFrame with a new `relationship` column.
         """
-        relationship_cfg = self.config_parser(self.fix_cfg["esm_based"]["self_reported_micro_context"],
-                                              "binary",
-                                              "relationship")[0]
+        relationship_cfg = self.config_parser(
+            self.fix_cfg["esm_based"]["self_reported_micro_context"],
+            "binary",
+            "relationship",
+        )[0]
         ia_partner_col = relationship_cfg["item_names"]["cocoesm"]
         ia_partner_val = relationship_cfg["special_mappings"]["cocoesm"]
 
         if ia_partner_col in df_states.columns:
-            df_states['interaction'] = df_states[ia_partner_col].apply(
+            df_states["interaction"] = df_states[ia_partner_col].apply(
                 lambda x: self._map_comma_separated(x, {ia_partner_val: 1})
             )
-            partner_interaction = df_states.groupby(self.raw_esm_id_col)['interaction'].transform('max')
-            df_states['relationship'] = np.where(partner_interaction == 1, 1, 0)
-            df_states.drop(columns=['interaction'], inplace=True)
+            partner_interaction = df_states.groupby(self.raw_esm_id_col)[
+                "interaction"
+            ].transform("max")
+            df_states["relationship"] = np.where(partner_interaction == 1, 1, 0)
+            df_states.drop(columns=["interaction"], inplace=True)
 
         else:
             raise KeyError(f"Column {ia_partner_col} not in {self.dataset}")
 
-        self.relationship = deepcopy(df_states[["relationship", self.raw_esm_id_col]].drop_duplicates(keep="first"))
+        self.relationship = deepcopy(
+            df_states[["relationship", self.raw_esm_id_col]].drop_duplicates(
+                keep="first"
+            )
+        )
         return df_states
 
     def dataset_specific_post_processing(self, df: pd.DataFrame) -> pd.DataFrame:
@@ -201,7 +218,11 @@ class CocoesmPreprocessor(BasePreprocessor):
         Returns:
             pd.DataFrame: The DataFrame with missing `country` values filled.
         """
-        state_country_col = self.var_cfg["preprocessing"]["country_col"]["cocoesm"]["state"]
-        trait_country_col = self.var_cfg["preprocessing"]["country_col"]["cocoesm"]["trait"]
+        state_country_col = self.var_cfg["preprocessing"]["country_col"]["cocoesm"][
+            "state"
+        ]
+        trait_country_col = self.var_cfg["preprocessing"]["country_col"]["cocoesm"][
+            "trait"
+        ]
         df[trait_country_col] = df[trait_country_col].fillna(df[state_country_col])
         return df

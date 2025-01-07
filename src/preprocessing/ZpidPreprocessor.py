@@ -23,6 +23,7 @@ class ZpidPreprocessor(BasePreprocessor):
         dataset (str): Specifies the current dataset as "zpid".
         home_office (Any): Stores data related to home office, assigned during preprocessing.
     """
+
     def __init__(self, fix_cfg: NestedDict, var_cfg: NestedDict) -> None:
         """
         Initializes the ZpidPreprocessor with dataset-specific configurations.
@@ -59,7 +60,9 @@ class ZpidPreprocessor(BasePreprocessor):
         """
         return df_dct["data_esm"]
 
-    def dataset_specific_trait_processing(self, df_traits: pd.DataFrame) -> pd.DataFrame:
+    def dataset_specific_trait_processing(
+        self, df_traits: pd.DataFrame
+    ) -> pd.DataFrame:
         """
         Applies ZPID-specific processing to trait-level data, including handling missing values,
         adjusting professional status, and creating additional columns.
@@ -103,11 +106,13 @@ class ZpidPreprocessor(BasePreprocessor):
         """
         df_traits = df_traits.replace(-77, np.nan)
 
-        df_traits.loc[df_traits['Demo_GL2'] == 5, 'Demo_GL2'] = np.nan
-        df_traits.loc[df_traits['Polit_Ein_4'] == 12, 'Polit_Ein_4'] = np.nan
-        df_traits.loc[df_traits['Demo_B1'] == 0, 'Demo_B1'] = np.nan
-        df_traits.loc[df_traits['Arbeitsleben91_AugOct'] == 0, 'Arbeitsleben91_AugOct'] = np.nan
-        df_traits.loc[df_traits['Demo_AL1'] == 0, 'Demo_AL1'] = np.nan
+        df_traits.loc[df_traits["Demo_GL2"] == 5, "Demo_GL2"] = np.nan
+        df_traits.loc[df_traits["Polit_Ein_4"] == 12, "Polit_Ein_4"] = np.nan
+        df_traits.loc[df_traits["Demo_B1"] == 0, "Demo_B1"] = np.nan
+        df_traits.loc[
+            df_traits["Arbeitsleben91_AugOct"] == 0, "Arbeitsleben91_AugOct"
+        ] = np.nan
+        df_traits.loc[df_traits["Demo_AL1"] == 0, "Demo_AL1"] = np.nan
 
         return df_traits
 
@@ -129,7 +134,9 @@ class ZpidPreprocessor(BasePreprocessor):
             pd.DataFrame: The updated DataFrame with merged BFI items.
         """
         self.logger.log("        Check if params of the BFI_2XS waves are comparable")
-        bfi_items = set([col.rsplit('_', 1)[0] for col in df_traits.columns if "BFI_2XS" in col])
+        bfi_items = set(
+            [col.rsplit("_", 1)[0] for col in df_traits.columns if "BFI_2XS" in col]
+        )
 
         for item in bfi_items:
             for wave in ["wave3", "wave4"]:
@@ -144,18 +151,29 @@ class ZpidPreprocessor(BasePreprocessor):
                         f"            Max: {round(stats['max'], 3)}"
                     )
                 else:
-                    self.logger.log(f"WARNING: Column {col_name} not found in DataFrame.")
+                    self.logger.log(
+                        f"WARNING: Column {col_name} not found in DataFrame."
+                    )
 
             wave3_col = f"{item}_wave3"
             wave4_col = f"{item}_wave4"
-            df_traits[wave3_col] = df_traits[wave3_col].where(df_traits[wave3_col].between(1, 5), other=np.nan)
-            df_traits[wave4_col] = df_traits[wave4_col].where(df_traits[wave4_col].between(1, 5), other=np.nan)
+            df_traits[wave3_col] = df_traits[wave3_col].where(
+                df_traits[wave3_col].between(1, 5), other=np.nan
+            )
+            df_traits[wave4_col] = df_traits[wave4_col].where(
+                df_traits[wave4_col].between(1, 5), other=np.nan
+            )
 
-            df_traits[item] = df_traits[[wave3_col, wave4_col]].mean(axis=1, skipna=True)
+            df_traits[item] = df_traits[[wave3_col, wave4_col]].mean(
+                axis=1, skipna=True
+            )
 
         self.logger.log(f"        Removed values that are not between 1 and 5")
-        df_traits.drop(columns=[f"{item}_wave3" for item in bfi_items] + [f"{item}_wave4" for item in bfi_items],
-                       inplace=True)
+        df_traits.drop(
+            columns=[f"{item}_wave3" for item in bfi_items]
+            + [f"{item}_wave4" for item in bfi_items],
+            inplace=True,
+        )
 
         return df_traits
 
@@ -194,19 +212,29 @@ class ZpidPreprocessor(BasePreprocessor):
         Returns:
             pd.DataFrame: The updated DataFrame with a "home_office" column.
         """
-        home_office_cfg = self.config_parser(self.fix_cfg["person_level"]["sociodemographics"],
-                                             "percentage",
-                                             "home_office")[0]
+        home_office_cfg = self.config_parser(
+            self.fix_cfg["person_level"]["sociodemographics"],
+            "percentage",
+            "home_office",
+        )[0]
         col_name = home_office_cfg["item_names"][self.dataset]
 
-        df_traits[col_name] = df_traits[col_name].map(home_office_cfg["category_mappings"][self.dataset])
+        df_traits[col_name] = df_traits[col_name].map(
+            home_office_cfg["category_mappings"][self.dataset]
+        )
         df_traits["home_office"] = df_traits[col_name] / 7  # 7 days would be 100%
 
-        self.home_office = deepcopy(df_traits[["home_office", self.raw_trait_id_col]].drop_duplicates(keep="first"))
+        self.home_office = deepcopy(
+            df_traits[["home_office", self.raw_trait_id_col]].drop_duplicates(
+                keep="first"
+            )
+        )
 
         return df_traits
 
-    def dataset_specific_state_processing(self, df_states: pd.DataFrame) -> pd.DataFrame:
+    def dataset_specific_state_processing(
+        self, df_states: pd.DataFrame
+    ) -> pd.DataFrame:
         """
         Processes state-level data for ZPID by adding a "studyWave" column to track participation in study waves.
 
@@ -239,7 +267,11 @@ class ZpidPreprocessor(BasePreprocessor):
         wave_2_start = datetime(year=2020, month=9, day=1)
 
         df_states[self.esm_timestamp] = pd.to_datetime(df_states[self.esm_timestamp])
-        grouped = df_states.groupby(self.raw_esm_id_col)[self.esm_timestamp].agg(['min', 'max']).reset_index()
+        grouped = (
+            df_states.groupby(self.raw_esm_id_col)[self.esm_timestamp]
+            .agg(["min", "max"])
+            .reset_index()
+        )
 
         def assign_wave(row: pd.Series) -> Union[np.nan, int, str]:
             """
@@ -252,8 +284,8 @@ class ZpidPreprocessor(BasePreprocessor):
                 Union[np.nan, int, str]: "Both" if participated in both waves, 1 if only in Wave 1,
                                          2 if only in Wave 2, and np.nan if no valid participation.
             """
-            first_timestamp = row['min']
-            last_timestamp = row['max']
+            first_timestamp = row["min"]
+            last_timestamp = row["max"]
 
             participated_in_wave_1 = first_timestamp <= wave_1_end
             participated_in_wave_2 = last_timestamp >= wave_2_start
@@ -269,8 +301,12 @@ class ZpidPreprocessor(BasePreprocessor):
 
             return np.nan
 
-        grouped['studyWave'] = grouped.apply(assign_wave, axis=1)
-        df_states = df_states.merge(grouped[[self.raw_esm_id_col, 'studyWave']], on=self.raw_esm_id_col, how='left')
+        grouped["studyWave"] = grouped.apply(assign_wave, axis=1)
+        df_states = df_states.merge(
+            grouped[[self.raw_esm_id_col, "studyWave"]],
+            on=self.raw_esm_id_col,
+            how="left",
+        )
 
         return df_states
 
@@ -286,13 +322,3 @@ class ZpidPreprocessor(BasePreprocessor):
         """
         df = df.merge(self.home_office, on=self.raw_trait_id_col, how="left")
         return df
-
-
-
-
-
-
-
-
-
-

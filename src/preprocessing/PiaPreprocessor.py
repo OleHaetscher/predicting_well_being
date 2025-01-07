@@ -20,6 +20,7 @@ class PiaPreprocessor(BasePreprocessor):
     Attributes:
         dataset (str): Specifies the current dataset as "pia".
     """
+
     def __init__(self, fix_cfg: NestedDict, var_cfg: NestedDict) -> None:
         """
         Initializes the PiaPreprocessor with dataset-specific configurations.
@@ -44,7 +45,9 @@ class PiaPreprocessor(BasePreprocessor):
         """
         return df_dct["data_traits"]
 
-    def dataset_specific_trait_processing(self, df_traits: pd.DataFrame) -> pd.DataFrame:
+    def dataset_specific_trait_processing(
+        self, df_traits: pd.DataFrame
+    ) -> pd.DataFrame:
         """
         Processes trait data specific to PIA by creating and populating new columns:
          - "country": Assigned a constant value of "germany".
@@ -94,7 +97,7 @@ class PiaPreprocessor(BasePreprocessor):
         suffix_pattern = re.compile(r"_t\d$")
 
         for col in df_traits.columns:
-            base_col = re.sub(suffix_pattern, '', col)
+            base_col = re.sub(suffix_pattern, "", col)
 
             if base_col not in df_traits.columns:
                 df_traits[base_col] = np.nan
@@ -106,9 +109,8 @@ class PiaPreprocessor(BasePreprocessor):
                     df_traits[base_col].fillna(df_traits[suffix_col], inplace=True)
                     df_traits = df_traits.drop(columns=suffix_col)
 
-        assert len(df_traits.columns) == len(set(df_traits.columns)), "Duplicate column names found after renaming!"
+        assert len(df_traits.columns) == len(
+            set(df_traits.columns)
+        ), "Duplicate column names found after renaming!"
 
         return df_traits
-
-
-
