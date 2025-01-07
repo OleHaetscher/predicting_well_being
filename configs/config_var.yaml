@@ -4,8 +4,8 @@ general:
   log_name: x
 
   steps:
-    preprocessing: true
-    analysis: false
+    preprocessing: false
+    analysis: true
     postprocessing: false
 
 preprocessing:
@@ -98,13 +98,14 @@ analysis:
   store_pred_and_true: true
 
   tests:
-    sample: false
-    sample_size: 200
+    sample: true
+    sample_size: 100
 
   methods_to_apply:
-    - select_samples
-    - select_features
-    - select_criterion
+    #- select_samples
+    #- select_features
+    #- select_criterion
+    - select_data
     - initial_info_log
     - drop_zero_variance_cols
     - create_pipeline
@@ -165,7 +166,7 @@ analysis:
   params: # adjusted by SLURM
     prediction_model: elasticnet  # elasticnet, randomforestregressor
     crit: wb_state  # wb_state, wb_trait, etc
-    feature_combination: sens_fs # pl, srmc, sens, mac, pl_srmc, pl_sens, pl_srmc_sens, pl_mac, pl_srmc_mac, all_in
+    feature_combination: srmc # pl, srmc, sens, mac, pl_srmc, pl_sens, pl_srmc_sens, pl_mac, pl_srmc_mac, all_in
     samples_to_include: all  # all, selected, control
 
   cv:
@@ -211,12 +212,12 @@ analysis:
 
   model_hyperparameters:
     elasticnet:  # verify
-      #model__regressor__alpha: [0.1, 1]
-      #model__regressor__l1_ratio: [0.5]
-      model__regressor__alpha: [0.00001, 0.0001, 0.001, 0.01, 0.1, 1, 10, 100, 1000, 10000, 100000]
-      model__regressor__l1_ratio: [0, 0.1, 0.2, 0.3, 0.4, 0.4, 0.6, 0.7, 0.8, 0.9, 1]
-      model__regressor__max_iter: [ 1000, 10000 ]
-      model__regressor__tol: [0.1, 0.01, 0.001, 0.0001]
+      model__regressor__alpha: [0.1, 1]
+      model__regressor__l1_ratio: [0.5]
+      #model__regressor__alpha: [0.00001, 0.0001, 0.001, 0.01, 0.1, 1, 10, 100, 1000, 10000, 100000]
+      #model__regressor__l1_ratio: [0, 0.1, 0.2, 0.3, 0.4, 0.4, 0.6, 0.7, 0.8, 0.9, 1]
+      #model__regressor__max_iter: [ 1000, 10000 ]
+      #model__regressor__tol: [0.1, 0.01, 0.001, 0.0001]
     randomforestregressor:
       #model__regressor__max_depth: [ 4, 6 ]
       #model__regressor__max_features: [ 0.2 ]

@@ -1,32 +1,72 @@
+from typing import Optional, Union
+
 import numpy as np
 from sklearn.experimental import enable_iterative_imputer
 from sklearn.impute import IterativeImputer
 from sklearn.utils._mask import _get_mask
-from sklearn.base import clone
+from sklearn.base import clone, BaseEstimator
 from scipy import stats
 import pandas as pd
 
 
 class CustomIterativeImputer(IterativeImputer):
-    def __init__(self,  # default parameters, copied
-                 estimator=None,
-                 missing_values=np.nan,
-                 sample_posterior=False,
-                 max_iter=10,
-                 tol=1e-3,
-                 n_nearest_features=None,
-                 initial_strategy="mean",
-                 imputation_order="ascending",
-                 skip_complete=False,
-                 min_value=-np.inf,
-                 max_value=np.inf,
-                 verbose=0,
-                 random_state=None,
-                 add_indicator=False,
-                 keep_empty_features=False,
-                 categorical_idx=None,
-                 pmm_k=5):
-        # Pass all relevant parameters to the parent class (IterativeImputer)
+    """
+    Custom iterative imputer extending `IterativeImputer` to include additional functionality for handling
+    categorical features and predictive mean matching (PMM). For other attributes, see the parent class.
+
+    Attributes:
+        categorical_idx (Optional[List[int]]): Indices of categorical features to be imputed differently.
+        pmm_k (int): Number of nearest neighbors to use for predictive mean matching (PMM).
+    """
+    def __init__(
+        self,
+        estimator: Optional[BaseEstimator] = None,
+        missing_values: Union[int, float, str, None] = np.nan,
+        sample_posterior: bool = False,
+        max_iter: int = 10,
+        tol: float = 1e-3,
+        n_nearest_features: Optional[int] = None,
+        initial_strategy: str = "mean",
+        imputation_order: str = "ascending",
+        skip_complete: bool = False,
+        min_value: float = -np.inf,
+        max_value: float = np.inf,
+        verbose: int = 0,
+        random_state: Optional[Union[int, np.random.RandomState]] = None,
+        add_indicator: bool = False,
+        keep_empty_features: bool = False,
+        categorical_idx: Optional[list[int]] = None,
+        pmm_k: int = 5,
+    ) -> None:
+        """
+        Initializes the CustomIterativeImputer with default and custom parameters. See "IterativeImputer"s documentation
+        for more information on the parameters. The additional parameters are explained more thorough below.
+
+        Args:
+            estimator: The estimator to use for regression or classification during imputation. If None,
+                       a default BayesianRidge model is used.
+            missing_values: The placeholder for missing values. Default is `np.nan`.
+            sample_posterior: If True, sample posterior values as the prediction for each feature. Defaults to False.
+                              Note: This does not work with the non-bayesian models we are currently using for analysis,
+                              but we leave it in the code for completeness. It could be used e.g. with BayesianRidge.
+                              If False, it uses predictive mean matching (PMM) for continuous variables to select the
+                              imputed values.
+            max_iter: Maximum number of imputation iterations. Default is 10.
+            tol: Convergence tolerance. Defaults to 1e-3.
+            n_nearest_features: Number of nearest features to use for imputation. Defaults to None (all features).
+            initial_strategy: Strategy to initialize missing values.
+            imputation_order: Order in which features are imputed.
+            skip_complete: Whether to skip features without missing values. Defaults to False.
+            min_value: Minimum allowable value for imputed values. Defaults to `-np.inf`.
+            max_value: Maximum allowable value for imputed values. Defaults to `np.inf`.
+            verbose: Verbosity level. Defaults to 0.
+            random_state: Random state for reproducibility. Defaults to None.
+            add_indicator: Whether to add a missingness indicator for features. Defaults to False.
+            keep_empty_features: Whether to keep features with no observed values. Defaults to False.
+
+            categorical_idx: List of indices for categorical features. Defaults to None.
+            pmm_k: Number of nearest neighbors to use for predictive mean matching (PMM). Defaults to 5.
+        """
         super().__init__(
             estimator=estimator,
             missing_values=missing_values,
@@ -44,57 +84,70 @@ class CustomIterativeImputer(IterativeImputer):
             add_indicator=add_indicator,
             keep_empty_features=keep_empty_features
         )
-        # Initialize custom parameter
         self.categorical_idx = categorical_idx
         self.pmm_k = pmm_k
 
     def _impute_one_feature(
-        self,
-        X_filled,
-        mask_missing_values,
-        feat_idx,
-        neighbor_feat_idx,
-        estimator=None,
-        fit_mode=True,
-        params=None,
-    ):
-        """Impute a single feature from the others provided.
+            self,
+            X_filled: Union[np.ndarray, "pd.DataFrame"],
+            mask_missing_values: np.ndarray,
+            feat_idx: int,
+            neighbor_feat_idx: np.ndarray,
+            estimator: Optional[BaseEstimator] = None,
+            fit_mode: bool = True,
+            params: Optional[dict] = None,
+    ) -> tuple[Union[np.ndarray, "pd.DataFrame"], BaseEstimator]:
+        """
+        Imputes missing values for a single feature using a specified estimator.
 
-        This function predicts the missing values of one of the features using
-        the current estimates of all the other features.
+        This method predicts missing values for a target feature (`feat_idx`) using other features
+        (`neighbor_feat_idx`) as predictors. Depending on the feature type and configuration, the
+        following approaches are used:
+        - Continuous features: Uses predictive mean matching (PMM) or direct predictions.
+        - Binary features: Imputes probabilities using `predict_proba`.
+        - Sample posterior: Samples imputed values from a truncated normal distribution.
 
-        Parameters
-        ----------
-        X_filled : ndarray or DataFrame
-            Input data with the most recent imputations.
+        **Implementation**:
+        1. **Estimator Initialization**:
+           - If no estimator is provided, a new one is cloned from `self._estimator`.
+           - In `fit_mode=False`, the provided estimator must already be fitted.
 
-        mask_missing_values : ndarray
-            Input data's missing indicator matrix.
+        2. **Data Preparation**:
+           - The rows with observed values (`~missing_row_mask`) are used to fit the model.
+           - The rows with missing values (`missing_row_mask`) are used for prediction.
 
-        feat_idx : int
-            Index of the feature currently being imputed.
+        3. **Fit Mode**:
+           - If `fit_mode=True`, the estimator is fitted using the observed rows of `neighbor_feat_idx` as predictors
+             and `feat_idx` as the target.
 
-        neighbor_feat_idx : ndarray
-            Indices of the features to be used in imputing `feat_idx`.
+        4. **Prediction**:
+           - If `sample_posterior=True`, posterior sampling is applied using the mean (`mus`) and standard deviation
+             (`sigmas`) of the estimator's predictions. In case of categorical features, values are thresholded to ensure
+             binary outcomes.
+           - Otherwise, PMM is applied:
+             - Observed predictions (`y_pred_obs`) are compared to missing predictions (`y_pred_mis`) to find the
+               closest neighbors.
+             - One of the nearest observed values is randomly selected for each missing value.
 
-        estimator : object
-            The estimator to use at this step of the round-robin imputation.
-            If None, it will be cloned from self._estimator.
+        5. **Feature Update**:
+           - The imputed values are assigned to the missing entries of `feat_idx` in `X_filled`.
 
-        fit_mode : boolean, default=True
-            Whether to fit and predict with the estimator or just predict.
+        Args:
+            X_filled: The input data with the latest imputations.
+            mask_missing_values: A boolean mask indicating the missing values in the input data.
+            feat_idx: The index of the feature being imputed.
+            neighbor_feat_idx: Indices of the neighboring features used as predictors.
+            estimator: The model used to impute the missing values. If None, it is cloned from `self._estimator`.
+            fit_mode: Whether to fit the estimator or use it directly for predictions. Default is True.
+            params: Additional parameters to pass to the estimator's `fit` method.
 
-        params : dict
-            Additional params routed to the individual estimator.
+        Returns:
+            tuple:
+                - X_filled: The updated input data with imputed values for the missing entries in the current feature.
+                - estimator: The fitted estimator used for imputing the feature.
 
-        Returns
-        -------
-        X_filled : ndarray or DataFrame
-            Input data with `X_filled[missing_row_mask, feat_idx]` updated.
-
-        estimator : estimator with sklearn API
-            The fitted estimator used to impute
-            `X_filled[missing_row_mask, feat_idx]`.
+        Raises:
+            ValueError: If `fit_mode=False` and no pre-fitted estimator is provided.
         """
         if estimator is None and fit_mode is False:
             raise ValueError(
@@ -106,6 +159,7 @@ class CustomIterativeImputer(IterativeImputer):
             estimator = clone(self._estimator)
 
         missing_row_mask = mask_missing_values[:, feat_idx]
+
         if fit_mode:
             X_train = safe_indexing(
                 safe_indexing(X_filled, neighbor_feat_idx, axis=1),
@@ -118,7 +172,6 @@ class CustomIterativeImputer(IterativeImputer):
                 axis=0,
             )
 
-            # Passing feat_idx and neighbor_feat_idx to the estimator
             if hasattr(estimator, "set_params"):
                 estimator.set_params(
                     feat_idx=feat_idx,
@@ -130,7 +183,6 @@ class CustomIterativeImputer(IterativeImputer):
                 estimator.fit(X_train, y_train, **params)
 
         else:
-            # In case fit_mode=False, we still need X_train and y_train (observed values)  # TODO remove if condition?
             X_train = safe_indexing(
                 safe_indexing(X_filled, neighbor_feat_idx, axis=1),
                 ~missing_row_mask,
@@ -143,7 +195,6 @@ class CustomIterativeImputer(IterativeImputer):
                 axis=0,
             )
 
-        # If no missing values, don't predict
         if np.sum(missing_row_mask) == 0:
             return X_filled, estimator
 
@@ -152,42 +203,37 @@ class CustomIterativeImputer(IterativeImputer):
             missing_row_mask,
             axis=0,
         )
-        # Get posterior samples (this does not work with the models we currently use)
         if self.sample_posterior:
             mus, sigmas = estimator.predict(X_test, return_std=True)
             imputed_values = np.zeros(mus.shape, dtype=X_filled.dtype)
-            # Handle non-positive sigmas and out-of-bounds mus
             positive_sigmas = sigmas > 0
             imputed_values[~positive_sigmas] = mus[~positive_sigmas]
             mus_too_low = mus < self._min_value[feat_idx]
             imputed_values[mus_too_low] = self._min_value[feat_idx]
             mus_too_high = mus > self._max_value[feat_idx]
             imputed_values[mus_too_high] = self._max_value[feat_idx]
+
             # Sample from truncated normal distribution
             inrange_mask = positive_sigmas & ~mus_too_low & ~mus_too_high
             mus = mus[inrange_mask]
             sigmas = sigmas[inrange_mask]
             a = (self._min_value[feat_idx] - mus) / sigmas
             b = (self._max_value[feat_idx] - mus) / sigmas
-
             truncated_normal = stats.truncnorm(a=a, b=b, loc=mus, scale=sigmas)
             imputed_values[inrange_mask] = truncated_normal.rvs(
                 random_state=self.random_state_
             )
 
-            # Post-process for binary features
             if feat_idx in self.categorical_idx:
-                # Threshold the imputed values to 0 or 1
                 imputed_values = (imputed_values >= 0.5).astype(int)
 
-        # If not sample posterior, use predictive mean matching (this works with all models)
         else:
             is_binary = np.array_equal(np.unique(y_train), [0, 1])
-            # If dealing with binary variables, use predict_proba
+
             if is_binary:
                 # For binary variables, predict_proba gives probabilities
-                imputed_probs = estimator.predict_proba(X_test)[:, 1]  # Get probabilities for class 1
-                y_pred_obs = estimator.predict_proba(X_train)[:, 1]  # Observed probabilities for class 1
+                imputed_probs = estimator.predict_proba(X_test)[:, 1]
+                y_pred_obs = estimator.predict_proba(X_train)[:, 1]
                 y_pred_mis = imputed_probs
             else:
                 # For continuous variables, use regular predict
@@ -195,30 +241,22 @@ class CustomIterativeImputer(IterativeImputer):
                 y_pred_obs = estimator.predict(X_train, return_std=False)
                 y_pred_mis = imputed_values
 
-            # Initialize array for PMM-imputed values
             imputed_values_pmm = np.empty_like(y_pred_mis)
 
             # Use the class-level random_state for reproducibility
             rng = np.random.RandomState(self.random_state)
 
             for i, y_pred in enumerate(y_pred_mis):
-                # Compute distances between y_pred and all y_pred_obs
                 distances = np.abs(y_pred_obs - y_pred)
-                # Find indices of k nearest neighbors
                 nn_indices = np.argsort(distances)[:self.pmm_k]
-                # Randomly select one of the k nearest observed values
                 imputed_value = rng.choice(y_train[nn_indices])
 
                 if is_binary:
-                    # Get the binary value (0 or 1) from y_train corresponding to the selected neighbor
-                    imputed_value = (imputed_value >= 0.5).astype(int)  # Ensure it's 0 or 1 based on threshold
+                    imputed_value = (imputed_value >= 0.5).astype(int)
 
                 imputed_values_pmm[i] = imputed_value
-
-            # Replace imputed_values with PMM-imputed values
             imputed_values = imputed_values_pmm
 
-        # Update the feature
         safe_assign(
             X_filled,
             imputed_values,
