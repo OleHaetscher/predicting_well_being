@@ -771,6 +771,7 @@ class ResultPlotter:
         beeswarm_figure_params = self.plot_cfg["shap_beeswarm_plot"]["figure"]
         beeswarm_fontsizes = self.plot_cfg["shap_beeswarm_plot"]["fontsizes"]
         beeswarm_subplot_adj = self.plot_cfg["shap_beeswarm_plot"]["subplot_adjustments"]
+        beeswarm_title_params = self.plot_cfg["shap_beeswarm_plot"]["titles"]
         ia_data_current = None
 
         # Iterate over each combination of crit, samples_to_include, and model
@@ -819,14 +820,16 @@ class ResultPlotter:
                                 ax=axes[row, col],
                                 row=row,
                                 beeswarm_fontsizes=beeswarm_fontsizes,
+                                beeswarm_figure_params=beeswarm_figure_params,
                                 num_to_display=num_to_display,
                                 cmap=cmap,
                                 feature_combo_name_mapping=feature_combo_name_mapping,
                                 predictor_combination=predictor_combination,
+                                title_line_dct=beeswarm_title_params["line_dct"]
                             )
                             # Add the main title (first-row axes only)
                             if row == 0:
-                                first_row_heading = self.plot_cfg["shap_beeswarm_plot"]["titles"]["shap_values"][col]
+                                first_row_heading = beeswarm_title_params["shap_values"][col]
                                 axes[row, col].text(
                                     0.32, 1.35,  # 0.35
                                     first_row_heading,
@@ -837,34 +840,39 @@ class ResultPlotter:
                                     transform=axes[row, col].transAxes,  # Use axes-relative coordinates
                                 )
                         else:
-                            if predictor_combination in ia_data_current:
-                                shap_ia_data = ia_data_current[predictor_combination]
-                                self.plot_shap_beeswarm(
-                                    shap_values=shap_ia_data,
-                                    ax=axes[row, col],
-                                    row=row,
-                                    beeswarm_fontsizes=beeswarm_fontsizes,
-                                    num_to_display=num_to_display,
-                                    cmap=cmap,
-                                    feature_combo_name_mapping=feature_combo_name_mapping,
-                                    predictor_combination=predictor_combination,
-                                    ia_values=True,
-                                )
-                                ia_heading = self.plot_cfg["shap_beeswarm_plot"]["titles"]["shap_ia_values"][0]
-                                axes[row, col].text(
-                                    0.48, 1.31,
-                                    ia_heading,
-                                    fontsize=beeswarm_fontsizes["main_title"],
-                                    fontweight="bold",
-                                    ha="center",  # Align horizontally
-                                    va="bottom",  # Align vertically
-                                    transform=axes[row, col].transAxes,  # Use axes-relative coordinates
-                                )
+                            if ia_data_current:
+                                if predictor_combination in ia_data_current:
+                                    shap_ia_data = ia_data_current[predictor_combination]
+                                    self.plot_shap_beeswarm(
+                                        shap_values=shap_ia_data,
+                                        ax=axes[row, col],
+                                        row=row,
+                                        beeswarm_fontsizes=beeswarm_fontsizes,
+                                        beeswarm_figure_params=beeswarm_figure_params,
+                                        num_to_display=num_to_display,
+                                        cmap=cmap,
+                                        feature_combo_name_mapping=feature_combo_name_mapping,
+                                        predictor_combination=predictor_combination,
+                                        ia_values=True,
+                                        title_line_dct=beeswarm_title_params["line_dct"]
+                                    )
+                                    ia_heading = self.plot_cfg["shap_beeswarm_plot"]["titles"]["shap_ia_values"][0]
+                                    axes[row, col].text(
+                                        0.48, 1.31,
+                                        ia_heading,
+                                        fontsize=beeswarm_fontsizes["main_title"],
+                                        fontweight="bold",
+                                        ha="center",  # Align horizontally
+                                        va="bottom",  # Align vertically
+                                        transform=axes[row, col].transAxes,  # Use axes-relative coordinates
+                                    )
                             else:
                                 print(f"Predictor combination '{predictor_combination}' not found in shap data or shap ia data")
 
                     # Hide empty subplot
                     fig.delaxes(axes[2, 2])
+                    if not self.plot_cfg["shap_beeswarm_plot"]["shap_ia_values"]["add"]:
+                        fig.delaxes(axes[3, 2])
 
                     # Adjust layout and display the figure
                     plt.subplots_adjust(
@@ -880,7 +888,7 @@ class ResultPlotter:
                             plot_name=f"beeswarm_{crit}_{samples_to_include}_{model}",
                             crit=crit,
                             samples_to_include=samples_to_include,
-                            plot_format="png",  # "pdf"
+                            plot_format="pdf",  # "pdf"
                             dpi=450,
                             model=model
                         )
@@ -892,11 +900,12 @@ class ResultPlotter:
                            ax,
                            row,
                            beeswarm_fontsizes: dict,
+                           beeswarm_figure_params: dict,
                            num_to_display: int,
                            cmap,
                            feature_combo_name_mapping,
                            predictor_combination,
-                           title_line_dct: dict,
+                           title_line_dct: dict = None,
                            ia_values: bool = False,
                            ):
         """
@@ -923,7 +932,7 @@ class ResultPlotter:
             data_to_plot = shap_values.data[:, sorted_indices]
 
         else:
-            max_char_on_line = self.plot_cfg["shap_beeswarm_plot"]["titles"]["split_strng"]
+            max_char_on_line = beeswarm_figure_params["max_char_on_line_y_ticks"]
             split_string = None
             feature_names_formatted = [self.line_break_strings(strng=feature_name,
                                                                max_char_on_line=max_char_on_line,
@@ -952,17 +961,17 @@ class ResultPlotter:
 
         formatted_title = self.line_break_strings(
             strng=feature_combo_name_mapping[predictor_combination],
-            max_char_on_line=self.plot_cfg["shap_beeswarm_plot"]["max_char_on_line"],
+            max_char_on_line=self.plot_cfg["shap_beeswarm_plot"]["titles"]["max_char_on_line"],
             split_strng=split_strng,
         )
 
-        # make a second mapping for the n-values and add them to the title
-        n_sample_mapping = self.plot_cfg["shap_beeswarm_plot"]["n_samples_mapping"]
-        n_samples_formatted = n_sample_mapping[predictor_combination]
+        if self.plot_cfg["shap_beeswarm_plot"]["titles"]["add_n"]:
+            n_sample_mapping = self.plot_cfg["shap_beeswarm_plot"]["n_samples_mapping"]
+            n_samples_formatted = n_sample_mapping[predictor_combination]
 
-        print(n_samples_formatted)
-        n_samples_formatted = re.sub(r'\bn\b', r'$n$', n_samples_formatted, flags=re.IGNORECASE)
-        formatted_title += f"\n{n_samples_formatted}"
+            print(n_samples_formatted)
+            n_samples_formatted = re.sub(r'\bn\b', r'$n$', n_samples_formatted, flags=re.IGNORECASE)
+            formatted_title += f"\n{n_samples_formatted}"
 
         # Determine the maximum line count for the current row
         max_lines_in_row = title_line_dct[f"row_{row}"]
@@ -988,7 +997,7 @@ class ResultPlotter:
 
         # Set xlim to a fix value
         if self.plot_cfg["shap_beeswarm_plot"]["figure"]["fix_x_lim"]:
-            ax.set_xlim(tuple(self.plot_cfg["shap_beeswarm_plot"]["figure"]["xlim"]))
+            ax.set_xlim(tuple(self.plot_cfg["shap_beeswarm_plot"]["figure"]["x_lim"]))
 
     def get_n_most_important_features(self, shap_values: Explanation, n: int) -> tuple[ndarray, ndarray, list[str]]:
         """
@@ -1006,7 +1015,7 @@ class ResultPlotter:
             tuple Containing the shape values to plot, the data to plot, and the formatted feature names
         """
         abbr = self.plot_cfg["shap_beeswarm_plot"]["shap_ia_values"]["abbr"]
-        feature_names_formatted = [f"{abbr}{num_ia}" for num_ia in range(1, n + 1)]
+        feature_names_formatted = [f"{abbr}{num_ia}" for num_ia in range(1, n + 1)]  # TODO, other plots?
 
         mean_abs_shap = np.abs(shap_values.values).mean(axis=0)
         sorted_indices = np.argsort(mean_abs_shap)[::-1][:n]

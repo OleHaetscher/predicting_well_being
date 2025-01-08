@@ -5,8 +5,8 @@ general:
 
   steps:
     preprocessing: false
-    analysis: true
-    postprocessing: false
+    analysis: false
+    postprocessing: true
 
 preprocessing:
   path_to_raw_data: "../data/raw"
@@ -257,12 +257,12 @@ postprocessing:
   methods:
     #- calculate_lin_models
     #- sanity_check_pred_vs_true
-    - condense_cv_results
+    #- condense_cv_results
     #- condense_lin_model_coefs
     #- create_descriptives
     #- conduct_significance_tests
     #- create_cv_results_plots
-    #- create_shap_plots
+    - create_shap_plots
 
   # We do merging on the cluster, thus, we have only one result path with the processed results
   processed_results_path: "../results/run_2012"
@@ -402,7 +402,7 @@ postprocessing:
     num_features: 10
 
   plots:  # TODO: Adhere to NHB Style
-    store_plots: false
+    store_plots: true
     plots:
       # - importance_plot  # not used right now
       - beeswarm_plot
@@ -502,7 +502,7 @@ postprocessing:
     shap_beeswarm_plot:  # could define dpi, etc as well here
 
       prediction_model: [ randomforestregressor ]  # must be iterable
-      crit: [wb_state]  # must be iterable
+      crit: [wb_trait, pa_state, na_state]  # must be iterable
       samples_to_include: [selected]  # must be iterable
       num_to_display: 6
       shap_ia_values:
@@ -517,7 +517,7 @@ postprocessing:
         title_split_strng: ":"
         abbreviation: "IA"
 
-      n_samples_mapping:
+      n_samples_mapping:  # TODO: Other configurations?
         pl: "n = 9,118"
         srmc: "n = 9,118"
         sens: "n = 1,338"
@@ -564,6 +564,7 @@ postprocessing:
           row_3: 3
         max_char_on_line: 26
         split_strng: "+"
+        add_n: False
       col_assignment:
         first_col: [ "pl", "srmc", "sens", "mac" ]
         second_col: [ "pl_srmc", "pl_sens", "pl_srmc_sens", "pl_mac" ]
