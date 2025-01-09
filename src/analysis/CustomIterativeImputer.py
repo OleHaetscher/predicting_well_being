@@ -1,12 +1,10 @@
 from typing import Optional, Union
 
 import numpy as np
-from sklearn.experimental import enable_iterative_imputer
-from sklearn.impute import IterativeImputer
-from sklearn.utils._mask import _get_mask
-from sklearn.base import clone, BaseEstimator
-from scipy import stats
 import pandas as pd
+from scipy import stats
+from sklearn.base import clone, BaseEstimator
+from sklearn.impute import IterativeImputer
 
 
 class CustomIterativeImputer(IterativeImputer):

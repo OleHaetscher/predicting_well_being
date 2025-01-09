@@ -21,7 +21,7 @@ class CustomScaler(BaseEstimator, TransformerMixin):
         binary_cols (Optional[List[str]]): List of binary feature names determined during fitting.
         other_cols (Optional[List[str]]): List of other feature names (e.g., prefixed with `other_`) excluded from scaling.
     """
-    def __init__(self):
+    def __init__(self) -> None:
         """
         Initializes the CustomScaler instance.
         """

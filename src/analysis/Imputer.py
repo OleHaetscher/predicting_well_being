@@ -2,7 +2,7 @@ from typing import Optional
 
 import pandas as pd
 from sklearn.base import BaseEstimator, TransformerMixin
-from sklearn.experimental import enable_iterative_imputer  # noqa
+from sklearn.experimental import enable_iterative_imputer  # (!) do not delete, even if not explicitly used
 from sklearn.linear_model import Ridge
 
 from src.analysis.AdaptiveImputerEstimator import AdaptiveImputerEstimator

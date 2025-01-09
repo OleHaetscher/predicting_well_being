@@ -26,7 +26,7 @@ class SafeLogisticRegression:
         self.model = LogisticRegression(*args, **kwargs)
         self.single_class_ = None
 
-    def fit(self, X: np.ndarray, y: np.ndarray) -> "SafeLogisticRegression":
+    def fit(self, X: np.ndarray, y: np.ndarray) -> None:
         """
         Fit the SafeLogisticRegression model to the data.
 
@@ -36,9 +36,6 @@ class SafeLogisticRegression:
         Args:
             X: Feature matrix of shape (n_samples, n_features).
             y: Target array of shape (n_samples,).
-
-        Returns:
-            SafeLogisticRegression: The fitted model instance.
         """
         unique_classes = np.unique(y)
 
@@ -88,5 +85,6 @@ class SafeLogisticRegression:
                 if self.single_class_ == 1
                 else np.hstack([np.ones((X.shape[0], 1)), proba])
             )
+
         else:
             return self.model.predict_proba(X)

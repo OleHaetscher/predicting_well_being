@@ -49,7 +49,7 @@ class AdaptiveImputerEstimator(BaseEstimator):
         self.neighbor_feat_idx = neighbor_feat_idx
         self.model = None
 
-    def is_categorical(self, X: np.ndarray, feat_idx: int) -> bool:
+    def is_categorical(self, feat_idx: int) -> bool:
         """
         Determines if a feature is categorical.
 
@@ -78,7 +78,7 @@ class AdaptiveImputerEstimator(BaseEstimator):
         """
         X = np.array(X)
 
-        if self.is_categorical(X, self.feat_idx):
+        if self.is_categorical(self.feat_idx):
             self.model = self.classifier
 
         else:

@@ -9,7 +9,7 @@ import threading
 from abc import ABC, abstractmethod
 from itertools import product
 from types import SimpleNamespace
-from typing import Callable, Optional, Union
+from typing import Optional, Union
 
 import numpy as np
 import pandas as pd
@@ -655,17 +655,16 @@ class BaseMLAnalyzer(ABC):
             nested_scores_rep[f"outer_fold_{cv_idx}"] = {}
             pred_vs_true_rep[f"outer_fold_{cv_idx}"] = {}
 
-            # Convert indices and select data
             train_indices = X.index[train_index]
             test_indices = X.index[test_index]
             X_train, X_test = X.loc[train_indices], X.loc[test_indices]
             y_train, y_test = y.loc[train_indices], y.loc[test_indices]
+
             assert (X_train.index == y_train.index).all(), "Indices between train data differ"
             assert (X_test.index == y_test.index).all(), "Indices between test data differ"
             assert len(set(X_train[self.id_grouping_col]).intersection(set(X_test[self.id_grouping_col]))) == 0, \
                 "Grouping in outer_cv did not work as expected"
 
-            print(f"now imputing datasets for fold {cv_idx}")
             imputed_datasets = self.impute_datasets(X_train_outer_cv=X_train,
                                                     X_test_outer_cv=X_test,
                                                     y_train_outer_cv=y_train,
@@ -831,6 +830,7 @@ class BaseMLAnalyzer(ABC):
                     - `score` (float): Average score across all folds.
             """
             param_results = []
+
             for fold in range(inner_cv.get_n_splits()):
                 fold_name = f"inner_fold_{fold}"
                 dataset = imputed_datasets[fold_name]
@@ -927,10 +927,9 @@ class BaseMLAnalyzer(ABC):
         3. **Parallel Processing**:
             - Impute datasets in parallel using `self.impute_single_dataset`, which handles the imputation logic
               for a single dataset.
-        4. **Reconstruction**:
+        4. **Reconstruction and Storage**:
             - For inner folds, reconstruct the full dataset (`X_train_for_val_full`) by combining `X_train` and `X_val`.
             - For outer folds, store the imputed training (`X_train_for_test_full`) and test datasets (`X_test_imputed`).
-        5. **Result Storage**:
             - Store the imputed datasets in a nested dictionary organized by imputation number (`num_imp`) and fold.
 
         Args:
@@ -950,20 +949,18 @@ class BaseMLAnalyzer(ABC):
         """
         data_dct = {}
 
-        # Step 1: Inner CV data preparation
+        # Step 1: Data preparation
         for fold, (train_idx, val_idx) in enumerate(inner_cv.split(X_train_outer_cv, y_train_outer_cv, groups=groups)):
-            # Convert indices and select data
             train_indices = X_train_outer_cv.index[train_idx]
             val_indices = X_train_outer_cv.index[val_idx]
             X_train_inner_cv, X_val = X_train_outer_cv.loc[train_indices], X_train_outer_cv.loc[val_indices]
             data_dct[f"inner_fold_{fold}"] = [X_train_inner_cv, X_val, train_indices, val_indices]
 
-        # Step 2: Outer CV data preparation
         X_train_outer_cv = X_train_outer_cv.drop(self.id_grouping_col, axis=1, errors="ignore")
         X_test_outer_cv = X_test_outer_cv.drop(self.id_grouping_col, axis=1, errors="ignore")
         data_dct["outer_fold"] = [X_train_outer_cv, X_test_outer_cv]
 
-        # Step 3: Task creation for parallel processing
+        # Step 2: Task creation for parallel processing
         tasks = []
         result_dct = {}
         for num_imp in range(num_imputations):
@@ -972,7 +969,7 @@ class BaseMLAnalyzer(ABC):
                 result_dct[num_imp][fold] = {}
                 tasks.append((fold, num_imp, X_train, X_val_or_test, indices))  # X_train_copy, X_val_or_test_copy,
 
-        # Step 4: Parallel imputation
+        # Step 3: Parallel imputation
         results = Parallel(
             n_jobs=n_jobs,
             backend=self.joblib_backend,
@@ -983,7 +980,7 @@ class BaseMLAnalyzer(ABC):
             for fold, num_imp, X_train, X_val_or_test, _ in tasks
         )
 
-        # Step 5: Reconstruction and result storage
+        # Step 4: Reconstruction and result storage
         for task_idx, (fold, num_imp, _, _, indices) in enumerate(tasks):
             X_train_result, X_val_or_test_result = results[task_idx]
 
@@ -1040,8 +1037,10 @@ class BaseMLAnalyzer(ABC):
         self.log_thread()
 
         imputer.fit(X=X_train, num_imputation=num_imp)  # We need num_imp for different random seeds
+
         self.logger.log(f"    Number of Cols with NaNs in X_train: {len(X_train.columns[X_train.isna().any()])}")
         X_train_imputed = imputer.transform(X=X_train)
+
         self.logger.log(f"    Number of Cols with NaNs in X_test: {len(X_train.columns[X_val_or_test.isna().any()])}")
         X_val_test_imputed = imputer.transform(X=X_val_or_test)
 
@@ -1147,7 +1146,7 @@ class BaseMLAnalyzer(ABC):
         np.ndarray,
         np.ndarray,
         pd.DataFrame,
-        list[int],
+        Union[list[int],np.ndarray],
         Optional[np.ndarray],
         Optional[np.ndarray],
         Optional[list[int]]
@@ -1433,6 +1432,7 @@ class BaseMLAnalyzer(ABC):
         """
         min_order_shap = self.var_cfg["analysis"]["shap_ia_values"]["min_order"]
         max_order_shap = self.var_cfg["analysis"]["shap_ia_values"]["max_order"]
+
         num_features = X.shape[1]
         feature_indices = range(num_features)
         feature_names = X.columns
@@ -1687,7 +1687,7 @@ class BaseMLAnalyzer(ABC):
                 f"pred_vs_true_rep_{rep}.json"
             )
             with open(pred_vs_true_filename, "w") as file:
-                json.dump(self.pred_vs_true, file, indent=4)  # TODO: WTF
+                json.dump(self.pred_vs_true, file, indent=4)
 
             self.shap_results["feature_names"] = self.X.columns.tolist()
             shap_values_filename = os.path.join(
@@ -1839,6 +1839,7 @@ class BaseMLAnalyzer(ABC):
         """
         process_id = os.getpid()
         thread_name = threading.current_thread().name
+
         current_frame = inspect.currentframe()
         caller_frame = inspect.getouterframes(current_frame, 2)
         method_name = caller_frame[1].function

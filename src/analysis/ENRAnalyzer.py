@@ -75,11 +75,13 @@ class ENRAnalyzer(BaseMLAnalyzer):
                         for outer_fold_idx, outer_fold in enumerate(best_models_rep):
                             for imputation_idx, model in enumerate(outer_fold):
                                 coefs_sub_dict = dict(zip(feature_names, model.coef_))
+
                                 sorted_coefs_sub_dict = dict(
                                     sorted(
                                         coefs_sub_dict.items(), key=lambda item: abs(item[1]), reverse=True
                                     )
                                 )
+
                                 coefs_dict[f"rep_{rep}"][f"outer_fold_{outer_fold_idx}"][
                                     f"imputation_{imputation_idx}"] = sorted_coefs_sub_dict
                     else:

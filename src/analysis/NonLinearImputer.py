@@ -305,6 +305,7 @@ class NonLinearImputer:
             if col in self.categorical_mappings_:
                 uniques = self.categorical_mappings_[col]
                 y_obs = pd.Categorical(y_obs, categories=uniques).codes
+
             else:
                 y_obs = np.array(y_obs)
 
@@ -315,6 +316,7 @@ class NonLinearImputer:
 
                 if col in self.fallback_values_:
                     fallback_value = self.fallback_values_[col]
+
                     print(f"Filling NaNs in column '{col}' with fallback value: {fallback_value}")
                     self.logger.log(f"    WARNING: Filling NaNs in column '{col}' with fallback value: {fallback_value}")
                     df[col].fillna(fallback_value, inplace=True)

@@ -1,13 +1,10 @@
 import os
-import pickle
-from collections import defaultdict
 from typing import Optional
 
 import numpy as np
 import pandas as pd
 import shapiq
 from joblib import Parallel, delayed
-from matplotlib import pyplot as plt
 from shapiq import InteractionValues
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.pipeline import Pipeline

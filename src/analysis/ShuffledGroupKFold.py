@@ -73,6 +73,7 @@ class ShuffledGroupKFold(BaseCrossValidator):
         groups = pd.Series(groups)
         ix = np.arange(len(groups))
         unique = np.unique(groups)
+
         np.random.RandomState(self.random_state).shuffle(unique)
         result = []
 
