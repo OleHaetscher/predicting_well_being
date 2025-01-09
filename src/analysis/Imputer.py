@@ -2,7 +2,9 @@ from typing import Optional
 
 import pandas as pd
 from sklearn.base import BaseEstimator, TransformerMixin
-from sklearn.experimental import enable_iterative_imputer  # (!) do not delete, even if not explicitly used
+from sklearn.experimental import (
+    enable_iterative_imputer,
+)  # (!) do not delete, even if not explicitly used
 from sklearn.linear_model import Ridge
 
 from src.analysis.AdaptiveImputerEstimator import AdaptiveImputerEstimator
@@ -100,7 +102,9 @@ class Imputer(BaseEstimator, TransformerMixin):
         self.fitted_country_scaler = None
         self.fitted_individual_scaler = None
 
-    def fit(self, X: pd.DataFrame, num_imputation: int, y: pd.Series = None) -> "Imputer":
+    def fit(
+        self, X: pd.DataFrame, num_imputation: int, y: pd.Series = None
+    ) -> "Imputer":
         """
         Fits the imputer for both country-level and individual-level variables.
 
@@ -117,24 +121,26 @@ class Imputer(BaseEstimator, TransformerMixin):
             Imputer: The fitted Imputer instance.
         """
         df = X.copy()
-        country_var_cols = [col for col in df.columns if col.startswith('mac_')]
+        country_var_cols = [col for col in df.columns if col.startswith("mac_")]
 
         if country_var_cols:
             self.logger.log(f"        Imputing country-level variables")
             self.country_imputer = self._fit_country_level_imputer(
-                df=df,
-                country_var_cols=country_var_cols,
-                num_imputation=num_imputation
+                df=df, country_var_cols=country_var_cols, num_imputation=num_imputation
             )
 
-        individual_var_cols = [col for col in df.columns if not col.startswith('mac_') and not col.startswith('other_')]
+        individual_var_cols = [
+            col
+            for col in df.columns
+            if not col.startswith("mac_") and not col.startswith("other_")
+        ]
 
         if individual_var_cols:
             self.logger.log(f"        Imputing individual-level variables")
             self.individual_imputer = self._fit_individual_level_imputer(
                 df=df,
                 individual_var_cols=individual_var_cols,
-                num_imputation=num_imputation
+                num_imputation=num_imputation,
             )
 
         return self
@@ -156,7 +162,7 @@ class Imputer(BaseEstimator, TransformerMixin):
             pd.DataFrame: Transformed DataFrame with imputed values.
         """
         df = X.copy()
-        country_var_cols = [col for col in df.columns if col.startswith('mac_')]
+        country_var_cols = [col for col in df.columns if col.startswith("mac_")]
 
         if country_var_cols and self.country_imputer:
             df = self._apply_country_level_imputation(
@@ -164,8 +170,10 @@ class Imputer(BaseEstimator, TransformerMixin):
                 country_var_cols=country_var_cols,
             )
 
-        other_var_cols = pd.DataFrame({col: df.pop(col) for col in df.columns if col.startswith('other_')})
-        individual_var_cols = [col for col in df.columns if not col.startswith('mac_')]
+        other_var_cols = pd.DataFrame(
+            {col: df.pop(col) for col in df.columns if col.startswith("other_")}
+        )
+        individual_var_cols = [col for col in df.columns if not col.startswith("mac_")]
 
         if individual_var_cols and self.individual_imputer:
             df = self._apply_individual_level_imputation(
@@ -181,8 +189,9 @@ class Imputer(BaseEstimator, TransformerMixin):
 
         return df_imputed
 
-    def _fit_country_level_imputer(self, df: pd.DataFrame, country_var_cols: list[str],
-                                   num_imputation: int) -> CustomIterativeImputer:
+    def _fit_country_level_imputer(
+        self, df: pd.DataFrame, country_var_cols: list[str], num_imputation: int
+    ) -> CustomIterativeImputer:
         """
         Fits the imputer for country-level variables.
 
@@ -199,19 +208,21 @@ class Imputer(BaseEstimator, TransformerMixin):
         Returns:
             CustomIterativeImputer: Fitted imputer for country-level variables.
         """
-        country_df, _, _ = self.prepare_country_df(df=df.copy(), country_var_cols=country_var_cols)
+        country_df, _, _ = self.prepare_country_df(
+            df=df.copy(), country_var_cols=country_var_cols
+        )
 
         scaler_country_vars = CustomScaler()
         self.fitted_country_scaler = scaler_country_vars.fit(country_df)
         country_df_scaled = self.fitted_country_scaler.transform(country_df)
 
-        if self.model == 'elasticnet':
+        if self.model == "elasticnet":
             country_imputer = self._fit_linear_imputer(
                 df=country_df_scaled[country_var_cols],
                 num_imputation=num_imputation,
             )
 
-        elif self.model == 'randomforestregressor':
+        elif self.model == "randomforestregressor":
             country_imputer = self._fit_nonlinear_imputer(
                 df=country_df_scaled[country_var_cols],
                 num_imputation=num_imputation,
@@ -222,8 +233,9 @@ class Imputer(BaseEstimator, TransformerMixin):
 
         return country_imputer
 
-    def _fit_individual_level_imputer(self, df: pd.DataFrame, individual_var_cols: list[str],
-                                      num_imputation: int) -> CustomIterativeImputer:
+    def _fit_individual_level_imputer(
+        self, df: pd.DataFrame, individual_var_cols: list[str], num_imputation: int
+    ) -> CustomIterativeImputer:
         """
         Fits the imputer for individual-level variables.
 
@@ -245,20 +257,20 @@ class Imputer(BaseEstimator, TransformerMixin):
         self.fitted_individual_scaler = scaler_individual_vars.fit(individual_df)
         individual_df_scaled = self.fitted_individual_scaler.transform(individual_df)
 
-        individual_df_scaled = individual_df_scaled.drop(self.fitted_individual_scaler.other_cols, axis=1)
+        individual_df_scaled = individual_df_scaled.drop(
+            self.fitted_individual_scaler.other_cols, axis=1
+        )
 
-        if self.model == 'elasticnet':
+        if self.model == "elasticnet":
             self.logger.log(f"          Fit linear imputer")
             individual_imputer = self._fit_linear_imputer(
-                df=individual_df_scaled,
-                num_imputation=num_imputation
+                df=individual_df_scaled, num_imputation=num_imputation
             )
 
-        elif self.model == 'randomforestregressor':
+        elif self.model == "randomforestregressor":
             self.logger.log(f"          Fit nonlinear imputer")
             individual_imputer = self._fit_nonlinear_imputer(
-                df=individual_df_scaled,
-                num_imputation=num_imputation
+                df=individual_df_scaled, num_imputation=num_imputation
             )
 
         else:
@@ -266,7 +278,9 @@ class Imputer(BaseEstimator, TransformerMixin):
 
         return individual_imputer
 
-    def prepare_country_df(self, df: pd.DataFrame, country_var_cols: list[str]) -> tuple[pd.DataFrame, list[str], pd.DataFrame]:
+    def prepare_country_df(
+        self, df: pd.DataFrame, country_var_cols: list[str]
+    ) -> tuple[pd.DataFrame, list[str], pd.DataFrame]:
         """
         Groups the data by country and year for imputing country-level variables.
 
@@ -286,7 +300,7 @@ class Imputer(BaseEstimator, TransformerMixin):
                 - `df_exploded`: Exploded version of the input DataFrame with rows expanded for each year.
         """
         df_exploded = df.copy()
-        df_exploded['original_index'] = df_exploded.index
+        df_exploded["original_index"] = df_exploded.index
 
         df_exploded[self.years_col] = df[self.years_col].apply(
             lambda x: list(x) if isinstance(x, tuple) else [x]
@@ -294,11 +308,15 @@ class Imputer(BaseEstimator, TransformerMixin):
         df_exploded = df_exploded.explode(self.years_col)
 
         group_cols = [self.country_group_by, self.years_col]
-        country_df = df_exploded.groupby(group_cols)[country_var_cols].first().reset_index()
+        country_df = (
+            df_exploded.groupby(group_cols)[country_var_cols].first().reset_index()
+        )
 
         return country_df, group_cols, df_exploded
 
-    def _apply_country_level_imputation(self, df: pd.DataFrame, country_var_cols: list[str]) -> pd.DataFrame:
+    def _apply_country_level_imputation(
+        self, df: pd.DataFrame, country_var_cols: list[str]
+    ) -> pd.DataFrame:
         """
         Applies country-level imputation to the specified columns.
 
@@ -316,7 +334,9 @@ class Imputer(BaseEstimator, TransformerMixin):
             pd.DataFrame: DataFrame with imputed country-level variables, merged back into the original dataset.
         """
         df_tmp = df.copy()
-        country_df, group_cols, df_exploded = self.prepare_country_df(df=df_tmp, country_var_cols=country_var_cols)
+        country_df, group_cols, df_exploded = self.prepare_country_df(
+            df=df_tmp, country_var_cols=country_var_cols
+        )
         country_df_scaled = self.fitted_country_scaler.transform(country_df)
 
         country_array_imputed_scaled = self.country_imputer.transform(
@@ -328,24 +348,32 @@ class Imputer(BaseEstimator, TransformerMixin):
             columns=country_var_cols,
         )
 
-        country_df_imputed = self.fitted_country_scaler.inverse_transform(country_df_imputed_scaled)
+        country_df_imputed = self.fitted_country_scaler.inverse_transform(
+            country_df_imputed_scaled
+        )
         country_df_imputed[group_cols] = country_df[group_cols]
 
         df_exploded = df_exploded.drop(columns=country_var_cols)
         other_columns = df_exploded.columns.drop("original_index")
-        df_exploded = df_exploded.merge(country_df_imputed, on=group_cols, how='left')
+        df_exploded = df_exploded.merge(country_df_imputed, on=group_cols, how="left")
 
         individual_var_df = df[other_columns].copy()
         df_exploded_country = df_exploded.drop(columns=other_columns)
-        df_country_grouped = df_exploded_country.groupby(df_exploded_country["original_index"])
+        df_country_grouped = df_exploded_country.groupby(
+            df_exploded_country["original_index"]
+        )
 
         df_country_aggregated = df_country_grouped.agg("mean")
         df_merged = pd.concat([individual_var_df, df_country_aggregated], axis=1)
-        assert df_merged.index.all() == df.index.all(), "Indices between merged and original df not matching"
+        assert (
+            df_merged.index.all() == df.index.all()
+        ), "Indices between merged and original df not matching"
 
         return df_merged
 
-    def _apply_individual_level_imputation(self, df: pd.DataFrame, individual_var_cols: list[str]) -> pd.DataFrame:
+    def _apply_individual_level_imputation(
+        self, df: pd.DataFrame, individual_var_cols: list[str]
+    ) -> pd.DataFrame:
         """
         Applies individual-level imputation to the specified columns.
 
@@ -368,15 +396,23 @@ class Imputer(BaseEstimator, TransformerMixin):
             X=individual_df_scaled[individual_var_cols],
         )
 
-        individual_df_imputed_scaled = pd.DataFrame(individual_array_imputed_scaled, columns=individual_df.columns, index=individual_df.index)
-        individual_df_imputed = self.fitted_individual_scaler.inverse_transform(individual_df_imputed_scaled)
+        individual_df_imputed_scaled = pd.DataFrame(
+            individual_array_imputed_scaled,
+            columns=individual_df.columns,
+            index=individual_df.index,
+        )
+        individual_df_imputed = self.fitted_individual_scaler.inverse_transform(
+            individual_df_imputed_scaled
+        )
 
         df = df.drop(columns=individual_var_cols)
         df = pd.concat([individual_df_imputed, df], axis=1, join="outer")
 
         return df
 
-    def _fit_linear_imputer(self, df: pd.DataFrame, num_imputation: int) -> CustomIterativeImputer:
+    def _fit_linear_imputer(
+        self, df: pd.DataFrame, num_imputation: int
+    ) -> CustomIterativeImputer:
         """
         Fits a linear imputer using sklearn's IterativeImputer.
 
@@ -406,7 +442,7 @@ class Imputer(BaseEstimator, TransformerMixin):
         adaptive_estimator = AdaptiveImputerEstimator(
             regressor=Ridge(),
             classifier=SafeLogisticRegression(penalty="l2"),
-            categorical_idx=binary_col_indices
+            categorical_idx=binary_col_indices,
         )
 
         imputer = CustomIterativeImputer(
@@ -423,7 +459,9 @@ class Imputer(BaseEstimator, TransformerMixin):
 
         return imputer
 
-    def _fit_nonlinear_imputer(self, df: pd.DataFrame, num_imputation: int) -> NonLinearImputer:
+    def _fit_nonlinear_imputer(
+        self, df: pd.DataFrame, num_imputation: int
+    ) -> NonLinearImputer:
         """
         Fits a nonlinear imputer using a random forest regressor.
 
@@ -444,11 +482,9 @@ class Imputer(BaseEstimator, TransformerMixin):
             logger=self.logger,
             max_iter=self.max_iter,
             random_state=self.fix_rs + num_imputation,
-            tree_max_depth=self.tree_max_depth
+            tree_max_depth=self.tree_max_depth,
         )
 
         imputer.fit(df)
 
         return imputer
-
-

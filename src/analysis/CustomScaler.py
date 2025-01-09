@@ -21,6 +21,7 @@ class CustomScaler(BaseEstimator, TransformerMixin):
         binary_cols (Optional[List[str]]): List of binary feature names determined during fitting.
         other_cols (Optional[List[str]]): List of other feature names (e.g., prefixed with `other_`) excluded from scaling.
     """
+
     def __init__(self) -> None:
         """
         Initializes the CustomScaler instance.
@@ -84,11 +85,17 @@ class CustomScaler(BaseEstimator, TransformerMixin):
 
         if self.continuous_cols:
             X_scaled = self.scaler.transform(X_cont)
-            X_scaled_df = pd.DataFrame(X_scaled, columns=self.continuous_cols, index=X_cont.index)
+            X_scaled_df = pd.DataFrame(
+                X_scaled, columns=self.continuous_cols, index=X_cont.index
+            )
         else:
             X_scaled_df = pd.DataFrame(index=X_cont.index)
 
-        X_binary = X[self.binary_cols] if self.binary_cols else pd.DataFrame(index=X_cont.index)
+        X_binary = (
+            X[self.binary_cols]
+            if self.binary_cols
+            else pd.DataFrame(index=X_cont.index)
+        )
 
         X_processed_df = pd.concat([X_scaled_df, X_binary, X_other], axis=1)
         X_processed_df = X_processed_df[X.columns]  # maintain coriginal olumn order
@@ -119,12 +126,16 @@ class CustomScaler(BaseEstimator, TransformerMixin):
         if self.continuous_cols:
             X_continuous = X[self.continuous_cols]
             X_continuous_original = self.scaler.inverse_transform(X_continuous)
-            X_continuous_original_df = pd.DataFrame(X_continuous_original, columns=self.continuous_cols, index=X.index)
+            X_continuous_original_df = pd.DataFrame(
+                X_continuous_original, columns=self.continuous_cols, index=X.index
+            )
 
         else:
             X_continuous_original_df = pd.DataFrame(index=X.index)
 
-        X_binary = X[self.binary_cols] if self.binary_cols else pd.DataFrame(index=X.index)
+        X_binary = (
+            X[self.binary_cols] if self.binary_cols else pd.DataFrame(index=X.index)
+        )
 
         X_original_df = pd.concat([X_continuous_original_df, X_binary], axis=1)
         X_original_df = X_original_df[X.columns]
@@ -144,7 +155,9 @@ class CustomScaler(BaseEstimator, TransformerMixin):
             other_cols: List of other feature names (e.g., prefixed with "other_").
         """
         data = X.copy()
-        data = data.drop([col for col in data.columns if col.startswith("other_")], axis=1)
+        data = data.drop(
+            [col for col in data.columns if col.startswith("other_")], axis=1
+        )
 
         binary_cols = data.columns[(data.isin([0, 1]) | data.isna()).all()]
         continuous_cols = [col for col in data.columns if col not in binary_cols]

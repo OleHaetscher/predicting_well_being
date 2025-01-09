@@ -22,6 +22,7 @@ class PearsonFeatureSelector(BaseEstimator, TransformerMixin):
         target_prefix (str): Prefix used to identify features for selection based on correlation.
         selected_features_ (Optional[list[str]]): List of selected feature names after fitting.
     """
+
     def __init__(
         self,
         num_features: Optional[int] = None,
@@ -40,14 +41,18 @@ class PearsonFeatureSelector(BaseEstimator, TransformerMixin):
             ValueError: If both `num_features` and `correlation_threshold` are None.
         """
         if num_features is None and correlation_threshold is None:
-            raise ValueError("Either num_features or correlation_threshold must be specified.")
+            raise ValueError(
+                "Either num_features or correlation_threshold must be specified."
+            )
 
         self.num_features = num_features
         self.correlation_threshold = correlation_threshold
         self.target_prefix = target_prefix
         self.selected_features_ = None
 
-    def fit(self, X: pd.DataFrame, y: Union[pd.Series, pd.DataFrame]) -> "PearsonFeatureSelector":
+    def fit(
+        self, X: pd.DataFrame, y: Union[pd.Series, pd.DataFrame]
+    ) -> "PearsonFeatureSelector":
         """
         Fit the selector by computing Pearson correlations for features and selecting the top ones.
 
@@ -61,21 +66,31 @@ class PearsonFeatureSelector(BaseEstimator, TransformerMixin):
         Raises:
             ValueError: If no features matching the `target_prefix` are found in `X`.
         """
-        target_features = [col for col in X.columns if col.startswith(self.target_prefix)]
+        target_features = [
+            col for col in X.columns if col.startswith(self.target_prefix)
+        ]
 
         if not target_features:
-            raise ValueError(f"No features found with the prefix '{self.target_prefix}'.")
+            raise ValueError(
+                f"No features found with the prefix '{self.target_prefix}'."
+            )
 
         correlations = X[target_features].apply(lambda col: col.corr(y))
         abs_correlations = correlations.abs()
 
         if self.num_features is not None:
-            selected_features = abs_correlations.nlargest(self.num_features).index.tolist()
+            selected_features = abs_correlations.nlargest(
+                self.num_features
+            ).index.tolist()
 
         elif self.correlation_threshold is not None:
-            selected_features = abs_correlations[abs_correlations >= self.correlation_threshold].index.tolist()
+            selected_features = abs_correlations[
+                abs_correlations >= self.correlation_threshold
+            ].index.tolist()
 
-        self.selected_features_ = selected_features + [col for col in X.columns if not col.startswith(self.target_prefix)]
+        self.selected_features_ = selected_features + [
+            col for col in X.columns if not col.startswith(self.target_prefix)
+        ]
 
         return self
 

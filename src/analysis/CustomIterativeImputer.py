@@ -23,6 +23,7 @@ class CustomIterativeImputer(IterativeImputer):
             during imputation (e.g., binary thresholding).
         pmm_k (int): Number of nearest neighbors to use for predictive mean matching (PMM).
     """
+
     def __init__(
         self,
         estimator: Optional[BaseEstimator] = None,
@@ -97,20 +98,20 @@ class CustomIterativeImputer(IterativeImputer):
             verbose=verbose,
             random_state=random_state,
             add_indicator=add_indicator,
-            keep_empty_features=keep_empty_features
+            keep_empty_features=keep_empty_features,
         )
         self.categorical_idx = categorical_idx
         self.pmm_k = pmm_k
 
     def _impute_one_feature(
-            self,
-            X_filled: Union[np.ndarray, "pd.DataFrame"],
-            mask_missing_values: np.ndarray,
-            feat_idx: int,
-            neighbor_feat_idx: np.ndarray,
-            estimator: Optional[BaseEstimator] = None,
-            fit_mode: bool = True,
-            params: Optional[dict] = None,
+        self,
+        X_filled: Union[np.ndarray, "pd.DataFrame"],
+        mask_missing_values: np.ndarray,
+        feat_idx: int,
+        neighbor_feat_idx: np.ndarray,
+        estimator: Optional[BaseEstimator] = None,
+        fit_mode: bool = True,
+        params: Optional[dict] = None,
     ) -> tuple[Union[np.ndarray, "pd.DataFrame"], BaseEstimator]:
         """
         Imputes missing values for a single feature using a specified estimator.
@@ -267,7 +268,7 @@ class CustomIterativeImputer(IterativeImputer):
 
             for i, y_pred in enumerate(y_pred_mis):
                 distances = np.abs(y_pred_obs - y_pred)
-                nn_indices = np.argsort(distances)[:self.pmm_k]
+                nn_indices = np.argsort(distances)[: self.pmm_k]
                 imputed_value = rng.choice(y_train[nn_indices])
 
                 if is_binary:

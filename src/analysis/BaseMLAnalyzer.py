@@ -21,7 +21,8 @@ from sklearn.base import clone
 from sklearn.compose import TransformedTargetRegressor
 from sklearn.metrics import (
     make_scorer,
-    get_scorer, )
+    get_scorer,
+)
 from sklearn.model_selection import ParameterGrid
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
@@ -183,7 +184,7 @@ class BaseMLAnalyzer(ABC):
         spec_output_path: str,
         df: pd.DataFrame,
         rep: int = None,
-        rank: int = None
+        rank: int = None,
     ) -> None:
         """
         Initializes the BaseMLAnalyzer ABC class with configuration and analysis details.
@@ -206,8 +207,12 @@ class BaseMLAnalyzer(ABC):
 
         # Analysis params
         self.crit = self.var_cfg["analysis"]["params"]["crit"]
-        self.feature_combination = self.var_cfg["analysis"]["params"]["feature_combination"]
-        self.samples_to_include = self.var_cfg["analysis"]["params"]["samples_to_include"]
+        self.feature_combination = self.var_cfg["analysis"]["params"][
+            "feature_combination"
+        ]
+        self.samples_to_include = self.var_cfg["analysis"]["params"][
+            "samples_to_include"
+        ]
         self.model = None
 
         # Data preparation
@@ -217,9 +222,15 @@ class BaseMLAnalyzer(ABC):
         self.datasets_included = None
         self.rows_dropped_crit_na = None
         self.id_grouping_col = self.var_cfg["analysis"]["cv"]["id_grouping_col"]
-        self.country_grouping_col = self.var_cfg["analysis"]["imputation"]["country_grouping_col"]
+        self.country_grouping_col = self.var_cfg["analysis"]["imputation"][
+            "country_grouping_col"
+        ]
         self.years_col = self.var_cfg["analysis"]["imputation"]["years_col"]
-        self.meta_vars = [self.id_grouping_col, self.country_grouping_col, self.years_col]
+        self.meta_vars = [
+            self.id_grouping_col,
+            self.country_grouping_col,
+            self.years_col,
+        ]
         self.pipeline = None
 
         # Util instances
@@ -227,7 +238,7 @@ class BaseMLAnalyzer(ABC):
             log_dir=self.spec_output_path,
             log_file=self.var_cfg["general"]["log_name"],
             rank=self.rank,
-            rep=self.rep
+            rep=self.rep,
         )
         self.timer = Timer(self.logger)
         self.data_selector = DataSelector(
@@ -241,17 +252,21 @@ class BaseMLAnalyzer(ABC):
         # Methods that get clocked
         self.repeated_nested_cv = self.timer._decorator(self.repeated_nested_cv)
         self.nested_cv = self.timer._decorator(self.nested_cv)
-        self.summarize_shap_values_outer_cv = self.timer._decorator(self.summarize_shap_values_outer_cv)
+        self.summarize_shap_values_outer_cv = self.timer._decorator(
+            self.summarize_shap_values_outer_cv
+        )
         self.manual_grid_search = self.timer._decorator(self.manual_grid_search)
         self.impute_datasets = self.timer._decorator(self.impute_datasets)
-        self.calculate_shap_ia_values = self.timer._decorator(self.calculate_shap_ia_values)
+        self.calculate_shap_ia_values = self.timer._decorator(
+            self.calculate_shap_ia_values
+        )
 
         # Results
         self.best_models = {}
         self.repeated_nested_scores = {}
         self.pred_vs_true = {}
-        self.shap_results = {'shap_values': {}, "base_values": {}, "data": {}}
-        self.shap_ia_results = {'shap_ia_values': {}, "base_values": {}}
+        self.shap_results = {"shap_values": {}, "base_values": {}, "data": {}}
+        self.shap_ia_results = {"shap_ia_values": {}, "base_values": {}}
         self.lin_model_coefs = {}
 
         # CV parameters
@@ -266,11 +281,25 @@ class BaseMLAnalyzer(ABC):
         self.num_combos = None
 
         # Output
-        self.performance_name = self.var_cfg["analysis"]["output_filenames"]["performance"]  # .json
-        self.shap_value_name = self.var_cfg["analysis"]["output_filenames"]["shap_values"]  # .pkl
-        self.shap_ia_values_for_local_name = self.var_cfg["analysis"]["output_filenames"]["shap_ia_values_for_local"]  # .pkl
-        self.shap_ia_values_for_cluster_name = self.var_cfg["analysis"]["output_filenames"]["shap_ia_values_for_cluster"]  # .pkl
-        self.lin_model_coefs_name = self.var_cfg["analysis"]["output_filenames"]["lin_model_coefs"]  # .json
+        self.performance_name = self.var_cfg["analysis"]["output_filenames"][
+            "performance"
+        ]  # .json
+        self.shap_value_name = self.var_cfg["analysis"]["output_filenames"][
+            "shap_values"
+        ]  # .pkl
+        self.shap_ia_values_for_local_name = self.var_cfg["analysis"][
+            "output_filenames"
+        ][
+            "shap_ia_values_for_local"
+        ]  # .pkl
+        self.shap_ia_values_for_cluster_name = self.var_cfg["analysis"][
+            "output_filenames"
+        ][
+            "shap_ia_values_for_cluster"
+        ]  # .pkl
+        self.lin_model_coefs_name = self.var_cfg["analysis"]["output_filenames"][
+            "lin_model_coefs"
+        ]  # .json
 
     @property
     def model_name(self) -> str:
@@ -307,8 +336,12 @@ class BaseMLAnalyzer(ABC):
             num_imputations=self.var_cfg["analysis"]["imputation"]["num_imputations"],
             conv_thresh=self.var_cfg["analysis"]["imputation"]["conv_thresh"],
             tree_max_depth=self.var_cfg["analysis"]["imputation"]["tree_max_depth"],
-            percentage_of_features=self.var_cfg["analysis"]["imputation"]["percentage_of_features"],
-            n_features_thresh=self.var_cfg["analysis"]["imputation"]["n_features_thresh"],
+            percentage_of_features=self.var_cfg["analysis"]["imputation"][
+                "percentage_of_features"
+            ],
+            n_features_thresh=self.var_cfg["analysis"]["imputation"][
+                "n_features_thresh"
+            ],
             sample_posterior=self.var_cfg["analysis"]["imputation"]["sample_posterior"],
             pmm_k=self.var_cfg["analysis"]["imputation"]["pmm_k"],
             country_group_by=self.country_grouping_col,
@@ -344,7 +377,10 @@ class BaseMLAnalyzer(ABC):
             if not hasattr(self, method_name):
                 raise ValueError(f"Method '{method_name}' is not implemented yet.")
 
-            if self.split_reps and method_name in ['get_average_coefficients', 'process_all_shap_ia_values']:
+            if self.split_reps and method_name in [
+                "get_average_coefficients",
+                "process_all_shap_ia_values",
+            ]:
                 log_message = f"Skipping {method_name} because split_reps is True."
                 self.logger.log(log_message)
                 print(log_message)
@@ -355,7 +391,7 @@ class BaseMLAnalyzer(ABC):
             print(log_message)
             method_to_call = getattr(self, method_name)
 
-            if method_name == 'repeated_nested_cv':
+            if method_name == "repeated_nested_cv":
                 method_to_call(comm)
 
             else:
@@ -405,29 +441,55 @@ class BaseMLAnalyzer(ABC):
         self.logger.log(f"    N outer_cv: {self.num_outer_cv}")
         self.logger.log(f"    N inner_cv: {self.num_inner_cv}")
         self.logger.log(f"    N imputations: {self.num_imputations}")
-        self.logger.log(f'    Model hyperparameters: {self.hyperparameter_grid}')
-        self.logger.log(f'    N hyperparameter combinations: {len(list(product(*self.hyperparameter_grid.values())))}')
-        self.logger.log(f'    Optimization metric: {self.var_cfg["analysis"]["scoring_metric"]["inner_cv_loop"]["name"]}')
-        self.logger.log(f'    Max iter imputations: {self.var_cfg["analysis"]["imputation"]["max_iter"]}')
+        self.logger.log(f"    Model hyperparameters: {self.hyperparameter_grid}")
+        self.logger.log(
+            f"    N hyperparameter combinations: {len(list(product(*self.hyperparameter_grid.values())))}"
+        )
+        self.logger.log(
+            f'    Optimization metric: {self.var_cfg["analysis"]["scoring_metric"]["inner_cv_loop"]["name"]}'
+        )
+        self.logger.log(
+            f'    Max iter imputations: {self.var_cfg["analysis"]["imputation"]["max_iter"]}'
+        )
 
         self.logger.log("Parallelization params")
-        self.logger.log(f'    Use mpi4py to parallelize across nodes: {self.var_cfg["analysis"]["use_mpi4py"]}')
-        self.logger.log(f'    Split reps: {self.split_reps}')
-        self.logger.log(f'    Current rank: {self.rank}')
-        self.logger.log(f'    N jobs inner_cv: {self.var_cfg["analysis"]["parallelize"]["inner_cv_n_jobs"]}')
-        self.logger.log(f'    N jobs shap: {self.var_cfg["analysis"]["parallelize"]["shap_n_jobs"]}')
-        self.logger.log(f'    N jobs imputation runs: {self.var_cfg["analysis"]["parallelize"]["imputation_runs_n_jobs"]}')
-        self.logger.log(f'    Compute shap IA values: {self.var_cfg["analysis"]["shap_ia_values"]["comp_shap_ia_values"]}')
+        self.logger.log(
+            f'    Use mpi4py to parallelize across nodes: {self.var_cfg["analysis"]["use_mpi4py"]}'
+        )
+        self.logger.log(f"    Split reps: {self.split_reps}")
+        self.logger.log(f"    Current rank: {self.rank}")
+        self.logger.log(
+            f'    N jobs inner_cv: {self.var_cfg["analysis"]["parallelize"]["inner_cv_n_jobs"]}'
+        )
+        self.logger.log(
+            f'    N jobs shap: {self.var_cfg["analysis"]["parallelize"]["shap_n_jobs"]}'
+        )
+        self.logger.log(
+            f'    N jobs imputation runs: {self.var_cfg["analysis"]["parallelize"]["imputation_runs_n_jobs"]}'
+        )
+        self.logger.log(
+            f'    Compute shap IA values: {self.var_cfg["analysis"]["shap_ia_values"]["comp_shap_ia_values"]}'
+        )
         if self.var_cfg["analysis"]["shap_ia_values"]["comp_shap_ia_values"]:
-            self.logger.log(f'    N jobs shap_ia_values: {self.var_cfg["analysis"]["parallelize"]["shap_ia_values_n_jobs"]}')
+            self.logger.log(
+                f'    N jobs shap_ia_values: {self.var_cfg["analysis"]["parallelize"]["shap_ia_values_n_jobs"]}'
+            )
 
         self.logger.log("Data params")
         self.logger.log(f"    Number of rows: {self.X.shape[0]}")
-        self.logger.log(f"    Number of cols: {self.X.shape[1]}, including meta-columns that are no predictors")
+        self.logger.log(
+            f"    Number of cols: {self.X.shape[1]}, including meta-columns that are no predictors"
+        )
         X_copy = self.X.copy()
-        X_no_meta_cols = X_copy.drop(columns=self.meta_vars + [self.id_grouping_col], errors="raise")
-        self.logger.log(f"    Number of cols: {X_no_meta_cols.shape[1]}, excluding meta-columns that are no predictors")
-        self.logger.log(f"    Number of rows dropped due to missing criterion {self.crit}: {self.rows_dropped_crit_na}")
+        X_no_meta_cols = X_copy.drop(
+            columns=self.meta_vars + [self.id_grouping_col], errors="raise"
+        )
+        self.logger.log(
+            f"    Number of cols: {X_no_meta_cols.shape[1]}, excluding meta-columns that are no predictors"
+        )
+        self.logger.log(
+            f"    Number of rows dropped due to missing criterion {self.crit}: {self.rows_dropped_crit_na}"
+        )
         na_counts = self.X.isna().sum()
         for column, count in na_counts[na_counts > 0].items():
             self.logger.log(f"      Number of NaNs in column {column}: {count}")
@@ -450,11 +512,15 @@ class BaseMLAnalyzer(ABC):
 
             if unique_values <= 1:
                 zero_variance_cols.append(column)
-                self.logger.log(f"      Dropping column '{column}' due to zero variance (only one unique value or NaNs).")
+                self.logger.log(
+                    f"      Dropping column '{column}' due to zero variance (only one unique value or NaNs)."
+                )
 
         if zero_variance_cols:
             self.X.drop(columns=zero_variance_cols, inplace=True)
-            self.logger.log(f"      {len(zero_variance_cols)} column(s) with zero variance dropped: {zero_variance_cols}")
+            self.logger.log(
+                f"      {len(zero_variance_cols)} column(s) with zero variance dropped: {zero_variance_cols}"
+            )
 
         else:
             self.logger.log("      No columns with zero variance found.")
@@ -505,8 +571,7 @@ class BaseMLAnalyzer(ABC):
 
         # wrap the model, as preprocessing steps are only applied to X, not to y
         model_wrapped = TransformedTargetRegressor(
-            regressor=self.model,
-            transformer=target_scaler
+            regressor=self.model, transformer=target_scaler
         )
         if self.var_cfg["analysis"]["cv"]["warm_start"]:
             model_wrapped.regressor.set_params(warm_start=True)
@@ -520,8 +585,11 @@ class BaseMLAnalyzer(ABC):
         if "_fs" in self.feature_combination:
             self.logger.log("    -> Include feature selection for sensing features")
             feature_selector = PearsonFeatureSelector(
-                num_features=self.var_cfg["analysis"]["feature_selection"]["num_sensing_features"],
-                target_prefix="sens_")
+                num_features=self.var_cfg["analysis"]["feature_selection"][
+                    "num_sensing_features"
+                ],
+                target_prefix="sens_",
+            )
 
             pipe = Pipeline(
                 [
@@ -529,7 +597,7 @@ class BaseMLAnalyzer(ABC):
                     ("feature_selection", feature_selector),
                     ("model", model_wrapped),
                 ],
-                memory=memory
+                memory=memory,
             )
 
         else:
@@ -538,18 +606,18 @@ class BaseMLAnalyzer(ABC):
                     ("preprocess", preprocessor),
                     ("model", model_wrapped),
                 ],
-                memory=memory
+                memory=memory,
             )
 
         setattr(self, "pipeline", pipe)
 
     def nested_cv(
-            self,
-            rep: int = None,
-            X: pd.DataFrame = None,
-            y: pd.Series = None,
-            fix_rs: int = None,
-            dynamic_rs: int = None,
+        self,
+        rep: int = None,
+        X: pd.DataFrame = None,
+        y: pd.Series = None,
+        fix_rs: int = None,
+        dynamic_rs: int = None,
     ) -> tuple[
         NestedDict,
         NestedDict,
@@ -558,7 +626,7 @@ class BaseMLAnalyzer(ABC):
         np.ndarray,
         np.ndarray,
         Optional[np.ndarray],
-        Optional[np.ndarray]
+        Optional[np.ndarray],
     ]:
         """
         Executes the nested cross-validation procedure, the core functionality of the BaseMLAnalyzer class.
@@ -633,8 +701,12 @@ class BaseMLAnalyzer(ABC):
             y = self.y
         X, y = X.align(y, axis=0, join="inner")
 
-        inner_cv = ShuffledGroupKFold(n_splits=self.num_inner_cv, random_state=fix_rs, shuffle=True)
-        outer_cv = ShuffledGroupKFold(n_splits=self.num_outer_cv, random_state=dynamic_rs, shuffle=True)
+        inner_cv = ShuffledGroupKFold(
+            n_splits=self.num_inner_cv, random_state=fix_rs, shuffle=True
+        )
+        outer_cv = ShuffledGroupKFold(
+            n_splits=self.num_outer_cv, random_state=dynamic_rs, shuffle=True
+        )
 
         ml_pipelines = []
         ml_model_params = []
@@ -643,11 +715,15 @@ class BaseMLAnalyzer(ABC):
         X_train_imputed_lst = []
         X_test_imputed_lst = []
 
-        for cv_idx, (train_index, test_index) in enumerate(outer_cv.split(X, y, groups=X[self.id_grouping_col])):
+        for cv_idx, (train_index, test_index) in enumerate(
+            outer_cv.split(X, y, groups=X[self.id_grouping_col])
+        ):
             self.logger.log("-----------------------------------")
             self.logger.log("-----------------------------------")
             self.logger.log("#########")
-            self.logger.log(f"Outer fold number {cv_idx}, going from 0 to {self.num_outer_cv - 1}")
+            self.logger.log(
+                f"Outer fold number {cv_idx}, going from 0 to {self.num_outer_cv - 1}"
+            )
             self.logger.log("#########")
 
             ml_pipelines_sublst = []
@@ -660,19 +736,32 @@ class BaseMLAnalyzer(ABC):
             X_train, X_test = X.loc[train_indices], X.loc[test_indices]
             y_train, y_test = y.loc[train_indices], y.loc[test_indices]
 
-            assert (X_train.index == y_train.index).all(), "Indices between train data differ"
-            assert (X_test.index == y_test.index).all(), "Indices between test data differ"
-            assert len(set(X_train[self.id_grouping_col]).intersection(set(X_test[self.id_grouping_col]))) == 0, \
-                "Grouping in outer_cv did not work as expected"
+            assert (
+                X_train.index == y_train.index
+            ).all(), "Indices between train data differ"
+            assert (
+                X_test.index == y_test.index
+            ).all(), "Indices between test data differ"
+            assert (
+                len(
+                    set(X_train[self.id_grouping_col]).intersection(
+                        set(X_test[self.id_grouping_col])
+                    )
+                )
+                == 0
+            ), "Grouping in outer_cv did not work as expected"
 
-            imputed_datasets = self.impute_datasets(X_train_outer_cv=X_train,
-                                                    X_test_outer_cv=X_test,
-                                                    y_train_outer_cv=y_train,
-                                                    inner_cv=inner_cv,
-                                                    num_imputations=self.num_imputations,
-                                                    groups=X_train[self.id_grouping_col],
-                                                    n_jobs=self.var_cfg["analysis"]["parallelize"]["imputation_runs_n_jobs"]
-                                                    )
+            imputed_datasets = self.impute_datasets(
+                X_train_outer_cv=X_train,
+                X_test_outer_cv=X_test,
+                y_train_outer_cv=y_train,
+                inner_cv=inner_cv,
+                num_imputations=self.num_imputations,
+                groups=X_train[self.id_grouping_col],
+                n_jobs=self.var_cfg["analysis"]["parallelize"][
+                    "imputation_runs_n_jobs"
+                ],
+            )
             X_train_imputed_lst_for_fold = [
                 imputed_datasets[num_imp]["outer_fold"]["X_train_for_test_full"]
                 for num_imp in imputed_datasets
@@ -684,10 +773,11 @@ class BaseMLAnalyzer(ABC):
             ]
             X_test_imputed_lst.append(X_test_imputed_lst_for_fold)
 
-            scoring_inner_cv = get_scorer(self.var_cfg["analysis"]["scoring_metric"]["inner_cv_loop"]["name"])
+            scoring_inner_cv = get_scorer(
+                self.var_cfg["analysis"]["scoring_metric"]["inner_cv_loop"]["name"]
+            )
             param_grid = list(ParameterGrid(self.hyperparameter_grid))
             for num_imp in range(self.num_imputations):
-
                 nested_scores_rep[f"outer_fold_{cv_idx}"][f"imp_{num_imp}"] = {}
                 grid_search_results = self.manual_grid_search(
                     imputed_datasets=imputed_datasets[num_imp],
@@ -697,32 +787,44 @@ class BaseMLAnalyzer(ABC):
                     inner_cv=inner_cv,
                     n_jobs=self.var_cfg["analysis"]["parallelize"]["inner_cv_n_jobs"],
                 )
-                best_model = grid_search_results['best_model']
+                best_model = grid_search_results["best_model"]
 
                 if self.model_name == "elasticnet":
-                    ml_model_params_sublst.append(best_model.named_steps["model"].regressor_)
+                    ml_model_params_sublst.append(
+                        best_model.named_steps["model"].regressor_
+                    )
                 else:
-                    ml_model_params_sublst.append(best_model.named_steps["model"].regressor_.get_params())
+                    ml_model_params_sublst.append(
+                        best_model.named_steps["model"].regressor_.get_params()
+                    )
                 ml_pipelines_sublst.append(best_model)
 
-                X_test_current = imputed_datasets[num_imp]["outer_fold"]['X_test_imputed']
-                X_test_current = X_test_current.drop(columns=self.meta_vars + [self.id_grouping_col], errors='ignore')
+                X_test_current = imputed_datasets[num_imp]["outer_fold"][
+                    "X_test_imputed"
+                ]
+                X_test_current = X_test_current.drop(
+                    columns=self.meta_vars + [self.id_grouping_col], errors="ignore"
+                )
                 y_test_current = y_test.loc[X_test_current.index]
 
                 scores = self.get_scores(
                     grid_search=SimpleNamespace(best_estimator_=best_model),
                     X_test=X_test_current,
-                    y_test=y_test_current
+                    y_test=y_test_current,
                 )
 
                 for metric, score in scores.items():
-                    nested_scores_rep[f"outer_fold_{cv_idx}"][f"imp_{num_imp}"][metric] = score
+                    nested_scores_rep[f"outer_fold_{cv_idx}"][f"imp_{num_imp}"][
+                        metric
+                    ] = score
 
                 if self.var_cfg["analysis"]["store_pred_and_true"]:
-                    pred_vs_true_rep[f"outer_fold_{cv_idx}"][f"imp_{num_imp}"] = self.get_pred_and_true_crit(
+                    pred_vs_true_rep[f"outer_fold_{cv_idx}"][
+                        f"imp_{num_imp}"
+                    ] = self.get_pred_and_true_crit(
                         grid_search=SimpleNamespace(best_estimator_=best_model),
                         X_test=X_test_current,
-                        y_test=y_test_current
+                        y_test=y_test_current,
                     )
 
                 del best_model
@@ -746,7 +848,7 @@ class BaseMLAnalyzer(ABC):
             y=y,
             groups=X[self.id_grouping_col],
             pipelines=ml_pipelines,
-            outer_cv=outer_cv
+            outer_cv=outer_cv,
         )
 
         del ml_pipelines
@@ -764,13 +866,13 @@ class BaseMLAnalyzer(ABC):
         )
 
     def manual_grid_search(
-            self,
-            imputed_datasets: dict[str, dict[str, pd.DataFrame]],
-            y: pd.Series,
-            inner_cv: ShuffledGroupKFold,
-            param_grid: list[dict[str, any]],
-            scorer: callable,
-            n_jobs: int,
+        self,
+        imputed_datasets: dict[str, dict[str, pd.DataFrame]],
+        y: pd.Series,
+        inner_cv: ShuffledGroupKFold,
+        param_grid: list[dict[str, any]],
+        scorer: callable,
+        n_jobs: int,
     ) -> dict[str, any]:
         """
         Mimics the behavior of GridSearchCV using pre-imputed datasets and parallelizes evaluation across parameter grids.
@@ -799,14 +901,15 @@ class BaseMLAnalyzer(ABC):
                 - `best_score` (float): Best score achieved with the best parameter combination.
                 - `best_model` (Pipeline): The model fitted on the full training data using the best parameters.
         """
+
         def evaluate_param_combination(
-                params: dict[str, any],
-                imputed_datasets: dict[str, dict[str, pd.DataFrame]],
-                y: pd.Series,
-                inner_cv: ShuffledGroupKFold,
-                scorer: callable,
-                pipeline: any,
-                meta_vars: list[str],
+            params: dict[str, any],
+            imputed_datasets: dict[str, dict[str, pd.DataFrame]],
+            y: pd.Series,
+            inner_cv: ShuffledGroupKFold,
+            scorer: callable,
+            pipeline: any,
+            meta_vars: list[str],
         ) -> dict[str, any]:
             """
             Evaluates a single parameter combination across inner CV folds.
@@ -834,15 +937,17 @@ class BaseMLAnalyzer(ABC):
             for fold in range(inner_cv.get_n_splits()):
                 fold_name = f"inner_fold_{fold}"
                 dataset = imputed_datasets[fold_name]
-                X_full = dataset['X_train_for_val_full']
+                X_full = dataset["X_train_for_val_full"]
                 y_full = y.loc[X_full.index]
 
-                train_indices = dataset['train_indices']
-                val_indices = dataset['val_indices']
+                train_indices = dataset["train_indices"]
+                val_indices = dataset["val_indices"]
 
-                X_train = X_full.loc[train_indices].drop(columns=meta_vars, errors='ignore')
+                X_train = X_full.loc[train_indices].drop(
+                    columns=meta_vars, errors="ignore"
+                )
                 y_train = y_full.loc[train_indices]
-                X_val = X_full.loc[val_indices].drop(columns=meta_vars, errors='ignore')
+                X_val = X_full.loc[val_indices].drop(columns=meta_vars, errors="ignore")
                 y_val = y_full.loc[val_indices]
 
                 model = clone(pipeline)
@@ -853,7 +958,7 @@ class BaseMLAnalyzer(ABC):
                 param_results.append(score)
 
             avg_score = np.mean(param_results)
-            return {'params': params, 'score': avg_score}
+            return {"params": params, "score": avg_score}
 
         results = Parallel(
             n_jobs=n_jobs,
@@ -868,40 +973,43 @@ class BaseMLAnalyzer(ABC):
                 scorer,
                 self.pipeline,
                 self.meta_vars,
-            ) for params in param_grid
+            )
+            for params in param_grid
         )
 
-        best_result = max(results, key=lambda x: x['score'])
-        best_score = best_result['score']
-        best_params = best_result['params']
-        outer_fold_data = imputed_datasets['outer_fold']
+        best_result = max(results, key=lambda x: x["score"])
+        best_score = best_result["score"]
+        best_params = best_result["params"]
+        outer_fold_data = imputed_datasets["outer_fold"]
 
-        X_train_full = outer_fold_data['X_train_for_test_full']
+        X_train_full = outer_fold_data["X_train_for_test_full"]
         y_train_full = y.loc[X_train_full.index]
-        X_train_full = X_train_full.drop(columns=self.meta_vars + [self.id_grouping_col], errors='ignore')
+        X_train_full = X_train_full.drop(
+            columns=self.meta_vars + [self.id_grouping_col], errors="ignore"
+        )
 
         best_model = clone(self.pipeline)
         best_model.set_params(**best_params)
         best_model.fit(X_train_full, y_train_full)
 
         nested_scores_outer_fold_imp = {
-            'all_results': results,
-            'best_params': best_params,
-            'best_score': best_score,
-            'best_model': best_model
+            "all_results": results,
+            "best_params": best_params,
+            "best_score": best_score,
+            "best_model": best_model,
         }
 
         return nested_scores_outer_fold_imp
 
     def impute_datasets(
-            self,
-            X_train_outer_cv: pd.DataFrame,
-            X_test_outer_cv: pd.DataFrame,
-            y_train_outer_cv: pd.Series,
-            inner_cv: ShuffledGroupKFold,
-            groups: pd.Series,
-            num_imputations: int,
-            n_jobs: int
+        self,
+        X_train_outer_cv: pd.DataFrame,
+        X_test_outer_cv: pd.DataFrame,
+        y_train_outer_cv: pd.Series,
+        inner_cv: ShuffledGroupKFold,
+        groups: pd.Series,
+        num_imputations: int,
+        n_jobs: int,
     ) -> NestedDict:
         """
         Imputes data for outer and inner CV folds across multiple imputations.
@@ -950,14 +1058,28 @@ class BaseMLAnalyzer(ABC):
         data_dct = {}
 
         # Step 1: Data preparation
-        for fold, (train_idx, val_idx) in enumerate(inner_cv.split(X_train_outer_cv, y_train_outer_cv, groups=groups)):
+        for fold, (train_idx, val_idx) in enumerate(
+            inner_cv.split(X_train_outer_cv, y_train_outer_cv, groups=groups)
+        ):
             train_indices = X_train_outer_cv.index[train_idx]
             val_indices = X_train_outer_cv.index[val_idx]
-            X_train_inner_cv, X_val = X_train_outer_cv.loc[train_indices], X_train_outer_cv.loc[val_indices]
-            data_dct[f"inner_fold_{fold}"] = [X_train_inner_cv, X_val, train_indices, val_indices]
+            X_train_inner_cv, X_val = (
+                X_train_outer_cv.loc[train_indices],
+                X_train_outer_cv.loc[val_indices],
+            )
+            data_dct[f"inner_fold_{fold}"] = [
+                X_train_inner_cv,
+                X_val,
+                train_indices,
+                val_indices,
+            ]
 
-        X_train_outer_cv = X_train_outer_cv.drop(self.id_grouping_col, axis=1, errors="ignore")
-        X_test_outer_cv = X_test_outer_cv.drop(self.id_grouping_col, axis=1, errors="ignore")
+        X_train_outer_cv = X_train_outer_cv.drop(
+            self.id_grouping_col, axis=1, errors="ignore"
+        )
+        X_test_outer_cv = X_test_outer_cv.drop(
+            self.id_grouping_col, axis=1, errors="ignore"
+        )
         data_dct["outer_fold"] = [X_train_outer_cv, X_test_outer_cv]
 
         # Step 2: Task creation for parallel processing
@@ -965,18 +1087,19 @@ class BaseMLAnalyzer(ABC):
         result_dct = {}
         for num_imp in range(num_imputations):
             result_dct[num_imp] = {}
-            for fold, (X_train, X_val_or_test, *indices) in data_dct.items():  # X_train_copy, X_val_or_test_copy,
+            for fold, (
+                X_train,
+                X_val_or_test,
+                *indices,
+            ) in data_dct.items():  # X_train_copy, X_val_or_test_copy,
                 result_dct[num_imp][fold] = {}
-                tasks.append((fold, num_imp, X_train, X_val_or_test, indices))  # X_train_copy, X_val_or_test_copy,
+                tasks.append(
+                    (fold, num_imp, X_train, X_val_or_test, indices)
+                )  # X_train_copy, X_val_or_test_copy,
 
         # Step 3: Parallel imputation
-        results = Parallel(
-            n_jobs=n_jobs,
-            backend=self.joblib_backend,
-            verbose=3
-        )(
-            delayed(self.impute_single_dataset)
-            (fold, num_imp, X_train, X_val_or_test)
+        results = Parallel(n_jobs=n_jobs, backend=self.joblib_backend, verbose=3)(
+            delayed(self.impute_single_dataset)(fold, num_imp, X_train, X_val_or_test)
             for fold, num_imp, X_train, X_val_or_test, _ in tasks
         )
 
@@ -990,25 +1113,25 @@ class BaseMLAnalyzer(ABC):
                 train_indices, val_indices = indices
 
                 result_dct[num_imp][fold] = {
-                    'X_train_for_val_full': recreated_df,
-                    'train_indices': train_indices,
-                    'val_indices': val_indices
+                    "X_train_for_val_full": recreated_df,
+                    "train_indices": train_indices,
+                    "val_indices": val_indices,
                 }
 
             else:
                 result_dct[num_imp][fold] = {
-                    'X_train_for_test_full': X_train_result,
-                    'X_test_imputed': X_val_or_test_result
+                    "X_train_for_test_full": X_train_result,
+                    "X_test_imputed": X_val_or_test_result,
                 }
 
         return result_dct
 
     def impute_single_dataset(
-            self,
-            fold: str,
-            num_imp: int,
-            X_train: pd.DataFrame,
-            X_val_or_test: pd.DataFrame
+        self,
+        fold: str,
+        num_imp: int,
+        X_train: pd.DataFrame,
+        X_val_or_test: pd.DataFrame,
     ) -> tuple[pd.DataFrame, pd.DataFrame]:
         """
         Imputes missing values in a single dataset for a specific fold and imputation iteration.
@@ -1033,22 +1156,36 @@ class BaseMLAnalyzer(ABC):
         """
         imputer = clone(self.imputer)
         self.logger.log("--------------------------------------------------")
-        self.logger.log(f"    Starting to impute dataset {fold} imputation number {num_imp}")
+        self.logger.log(
+            f"    Starting to impute dataset {fold} imputation number {num_imp}"
+        )
         self.log_thread()
 
-        imputer.fit(X=X_train, num_imputation=num_imp)  # We need num_imp for different random seeds
+        imputer.fit(
+            X=X_train, num_imputation=num_imp
+        )  # We need num_imp for different random seeds
 
-        self.logger.log(f"    Number of Cols with NaNs in X_train: {len(X_train.columns[X_train.isna().any()])}")
+        self.logger.log(
+            f"    Number of Cols with NaNs in X_train: {len(X_train.columns[X_train.isna().any()])}"
+        )
         X_train_imputed = imputer.transform(X=X_train)
 
-        self.logger.log(f"    Number of Cols with NaNs in X_test: {len(X_train.columns[X_val_or_test.isna().any()])}")
+        self.logger.log(
+            f"    Number of Cols with NaNs in X_test: {len(X_train.columns[X_val_or_test.isna().any()])}"
+        )
         X_val_test_imputed = imputer.transform(X=X_val_or_test)
 
         X_train_imputed = X_train_imputed.drop(columns=self.meta_vars, errors="ignore")
-        X_val_test_imputed = X_val_test_imputed.drop(columns=self.meta_vars, errors="ignore")
+        X_val_test_imputed = X_val_test_imputed.drop(
+            columns=self.meta_vars, errors="ignore"
+        )
 
-        assert self.check_for_nan(X_train_imputed, dataset_name="X_train_imputed"), "There are NaN values in X_train_imputed!"
-        assert self.check_for_nan(X_val_test_imputed, dataset_name="X_test_imputed"), "There are NaN values in X_test_imputed!"
+        assert self.check_for_nan(
+            X_train_imputed, dataset_name="X_train_imputed"
+        ), "There are NaN values in X_train_imputed!"
+        assert self.check_for_nan(
+            X_val_test_imputed, dataset_name="X_test_imputed"
+        ), "There are NaN values in X_test_imputed!"
 
         return X_train_imputed, X_val_test_imputed
 
@@ -1067,15 +1204,18 @@ class BaseMLAnalyzer(ABC):
         """
         nan_columns = df.columns[df.isna().any()].tolist()
         if nan_columns:
-
             for col in nan_columns:
                 n_nans = df[col].isna().sum()
-                self.logger.log(f"{dataset_name} - Column '{col}' has {n_nans} NaN values.")
+                self.logger.log(
+                    f"{dataset_name} - Column '{col}' has {n_nans} NaN values."
+                )
                 print(f"{dataset_name} - Column '{col}' has {n_nans} NaN values.")
 
         return not bool(nan_columns)
 
-    def get_scores(self, grid_search, X_test: pd.DataFrame, y_test: pd.Series) -> dict[str, float]:
+    def get_scores(
+        self, grid_search, X_test: pd.DataFrame, y_test: pd.Series
+    ) -> dict[str, float]:
         """
         Evaluates the best model on the test set using specified scoring metrics.
 
@@ -1095,7 +1235,7 @@ class BaseMLAnalyzer(ABC):
             "neg_mean_squared_error": get_scorer("neg_mean_squared_error"),
             "r2": get_scorer("r2"),
             "spearman": make_scorer(self.spearman_corr),
-            "pearson": make_scorer(self.pearson_corr)
+            "pearson": make_scorer(self.pearson_corr),
         }
 
         scorers = {
@@ -1112,7 +1252,7 @@ class BaseMLAnalyzer(ABC):
 
     @staticmethod
     def get_pred_and_true_crit(
-            grid_search, X_test: pd.DataFrame, y_test: pd.Series
+        grid_search, X_test: pd.DataFrame, y_test: pd.Series
     ) -> dict[int, tuple[float, float]]:
         """
         Creates a mapping of sample indices to predicted and true values for the test set to store pred and true values.
@@ -1129,27 +1269,26 @@ class BaseMLAnalyzer(ABC):
         y_pred = best_model.predict(X_test)
 
         pred_true_dict = {
-            idx: (pred, true)
-            for idx, pred, true in zip(X_test.index, y_pred, y_test)
+            idx: (pred, true) for idx, pred, true in zip(X_test.index, y_pred, y_test)
         }
 
         return pred_true_dict
 
     def compute_shap_for_fold(
-            self,
-            num_cv_: int,
-            pipeline: Pipeline,
-            num_test_indices: list[np.ndarray[int]],
-            X_train: pd.DataFrame,
-            X_test: pd.DataFrame,
+        self,
+        num_cv_: int,
+        pipeline: Pipeline,
+        num_test_indices: list[np.ndarray[int]],
+        X_train: pd.DataFrame,
+        X_test: pd.DataFrame,
     ) -> tuple[
         np.ndarray,
         np.ndarray,
         pd.DataFrame,
-        Union[list[int],np.ndarray],
+        Union[list[int], np.ndarray],
         Optional[np.ndarray],
         Optional[np.ndarray],
-        Optional[list[int]]
+        Optional[list[int]],
     ]:
         """
         Computes SHAP and SHAP interaction values for a specific outer CV fold.
@@ -1187,14 +1326,22 @@ class BaseMLAnalyzer(ABC):
         X_test_scaled = pipeline.named_steps["preprocess"].transform(X_test)  # scaler
 
         if "feature_selection" in pipeline.named_steps:
-            X_train_scaled = pipeline.named_steps["feature_selection"].transform(X_train)
+            X_train_scaled = pipeline.named_steps["feature_selection"].transform(
+                X_train
+            )
             X_test_scaled = pipeline.named_steps["feature_selection"].transform(X_test)
 
             original_feature_names = X_test.columns  # Feature names before selection
-            selected_feature_names = X_test_scaled.columns if isinstance(X_test_scaled, pd.DataFrame) else pipeline.named_steps[
-                "feature_selection"].selected_features_
-            feature_indices = [original_feature_names.get_loc(name) for name in selected_feature_names if
-                               name in original_feature_names]
+            selected_feature_names = (
+                X_test_scaled.columns
+                if isinstance(X_test_scaled, pd.DataFrame)
+                else pipeline.named_steps["feature_selection"].selected_features_
+            )
+            feature_indices = [
+                original_feature_names.get_loc(name)
+                for name in selected_feature_names
+                if name in original_feature_names
+            ]
 
         else:
             feature_indices = None
@@ -1202,16 +1349,22 @@ class BaseMLAnalyzer(ABC):
         (
             shap_values_test,
             base_values_test,
-        ) = self.calculate_shap_values(X_train_scaled=X_train_scaled,
-                                       X_test_scaled=X_test_scaled,
-                                       pipeline=pipeline)
+        ) = self.calculate_shap_values(
+            X_train_scaled=X_train_scaled,
+            X_test_scaled=X_test_scaled,
+            pipeline=pipeline,
+        )
 
         if (
             self.model_name == "randomforestregressor"
             and self.var_cfg["analysis"]["shap_ia_values"]["comp_shap_ia_values"]
         ):
             if self.combo_index_mapping is None:
-                combo_index_mapping, feature_index_mapping, num_combos = self.create_index_mappings(X_test)
+                (
+                    combo_index_mapping,
+                    feature_index_mapping,
+                    num_combos,
+                ) = self.create_index_mappings(X_test)
                 self.combo_index_mapping = combo_index_mapping
                 self.feature_index_mapping = feature_index_mapping
                 self.num_combos = num_combos
@@ -1237,7 +1390,7 @@ class BaseMLAnalyzer(ABC):
         )
 
     def calculate_shap_ia_values(
-            self, X_scaled: pd.DataFrame, pipeline: Pipeline, combo_index_mapping: dict
+        self, X_scaled: pd.DataFrame, pipeline: Pipeline, combo_index_mapping: dict
     ) -> tuple[dict, list[float]]:
         """
         Computes SHAP interaction values for feature combinations.
@@ -1262,20 +1415,16 @@ class BaseMLAnalyzer(ABC):
         raise NotImplementedError("Subclasses should implement this method")
 
     def summarize_shap_values_outer_cv(
-            self,
-            X_train_imputed_lst: list[list[pd.DataFrame]],
-            X_test_imputed_lst: list[list[pd.DataFrame]],
-            X: pd.DataFrame,
-            y: pd.Series,
-            groups: pd.Series,
-            pipelines: list[list[sklearn.pipeline.Pipeline]],
-            outer_cv: ShuffledGroupKFold,
+        self,
+        X_train_imputed_lst: list[list[pd.DataFrame]],
+        X_test_imputed_lst: list[list[pd.DataFrame]],
+        X: pd.DataFrame,
+        y: pd.Series,
+        groups: pd.Series,
+        pipelines: list[list[sklearn.pipeline.Pipeline]],
+        outer_cv: ShuffledGroupKFold,
     ) -> tuple[
-        np.ndarray,
-        np.ndarray,
-        np.ndarray,
-        Optional[np.ndarray],
-        Optional[np.ndarray]
+        np.ndarray, np.ndarray, np.ndarray, Optional[np.ndarray], Optional[np.ndarray]
     ]:
         """
         Summarizes SHAP values from nested CV procedure.
@@ -1330,14 +1479,20 @@ class BaseMLAnalyzer(ABC):
                 - ia_test_base_values (Optional[np.ndarray]): Aggregated base values for SHAP interaction values if computed.
                     Shape: `(n_samples,)`. None if interaction values are not computed.
         """
-        print('---------------------')
-        print('Calculate SHAP values')
+        print("---------------------")
+        print("Calculate SHAP values")
         num_test_indices = [test for train, test in outer_cv.split(X, y, groups=groups)]
 
         # 3D arrays (rows x features x imputations)
-        rep_shap_values = np.zeros((X.shape[0], X.shape[1], self.num_imputations), dtype=np.float32)
-        rep_base_values = np.zeros((X.shape[0], self.num_imputations), dtype=np.float32)  # we get different base values per fold
-        rep_data = np.zeros((X.shape[0], X.shape[1], self.num_imputations), dtype=np.float32)
+        rep_shap_values = np.zeros(
+            (X.shape[0], X.shape[1], self.num_imputations), dtype=np.float32
+        )
+        rep_base_values = np.zeros(
+            (X.shape[0], self.num_imputations), dtype=np.float32
+        )  # we get different base values per fold
+        rep_data = np.zeros(
+            (X.shape[0], X.shape[1], self.num_imputations), dtype=np.float32
+        )
 
         results = [
             [
@@ -1355,24 +1510,38 @@ class BaseMLAnalyzer(ABC):
 
         for num_cv_, fold_results in enumerate(results):
             for num_imputation, (
-                    shap_values_template,
-                    base_values_template,
-                    X_test_scaled,
-                    test_idx,
-                    _,
-                    _,
-                    feature_indices
+                shap_values_template,
+                base_values_template,
+                X_test_scaled,
+                test_idx,
+                _,
+                _,
+                feature_indices,
             ) in enumerate(fold_results):
-
-                if "feature_selection" in pipelines[num_cv_][num_imputation].named_steps:
-                    rep_shap_values[np.ix_(test_idx, feature_indices, [num_imputation])] += shap_values_template.astype(np.float32)[..., np.newaxis]
-                    rep_base_values[test_idx, num_imputation] += base_values_template.flatten().astype(np.float32)
-                    rep_data[np.ix_(test_idx, feature_indices, [num_imputation])] += X_test_scaled.astype(np.float32).to_numpy()[..., np.newaxis]
+                if (
+                    "feature_selection"
+                    in pipelines[num_cv_][num_imputation].named_steps
+                ):
+                    rep_shap_values[
+                        np.ix_(test_idx, feature_indices, [num_imputation])
+                    ] += shap_values_template.astype(np.float32)[..., np.newaxis]
+                    rep_base_values[
+                        test_idx, num_imputation
+                    ] += base_values_template.flatten().astype(np.float32)
+                    rep_data[
+                        np.ix_(test_idx, feature_indices, [num_imputation])
+                    ] += X_test_scaled.astype(np.float32).to_numpy()[..., np.newaxis]
 
                 else:
-                    rep_shap_values[test_idx, :, num_imputation] += shap_values_template.astype(np.float32)
-                    rep_base_values[test_idx, num_imputation] += base_values_template.flatten().astype(np.float32)
-                    rep_data[test_idx, :, num_imputation] += X_test_scaled.astype(np.float32)
+                    rep_shap_values[
+                        test_idx, :, num_imputation
+                    ] += shap_values_template.astype(np.float32)
+                    rep_base_values[
+                        test_idx, num_imputation
+                    ] += base_values_template.flatten().astype(np.float32)
+                    rep_data[test_idx, :, num_imputation] += X_test_scaled.astype(
+                        np.float32
+                    )
 
         # We need to divide the base values by num_outer_cv, because we get base_values in every outer fold
         rep_base_values = rep_base_values / self.num_outer_cv
@@ -1381,23 +1550,33 @@ class BaseMLAnalyzer(ABC):
             self.model_name == "randomforestregressor"
             and self.var_cfg["analysis"]["shap_ia_values"]["comp_shap_ia_values"]
         ):
-            ia_test_shap_values = np.zeros((X.shape[0], self.num_combos, self.num_imputations), dtype=np.float32)
-            ia_test_base_values = np.zeros((X.shape[0], self.num_imputations), dtype=np.float32)
+            ia_test_shap_values = np.zeros(
+                (X.shape[0], self.num_combos, self.num_imputations), dtype=np.float32
+            )
+            ia_test_base_values = np.zeros(
+                (X.shape[0], self.num_imputations), dtype=np.float32
+            )
 
             for num_cv_, fold_results in enumerate(results):
                 for num_imputation, (
-                        _,
-                        _,
-                        _,
-                        test_idx,
-                        shap_ia_values_arr,
-                        shap_ia_base_values_arr,
-                        _
+                    _,
+                    _,
+                    _,
+                    test_idx,
+                    shap_ia_values_arr,
+                    shap_ia_base_values_arr,
+                    _,
                 ) in enumerate(fold_results):
-                    ia_test_shap_values[test_idx, :, num_imputation] += shap_ia_values_arr
-                    ia_test_base_values[test_idx, num_imputation] += shap_ia_base_values_arr
+                    ia_test_shap_values[
+                        test_idx, :, num_imputation
+                    ] += shap_ia_values_arr
+                    ia_test_base_values[
+                        test_idx, num_imputation
+                    ] += shap_ia_base_values_arr
 
-            ia_test_shap_values = ia_test_shap_values.mean(axis=2)  # Shape: (test_idx, features)
+            ia_test_shap_values = ia_test_shap_values.mean(
+                axis=2
+            )  # Shape: (test_idx, features)
             ia_test_base_values = ia_test_base_values.mean(axis=1)  # Shape: (test_idx)
 
         else:
@@ -1412,7 +1591,9 @@ class BaseMLAnalyzer(ABC):
             ia_test_base_values,  # already mean across imps
         )
 
-    def create_index_mappings(self, X: pd.DataFrame) -> tuple[dict[int, tuple[int, int]], dict[int, str], int]:
+    def create_index_mappings(
+        self, X: pd.DataFrame
+    ) -> tuple[dict[int, tuple[int, int]], dict[int, str], int]:
         """
         Creates mappings for feature combinations and indices for efficient SHAP interaction value storage.
 
@@ -1437,13 +1618,18 @@ class BaseMLAnalyzer(ABC):
         feature_indices = range(num_features)
         feature_names = X.columns
 
-        feature_to_index = {feature_idx: feature for feature_idx, feature in zip(feature_indices, feature_names)}
+        feature_to_index = {
+            feature_idx: feature
+            for feature_idx, feature in zip(feature_indices, feature_names)
+        }
 
         combinations = []
-        for r in range(min_order_shap, max_order_shap+1):
+        for r in range(min_order_shap, max_order_shap + 1):
             combinations.extend(itertools.combinations(feature_indices, r))
 
-        combination_to_index = {idx: combination for idx, combination in enumerate(combinations)}
+        combination_to_index = {
+            idx: combination for idx, combination in enumerate(combinations)
+        }
 
         return combination_to_index, feature_to_index, len(combinations)
 
@@ -1540,8 +1726,16 @@ class BaseMLAnalyzer(ABC):
             self.logger.log(f"    Rank {rank} data hash: {data_hash}")
 
             dynamic_rs = fix_random_state + rep
-            nested_scores_rep, pred_vs_true_rep, ml_model_params, rep_shap_values, rep_base_values, rep_data,\
-                rep_ia_values, rep_ia_base_values = self.nested_cv(
+            (
+                nested_scores_rep,
+                pred_vs_true_rep,
+                ml_model_params,
+                rep_shap_values,
+                rep_base_values,
+                rep_data,
+                rep_ia_values,
+                rep_ia_base_values,
+            ) = self.nested_cv(
                 rep=rep,
                 X=X,
                 y=y,
@@ -1559,11 +1753,12 @@ class BaseMLAnalyzer(ABC):
                 rep_data,
             )
             results.append((rep, result_without_large_arrays))
-            shap_val_dct = {"shap_values": rep_shap_values,
-                            "base_values": rep_base_values,
-                            "data": rep_data,
-                            "feature_names": self.X.columns.tolist()
-                            }
+            shap_val_dct = {
+                "shap_values": rep_shap_values,
+                "base_values": rep_base_values,
+                "data": rep_data,
+                "feature_names": self.X.columns.tolist(),
+            }
 
             print(f"    [Rank {rank}] Finished repetition {rep}")
             self.logger.log(f"    Rank {rank}: Finished repetition {rep}")
@@ -1581,11 +1776,13 @@ class BaseMLAnalyzer(ABC):
                 with open(file_name_ia_base_values, "wb") as f:
                     pickle.dump(rep_ia_base_values, f)
 
-                results_file_paths.append((rep, file_name_ia_values, file_name_ia_base_values))
+                results_file_paths.append(
+                    (rep, file_name_ia_values, file_name_ia_base_values)
+                )
                 ia_values_mappings = {
                     "combo_index_mapping": self.combo_index_mapping.copy(),
                     "feature_index_mapping": self.feature_index_mapping.copy(),
-                    "num_combos": self.num_combos
+                    "num_combos": self.num_combos,
                 }
                 file_name_ia_values_mappings = os.path.join(
                     self.spec_output_path, f"ia_values_mappings_rep_{rep}.pkl"
@@ -1594,20 +1791,28 @@ class BaseMLAnalyzer(ABC):
                 with open(file_name_ia_values_mappings, "wb") as f:
                     pickle.dump(ia_values_mappings, f)
 
-            best_models_file = os.path.join(self.spec_output_path, f"best_models_rep_{rep}.pkl")
+            best_models_file = os.path.join(
+                self.spec_output_path, f"best_models_rep_{rep}.pkl"
+            )
             with open(best_models_file, "wb") as f:
                 pickle.dump(ml_model_params, f)
 
             if self.split_reps:
-                nested_scores_file = os.path.join(self.spec_output_path, f"cv_results_rep_{rep}.json")
+                nested_scores_file = os.path.join(
+                    self.spec_output_path, f"cv_results_rep_{rep}.json"
+                )
                 with open(nested_scores_file, "w") as file:
                     json.dump(nested_scores_rep, file, indent=4)
 
-                pred_vs_true_file = os.path.join(self.spec_output_path, f"pred_vs_true_rep_{rep}.json")
+                pred_vs_true_file = os.path.join(
+                    self.spec_output_path, f"pred_vs_true_rep_{rep}.json"
+                )
                 with open(pred_vs_true_file, "w") as file:
                     json.dump(pred_vs_true_rep, file, indent=4)
 
-                shap_values_file = os.path.join(self.spec_output_path, f"shap_values_rep_{rep}.pkl")
+                shap_values_file = os.path.join(
+                    self.spec_output_path, f"shap_values_rep_{rep}.pkl"
+                )
                 with open(shap_values_file, "wb") as f:
                     pickle.dump(shap_val_dct, f)
 
@@ -1628,14 +1833,13 @@ class BaseMLAnalyzer(ABC):
 
         if not comm or (comm and rank == 0):
             for rep, (
-                    nested_scores_rep,
-                    pred_vs_true_rep,
-                    best_models,
-                    rep_shap_values,
-                    rep_base_values,
-                    rep_data,
+                nested_scores_rep,
+                pred_vs_true_rep,
+                best_models,
+                rep_shap_values,
+                rep_base_values,
+                rep_data,
             ) in final_results:
-
                 print(f"Processing rep {rep}")
                 self.best_models[f"rep_{rep}"] = best_models
                 self.shap_results["shap_values"][f"rep_{rep}"] = rep_shap_values
@@ -1651,12 +1855,19 @@ class BaseMLAnalyzer(ABC):
                     with open(ia_base_values_path, "rb") as f:
                         rep_shap_ia_base_values = pickle.load(f)
 
-                    self.shap_ia_results["shap_ia_values"][f"rep_{rep}"] = rep_shap_ia_values_test
-                    self.shap_ia_results["base_values"][f"rep_{rep}"] = rep_shap_ia_base_values
+                    self.shap_ia_results["shap_ia_values"][
+                        f"rep_{rep}"
+                    ] = rep_shap_ia_values_test
+                    self.shap_ia_results["base_values"][
+                        f"rep_{rep}"
+                    ] = rep_shap_ia_base_values
 
             try:
                 for rep in range(len(self.repeated_nested_scores)):
-                    print(f"scores for rep {rep}: ", self.repeated_nested_scores[f"rep_{rep}"])
+                    print(
+                        f"scores for rep {rep}: ",
+                        self.repeated_nested_scores[f"rep_{rep}"],
+                    )
 
             except Exception as e:
                 print("I do not contain all repetitions")
@@ -1676,31 +1887,27 @@ class BaseMLAnalyzer(ABC):
             rep = self.rep if self.rep is not None else "all"
 
             cv_results_filename = os.path.join(
-                self.spec_output_path,
-                f"{self.performance_name}_rep_{rep}.json"
+                self.spec_output_path, f"{self.performance_name}_rep_{rep}.json"
             )
             with open(cv_results_filename, "w") as file:
                 json.dump(self.repeated_nested_scores, file, indent=4)
 
             pred_vs_true_filename = os.path.join(
-                self.spec_output_path,
-                f"pred_vs_true_rep_{rep}.json"
+                self.spec_output_path, f"pred_vs_true_rep_{rep}.json"
             )
             with open(pred_vs_true_filename, "w") as file:
                 json.dump(self.pred_vs_true, file, indent=4)
 
             self.shap_results["feature_names"] = self.X.columns.tolist()
             shap_values_filename = os.path.join(
-                self.spec_output_path,
-                f"{self.shap_value_name}_rep_{rep}.pkl"
+                self.spec_output_path, f"{self.shap_value_name}_rep_{rep}.pkl"
             )
-            with open(shap_values_filename, 'wb') as f:
+            with open(shap_values_filename, "wb") as f:
                 pickle.dump(self.shap_results, f)
 
             if self.lin_model_coefs:
                 lin_model_coefs_filename = os.path.join(
-                    self.spec_output_path,
-                    f"{self.lin_model_coefs_name}_rep_{rep}.json"
+                    self.spec_output_path, f"{self.lin_model_coefs_name}_rep_{rep}.json"
                 )
                 with open(lin_model_coefs_filename, "w") as file:
                     json.dump(self.lin_model_coefs, file, indent=4)
@@ -1724,10 +1931,10 @@ class BaseMLAnalyzer(ABC):
         pass
 
     def calculate_shap_values(
-            self,
-            X_train_scaled: pd.DataFrame,
-            X_test_scaled: pd.DataFrame,
-            pipeline: Pipeline
+        self,
+        X_train_scaled: pd.DataFrame,
+        X_test_scaled: pd.DataFrame,
+        pipeline: Pipeline,
     ) -> tuple[np.ndarray, np.ndarray]:
         """
         Computes SHAP values for the test dataset using a tree-based or linear explainer.
@@ -1748,19 +1955,25 @@ class BaseMLAnalyzer(ABC):
         """
         if self.model_name == "elasticnet":
             n_samples = len(X_train_scaled)
-            explainer = shap.LinearExplainer(model=pipeline.named_steps["model"].regressor_,
-                                             masker=X_train_scaled,
-                                             nsamples=n_samples)
+            explainer = shap.LinearExplainer(
+                model=pipeline.named_steps["model"].regressor_,
+                masker=X_train_scaled,
+                nsamples=n_samples,
+            )
 
         elif self.model_name == "randomforestregressor":
-            explainer = shap.explainers.Tree(model=pipeline.named_steps["model"].regressor_,
-                                             feature_perturbation="tree_path_dependent")
+            explainer = shap.explainers.Tree(
+                model=pipeline.named_steps["model"].regressor_,
+                feature_perturbation="tree_path_dependent",
+            )
 
         else:
             raise ValueError(f"Model {self.model_name} not implemented")
 
         n_jobs = self.var_cfg["analysis"]["parallelize"]["shap_n_jobs"]
-        chunk_size = X_test_scaled.shape[0] // n_jobs + (X_test_scaled.shape[0] % n_jobs > 0)
+        chunk_size = X_test_scaled.shape[0] // n_jobs + (
+            X_test_scaled.shape[0] % n_jobs > 0
+        )
         print("chunk_size:", chunk_size)
 
         results = Parallel(
@@ -1769,7 +1982,7 @@ class BaseMLAnalyzer(ABC):
             verbose=3,
         )(
             delayed(self.calculate_shap_for_chunk)(
-                explainer, X_test_scaled[i: i + chunk_size]
+                explainer, X_test_scaled[i : i + chunk_size]
             )
             for i in range(0, X_test_scaled.shape[0], chunk_size)
         )
@@ -1781,9 +1994,9 @@ class BaseMLAnalyzer(ABC):
         return shap_values_array, base_values_array
 
     def calculate_shap_for_chunk(
-            self,
-            explainer: Union[shap.explainers.Tree, shap.explainers.LinearExplainer],
-            X_subset: pd.DataFrame
+        self,
+        explainer: Union[shap.explainers.Tree, shap.explainers.LinearExplainer],
+        X_subset: pd.DataFrame,
     ) -> tuple[np.ndarray, np.ndarray]:
         """
         Calculates SHAP values for a subset of data to enable parallel computation.
@@ -1844,5 +2057,9 @@ class BaseMLAnalyzer(ABC):
         caller_frame = inspect.getouterframes(current_frame, 2)
         method_name = caller_frame[1].function
 
-        print(f"        Executing {method_name} using Process ID: {process_id}, Thread: {thread_name}")
-        self.logger.log(f"        Executing {method_name} using Process ID: {process_id}, Thread: {thread_name}")
+        print(
+            f"        Executing {method_name} using Process ID: {process_id}, Thread: {thread_name}"
+        )
+        self.logger.log(
+            f"        Executing {method_name} using Process ID: {process_id}, Thread: {thread_name}"
+        )

@@ -9,46 +9,46 @@ from src.utils.Logger import Logger
 
 class NonLinearImputer:
     """
-        Implements a recursive partitioning-based imputation method for missing data, following the iterative imputation
-        framework inspired by the Multiple Imputation by Chained Equations (MICE) algorithm. This class uses decision trees
-        (classification or regression) to model and impute missing values for both categorical and continuous variables.
-        See Doove et al. (2014) for details on the algorithm: http://dx.doi.org/10.1016/j.csda.2013.10.025
+    Implements a recursive partitioning-based imputation method for missing data, following the iterative imputation
+    framework inspired by the Multiple Imputation by Chained Equations (MICE) algorithm. This class uses decision trees
+    (classification or regression) to model and impute missing values for both categorical and continuous variables.
+    See Doove et al. (2014) for details on the algorithm: http://dx.doi.org/10.1016/j.csda.2013.10.025
 
-        The algorithm follows these steps:
-        1. **Initialization**:
-           - Randomly initialize missing values for each column by sampling from observed values or using fallback defaults.
-           - Columns are processed in increasing order of missing values, ensuring that models are trained with as much
-             information as possible.
-        2. **Iterative Imputation**:
-           - For each column with missing values:
-             a. Fit a decision tree model (regression or classification) using the observed data.
-             b. Use the tree model to predict "leaves" for the rows with missing values.
-             c. Within each leaf, impute missing values by randomly sampling from observed values ("donors") within that leaf.
-             d. Append the newly imputed data to the working dataset for subsequent column processing.
-        3. **Repeat**:
-           - Perform the above steps iteratively for a predefined number of iterations (`max_iter`).
+    The algorithm follows these steps:
+    1. **Initialization**:
+       - Randomly initialize missing values for each column by sampling from observed values or using fallback defaults.
+       - Columns are processed in increasing order of missing values, ensuring that models are trained with as much
+         information as possible.
+    2. **Iterative Imputation**:
+       - For each column with missing values:
+         a. Fit a decision tree model (regression or classification) using the observed data.
+         b. Use the tree model to predict "leaves" for the rows with missing values.
+         c. Within each leaf, impute missing values by randomly sampling from observed values ("donors") within that leaf.
+         d. Append the newly imputed data to the working dataset for subsequent column processing.
+    3. **Repeat**:
+       - Perform the above steps iteratively for a predefined number of iterations (`max_iter`).
 
-        This method ensures consistency in imputation by leveraging relationships between features while preserving the
-        statistical properties of the data.
+    This method ensures consistency in imputation by leveraging relationships between features while preserving the
+    statistical properties of the data.
 
-        Attributes:
-            logger (Logger): Logger instance for capturing warnings and status messages.
-            max_iter (int): Maximum number of iterations to refine imputations. Default is 10.
-            random_state (Optional[int]): Random seed for reproducibility.
-            tree_max_depth (Optional[int]): Maximum depth for decision trees used in modeling.
-            rng_ (np.random.RandomState): Local random number generator instance.
-            models_ (dict): Dictionary storing fitted tree models for each column.
-            fallback_values_ (dict): Default fallback values (e.g., mean for continuous, mode for categorical) for each column.
-            columns_ (Optional[pd.Index]): List of columns in the dataset used during fitting.
-            categorical_mappings_ (dict): Mapping of categorical variable indices to their unique values (for encoding/decoding).
+    Attributes:
+        logger (Logger): Logger instance for capturing warnings and status messages.
+        max_iter (int): Maximum number of iterations to refine imputations. Default is 10.
+        random_state (Optional[int]): Random seed for reproducibility.
+        tree_max_depth (Optional[int]): Maximum depth for decision trees used in modeling.
+        rng_ (np.random.RandomState): Local random number generator instance.
+        models_ (dict): Dictionary storing fitted tree models for each column.
+        fallback_values_ (dict): Default fallback values (e.g., mean for continuous, mode for categorical) for each column.
+        columns_ (Optional[pd.Index]): List of columns in the dataset used during fitting.
+        categorical_mappings_ (dict): Mapping of categorical variable indices to their unique values (for encoding/decoding).
     """
 
     def __init__(
-            self,
-            logger: Logger,
-            max_iter: int = 10,
-            random_state: Optional[int] = None,
-            tree_max_depth: Optional[int] = None,
+        self,
+        logger: Logger,
+        max_iter: int = 10,
+        random_state: Optional[int] = None,
+        tree_max_depth: Optional[int] = None,
     ) -> None:
         """
         Initialize the NonLinearImputer.
@@ -141,8 +141,7 @@ class NonLinearImputer:
 
                 else:
                     tree_model = DecisionTreeClassifier(
-                        random_state=self.random_state,
-                        max_depth=self.tree_max_depth
+                        random_state=self.random_state, max_depth=self.tree_max_depth
                     )
 
                     y_obs, uniques = pd.factorize(y_obs)
@@ -153,7 +152,9 @@ class NonLinearImputer:
                 missing_indices = missing_indices_dict[col]
                 X_mis = df_imputed.loc[missing_indices, df_imputed.columns != col]
 
-                self._impute_values(df_imputed, col, tree_model, y_obs, X_obs, X_mis, missing_indices)
+                self._impute_values(
+                    df_imputed, col, tree_model, y_obs, X_obs, X_mis, missing_indices
+                )
 
                 self.models_[col] = tree_model
 
@@ -162,14 +163,14 @@ class NonLinearImputer:
         return self
 
     def _impute_values(
-            self,
-            df_imputed: pd.DataFrame,
-            col: str,
-            model: Union[DecisionTreeRegressor, DecisionTreeClassifier],
-            y_obs: Union[np.ndarray, pd.Series],
-            X_obs: pd.DataFrame,
-            X_mis: pd.DataFrame,
-            missing_indices: pd.Index,
+        self,
+        df_imputed: pd.DataFrame,
+        col: str,
+        model: Union[DecisionTreeRegressor, DecisionTreeClassifier],
+        y_obs: Union[np.ndarray, pd.Series],
+        X_obs: pd.DataFrame,
+        X_mis: pd.DataFrame,
+        missing_indices: pd.Index,
     ) -> None:
         """
         Impute missing values in a single column using a trained decision tree model and donor sampling.
@@ -224,7 +225,9 @@ class NonLinearImputer:
             indices_in_leaf = np.where(leaves_for_missing == leaf)[0]
 
             if donors.size > 0:
-                imputed_values_leaf = self.rng_.choice(donors, size=len(indices_in_leaf), replace=True)
+                imputed_values_leaf = self.rng_.choice(
+                    donors, size=len(indices_in_leaf), replace=True
+                )
                 imputed_values[indices_in_leaf] = imputed_values_leaf
 
             else:
@@ -278,7 +281,9 @@ class NonLinearImputer:
         """
         df = X.copy()
         if not all(col in df.columns for col in self.columns_):
-            raise ValueError("Input data must contain the same columns as during fitting.")
+            raise ValueError(
+                "Input data must contain the same columns as during fitting."
+            )
 
         columns_with_na = df.columns[df.isna().any()].tolist()
         for col in columns_with_na:
@@ -299,7 +304,9 @@ class NonLinearImputer:
 
             X_mis = df.loc[missing_mask, df.columns != col]
 
-            X_obs = self._df_imputed_.loc[self._df_imputed_[col].notna(), self._df_imputed_.columns != col]
+            X_obs = self._df_imputed_.loc[
+                self._df_imputed_[col].notna(), self._df_imputed_.columns != col
+            ]
             y_obs = self._df_imputed_.loc[self._df_imputed_[col].notna(), col]
 
             if col in self.categorical_mappings_:
@@ -313,12 +320,15 @@ class NonLinearImputer:
 
         for col in df.columns:
             if df[col].isna().any():
-
                 if col in self.fallback_values_:
                     fallback_value = self.fallback_values_[col]
 
-                    print(f"Filling NaNs in column '{col}' with fallback value: {fallback_value}")
-                    self.logger.log(f"    WARNING: Filling NaNs in column '{col}' with fallback value: {fallback_value}")
+                    print(
+                        f"Filling NaNs in column '{col}' with fallback value: {fallback_value}"
+                    )
+                    self.logger.log(
+                        f"    WARNING: Filling NaNs in column '{col}' with fallback value: {fallback_value}"
+                    )
                     df[col].fillna(fallback_value, inplace=True)
 
         return df

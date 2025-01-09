@@ -60,13 +60,16 @@ class ENRAnalyzer(BaseMLAnalyzer):
 
         if not self.split_reps:
             if self.rank == 0:
-
-                meta_vars_in_df = [col for col in self.meta_vars if col in self.X.columns]
+                meta_vars_in_df = [
+                    col for col in self.meta_vars if col in self.X.columns
+                ]
                 feature_names = self.X.columns.drop(meta_vars_in_df).tolist()
                 coefs_dict = defaultdict(lambda: defaultdict(lambda: defaultdict(dict)))
 
                 for rep in range(self.num_reps):
-                    best_models_file = os.path.join(self.spec_output_path, f"best_models_rep_{rep}.pkl")
+                    best_models_file = os.path.join(
+                        self.spec_output_path, f"best_models_rep_{rep}.pkl"
+                    )
 
                     if os.path.exists(best_models_file):
                         with open(best_models_file, "rb") as f:
@@ -78,14 +81,21 @@ class ENRAnalyzer(BaseMLAnalyzer):
 
                                 sorted_coefs_sub_dict = dict(
                                     sorted(
-                                        coefs_sub_dict.items(), key=lambda item: abs(item[1]), reverse=True
+                                        coefs_sub_dict.items(),
+                                        key=lambda item: abs(item[1]),
+                                        reverse=True,
                                     )
                                 )
 
-                                coefs_dict[f"rep_{rep}"][f"outer_fold_{outer_fold_idx}"][
-                                    f"imputation_{imputation_idx}"] = sorted_coefs_sub_dict
+                                coefs_dict[f"rep_{rep}"][
+                                    f"outer_fold_{outer_fold_idx}"
+                                ][
+                                    f"imputation_{imputation_idx}"
+                                ] = sorted_coefs_sub_dict
                     else:
-                        self.logger.log(f"WARNING: Best models file for rep {rep} not found")
+                        self.logger.log(
+                            f"WARNING: Best models file for rep {rep} not found"
+                        )
 
                 regular_dict = defaultdict_to_dict(coefs_dict)
                 self.lin_model_coefs = regular_dict

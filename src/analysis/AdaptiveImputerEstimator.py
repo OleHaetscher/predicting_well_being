@@ -87,7 +87,9 @@ class AdaptiveImputerEstimator(BaseEstimator):
         self.model.fit(X, y)
         return self
 
-    def predict(self, X: np.ndarray, return_std: bool = False) -> Union[np.ndarray, tuple[np.ndarray, np.ndarray]]:
+    def predict(
+        self, X: np.ndarray, return_std: bool = False
+    ) -> Union[np.ndarray, tuple[np.ndarray, np.ndarray]]:
         """
         Makes predictions using the fitted model.
 
@@ -119,5 +121,3 @@ class AdaptiveImputerEstimator(BaseEstimator):
             np.ndarray: Predicted class probabilities.
         """
         return self.model.predict_proba(X)
-
-

@@ -19,7 +19,9 @@ class ShuffledGroupKFold(BaseCrossValidator):
         random_state (Optional[int]): Seed for the random number generator for shuffling.
     """
 
-    def __init__(self, n_splits: int, random_state: Optional[int], shuffle: bool = True) -> None:
+    def __init__(
+        self, n_splits: int, random_state: Optional[int], shuffle: bool = True
+    ) -> None:
         """
         Initialize the ShuffledGroupKFold instance.
 
@@ -32,7 +34,9 @@ class ShuffledGroupKFold(BaseCrossValidator):
         self.shuffle = shuffle
         self.random_state = random_state
 
-    def get_n_splits(self, X: np.ndarray = None, y: np.ndarray = None, groups: np.ndarray = None) -> int:
+    def get_n_splits(
+        self, X: np.ndarray = None, y: np.ndarray = None, groups: np.ndarray = None
+    ) -> int:
         """
         Returns the number of splitting iterations in the cross-validator.
 
@@ -47,10 +51,10 @@ class ShuffledGroupKFold(BaseCrossValidator):
         return self.n_splits
 
     def split(
-            self,
-            X: Optional[np.ndarray],
-            y: Optional[np.ndarray] = None,
-            groups: Optional[np.ndarray] = None
+        self,
+        X: Optional[np.ndarray],
+        y: Optional[np.ndarray] = None,
+        groups: Optional[np.ndarray] = None,
     ) -> list[tuple[np.ndarray, np.ndarray]]:
         """
         Generate indices to split data into training and test sets based on group labels.

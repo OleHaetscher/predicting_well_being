@@ -49,7 +49,9 @@ class RFRAnalyzer(BaseMLAnalyzer):
         self.model = RandomForestRegressor(
             random_state=self.var_cfg["analysis"]["random_state"]
         )
-        self.rng_ = np.random.RandomState(self.var_cfg["analysis"]["random_state"])  # Local RNG
+        self.rng_ = np.random.RandomState(
+            self.var_cfg["analysis"]["random_state"]
+        )  # Local RNG
 
     def calculate_shap_ia_values(
         self,
@@ -79,8 +81,7 @@ class RFRAnalyzer(BaseMLAnalyzer):
 
         results = Parallel(n_jobs=n_jobs, verbose=1, backend=self.joblib_backend)(
             delayed(self.compute_shap_ia_values_for_chunk)(
-                pipeline.named_steps["model"].regressor_,
-                X_scaled[i: i + chunk_size]
+                pipeline.named_steps["model"].regressor_, X_scaled[i : i + chunk_size]
             )
             for i in range(0, X_scaled.shape[0], chunk_size)
         )
@@ -97,9 +98,9 @@ class RFRAnalyzer(BaseMLAnalyzer):
 
     def process_shap_ia_values(
         self,
-            results: list,
-            combo_index_mapping: dict[int, tuple[int]],
-            num_samples: int
+        results: list,
+        combo_index_mapping: dict[int, tuple[int]],
+        num_samples: int,
     ) -> tuple[np.ndarray, np.ndarray]:
         """
         Processes SHAP-IA results into arrays for analysis.
@@ -125,7 +126,9 @@ class RFRAnalyzer(BaseMLAnalyzer):
         combo_index_mapping_reverse = {v: k for k, v in combo_index_mapping.items()}
 
         ia_values_dct = [sample.dict_values for sample in results]
-        ia_values_arr = np.zeros((num_samples, len(combo_index_mapping)), dtype=np.float32)
+        ia_values_arr = np.zeros(
+            (num_samples, len(combo_index_mapping)), dtype=np.float32
+        )
 
         for sample_idx, sample_vals in enumerate(ia_values_dct):
             for feature_combo, value in sample_vals.items():
@@ -151,7 +154,9 @@ class RFRAnalyzer(BaseMLAnalyzer):
             list: List of SHAP-IQ InteractionValue objects for each sample in the subset.
         """
         self.logger.log(f"Currently processing these indices: {X_subset.index[:3]}")
-        self.logger.log(f"Calculating SHAP for subset of length {len(X_subset)} in process {os.getpid()}")
+        self.logger.log(
+            f"Calculating SHAP for subset of length {len(X_subset)} in process {os.getpid()}"
+        )
 
         explainer = shapiq.TreeExplainer(
             model=model,
@@ -165,6 +170,8 @@ class RFRAnalyzer(BaseMLAnalyzer):
             ia_values_obj = explainer.explain(x.values)
             ia_value_lst.append(ia_values_obj)
 
-        self.logger.log(f"SHAP IA computations for indices {X_subset.index[:3]} COMPLETED")
+        self.logger.log(
+            f"SHAP IA computations for indices {X_subset.index[:3]} COMPLETED"
+        )
 
         return ia_value_lst

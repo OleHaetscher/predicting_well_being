@@ -15,6 +15,7 @@ class SafeLogisticRegression:
         single_class_ (Optional[int or float]): The single class present during training,
                                                 or None if multiple classes are present.
     """
+
     def __init__(self, *args, **kwargs) -> None:
         """
         Initialize the SafeLogisticRegression wrapper.
