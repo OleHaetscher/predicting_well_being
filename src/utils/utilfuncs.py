@@ -1,35 +1,39 @@
 from collections import defaultdict
-from typing import Sequence
+from typing import Union, Any
 
 import pandas as pd
 
-from typing import Union, Any
-
 # Define nested typing aliases for nested dictionaries
-NestedDict = dict[str, Any]
+NestedDict = dict[Any, dict]
 
-def apply_name_mapping(features: list, name_mapping: dict, prefix: bool) -> list:
+
+def apply_name_mapping(features: list[str], name_mapping: NestedDict, prefix: bool) -> list[str]:
     """
-    Maps a list of features to their descriptive names based on the second-level name in the provided mapping dictionary.
+    Maps a list of features to their descriptive names based on the second-level name
+    in the provided mapping dictionary.
 
     Args:
-        features (list): A list of feature strings in the format "first_level_second_level".
-        name_mapping (dict):
+        features: A list of feature strings in the format "first_level_second_level".
+        name_mapping: A dictionary containing the mappings for descriptive names.
+                      The keys are first-level feature names, and the values are dictionaries
+                      mapping second-level feature names to their descriptive names.
+        prefix: If True, the feature strings include a prefix that should be used for mapping.
 
     Returns:
-        list: A list of mapped second-level feature names.
+        list: A list of mapped second-level feature names or the original features if no mapping is found.
     """
     mapped_features = []
     for feature in features:
         try:
-            # Remove the feature category prefix (e.g., pl or srmc)
             if prefix:
                 first_level, _, second_level = feature.partition('_')
                 second_level_mapped = name_mapping[first_level][second_level]
                 mapped_features.append(second_level_mapped)
-            else:  # if no prefix, we process the crit_dfs
+
+            else:
                 second_level_mapped = name_mapping["crit"][feature]
                 mapped_features.append(second_level_mapped)
+
         except KeyError:  # if meta-cols are passed
             print(f"No mapping found for {feature} ")
             mapped_features.append(feature)
@@ -37,22 +41,27 @@ def apply_name_mapping(features: list, name_mapping: dict, prefix: bool) -> list
     return mapped_features
 
 
-def format_df(df: pd.DataFrame, capitalize: bool = False, columns: list = None, decimals: int = 2) -> pd.DataFrame:
+def format_df(
+    df: pd.DataFrame,
+    capitalize: bool = False,
+    columns: list[str] = None,
+    decimals: int = 2
+) -> pd.DataFrame:
     """
     Formats specified numerical columns of a DataFrame to the given number of decimal places.
-    If no columns are specified, all numerical columns are formatted.
+    If no columns are specified, all numerical columns are formatted. Optionally, capitalizes
+    column names and string values.
 
     Args:
-        df (pd.DataFrame): The DataFrame containing the data.
-        capitalize (bool): If true, we capitalize the first word of the column name
-        columns (list, optional): List of column names to format. Defaults to None.
-        decimals (int): Number of decimal places to round to. Defaults to 2.
+        df: The DataFrame containing the data.
+        capitalize: If True, capitalize the first word of each column name and string values.
+        columns: List of column names to format. If None, all numerical columns are formatted.
+        decimals: Number of decimal places to round to.
 
     Returns:
         pd.DataFrame: A DataFrame with the specified (or all numerical) columns rounded to the given number of decimal places.
     """
     if columns is None:
-        # Select only numerical columns if no specific columns are provided
         columns = df.select_dtypes(include=['number']).columns.tolist()
 
     for column in columns:
@@ -61,27 +70,26 @@ def format_df(df: pd.DataFrame, capitalize: bool = False, columns: list = None, 
 
     if capitalize:
         df.columns = df.columns.str.capitalize()
-        # Capitalize string content in each column
-        for col in df.select_dtypes(include=['object', 'string']):  # Select only string columns
+        for col in df.select_dtypes(include=['object', 'string']):
             df[col] = df[col].str.capitalize()
 
     return df
 
 
-def custom_round(value, decimals, max_decimals=10):
+def custom_round(value: float, decimals: int, max_decimals: int = 10) -> float:
     """
     Custom rounding method to round to the specified number of decimals.
-    If the rounded result is zero, recursively increase the precision.
+    If the rounded result is zero, recursively increases the precision to avoid losing small values.
 
     Args:
-        value (float): The value to round.
-        decimals (int): Number of decimal places to round to.
-        max_decimals (int): Maximum precision to prevent infinite recursion. Defaults to 10.
+        value: The value to round.
+        decimals: Number of decimal places to round to.
+        max_decimals: Maximum precision to prevent infinite recursion.
 
     Returns:
         float: Rounded value with adjusted precision for small numbers.
     """
-    if pd.isna(value) or value == 0:  # Keep NaN or exact zero unchanged
+    if pd.isna(value) or value == 0:
         return value
 
     rounded = round(value, decimals)
@@ -96,14 +104,15 @@ def custom_round(value, decimals, max_decimals=10):
     return rounded
 
 
-def defaultdict_to_dict(dct):
+def defaultdict_to_dict(dct: Union[defaultdict, dict, NestedDict]) -> Union[dict, NestedDict]:
     """
+    Recursively converts a defaultdict into a standard Python dictionary.
 
     Args:
-        dct:
+        dct: The input dictionary, which may be a defaultdict or a nested dictionary containing defaultdict objects.
 
     Returns:
-
+        dict: A standard Python dictionary with no defaultdict objects.
     """
     if isinstance(dct, defaultdict):
         dct = {k: defaultdict_to_dict(v) for k, v in dct.items()}

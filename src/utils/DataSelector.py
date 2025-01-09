@@ -4,61 +4,75 @@ from copy import copy
 
 import pandas as pd
 
+from src.utils.utilfuncs import NestedDict
+
 
 class DataSelector:
     """
-    This class is responsible for selecting the data based on the given combination of features and samples.
-    It takes the full dataframe containing as the input and reduces the features and the samples according
-    to the given feature_combination - crit - samples_to_include combination as specified in the config
+    A class responsible for selecting data based on the specified combination of features and samples.
+
+    This class processes a full DataFrame by:
+    - Filtering rows based on the desired sample inclusion criteria.
+    - Filtering columns based on the specified feature combination.
+    - Extracting the criterion variable for analysis.
+    - Optionally selecting the best features based on prior results.
+
+    Attributes:
+        var_cfg (NestedDict): Configuration dictionary specifying data selection criteria.
+        df (pd.DataFrame): Input DataFrame containing all datasets, features, and metadata columns.
+        feature_combination (str): Feature combination to use for analysis (e.g., "pl_srmc_mac").
+        crit (str): Criterion variable to predict (e.g., "wb_state").
+        samples_to_include (str): Sample inclusion criteria (e.g., "selected", "control", "all").
+        meta_vars (list[str]): List of metadata columns needed for downstream processing.
+        datasets_included (list[str] | None): Datasets included based on the criteria.
+        X (pd.DataFrame | None): Selected features DataFrame.
+        y (pd.Series | None): Selected criterion variable.
     """
 
     def __init__(
         self,
-        var_cfg,
-        df,
-        feature_combination,
-        crit,
-        samples_to_include,
+        var_cfg: NestedDict,
+        df: pd.DataFrame,
+        feature_combination: str,
+        crit: str,
+        samples_to_include: str,
+        meta_vars: list[str],
     ):
         """
-        Constructor method of the DataSelector class.
+        Initializes the DataSelector with configuration and input data.
 
         Args:
-            var_cfg: YAML config determining which data to select for a specific analysis
-            df: DataFrame containg all data (all datasets + all features + meta columns)
-            feature_combination: Combination of features to use for the analysis, e.g., "pl_srmc_mac"
-            crit: Criterion to predict, e.g., "wb_state"
-            samples_to_include: Samples to include in the analysis, e.g., "selected"
+            var_cfg: Configuration dictionary specifying selection rules.
+            df: DataFrame containing all datasets, features, and metadata columns.
+            feature_combination: Feature combination to use for analysis (e.g., "pl_srmc_mac").
+            crit: Criterion variable to predict (e.g., "wb_state").
+            samples_to_include: Sample inclusion criteria (e.g., "selected", "control", "all").
+            meta_vars: List of metadata columns required for downstream processing.
         """
-        # Analysis specifics
         self.var_cfg = var_cfg
         self.feature_combination = feature_combination
         self.crit = crit
         self.samples_to_include = samples_to_include
+        self.meta_vars = meta_vars
+        self.datasets_included = None
 
-        self.id_grouping_col = self.var_cfg["analysis"]["cv"]["id_grouping_col"]
-        self.country_grouping_col = self.var_cfg["analysis"]["imputation"]["country_grouping_col"]
-        self.years_col = self.var_cfg["analysis"]["imputation"]["years_col"]
-        self.meta_vars = [self.id_grouping_col, self.country_grouping_col, self.years_col]
-
-        # Data
         self.df = df
         self.X = None
         self.y = None
-        self.rows_dropped_crit_na = None
 
-    def select_samples(self):
+    def select_samples(self) -> None:
         """
-        This method selects the samples based on the given combination using the indices that correspond
-        to the samples (e.g., cocoesm_1). It applies the following logic:
-            - for the analysis "selected" and "control", only selected datasets are used to reduce NaNs
-            - for the analysis "all", all datasets are used, independent of the features used for the analysis
-            - For the supplementary analyses: If a dataset does not contain the criterion, it is excluded
+        Selects samples based on the specified `samples_to_include` and `feature_combination`.
+
+        - For "selected" and "control", filters datasets to reduce NaNs and include only relevant samples.
+        - For "all", includes all datasets independent of features used for the analysis.
+        - Excludes rows with missing values in the criterion column.
+        - Optionally samples rows for testing if specified in the config.
 
         Some more specifics:
             - For the "sens" analysis where samples_to_include == selected, only samples with sensing data are included
-            - Another analysis was added to fit different features on a certain data subset (feature_combination -> _control)
-            - If defined in the config, we take a sample for test purposes
+            - Another analysis was added to fit certain features on a specific data subset (feature_combination -> _control,
+            i.e., pl_control, pl_srmc_control)
 
         At the end of the function, it sets the filtered df as the class attribute.
         """
@@ -72,6 +86,7 @@ class DataSelector:
                 if dataset in self.var_cfg["analysis"]["crit_available"][self.crit]
             ]
             self.datasets_included = datasets_included_filtered
+
             df_filtered = self.df[
                 self.df.index.to_series().apply(
                     lambda x: any(
@@ -89,14 +104,13 @@ class DataSelector:
                 ]
                 df_filtered = df_filtered[df_filtered[sens_columns].notna().any(axis=1)]
 
-            # New -> Add control analysis with reduced samples
             if "_control" in self.feature_combination:
                 sens_columns = [
                     col for col in self.df.columns if col.startswith("sens_")
                 ]
                 df_filtered = df_filtered[df_filtered[sens_columns].notna().any(axis=1)]
 
-        else:  # samples_tp_include == "all"
+        else:
             datasets_included_filtered = [
                 dataset
                 for dataset in self.var_cfg["analysis"]["feature_sample_combinations"][
@@ -105,6 +119,7 @@ class DataSelector:
                 if dataset in self.var_cfg["analysis"]["crit_available"][self.crit]
             ]
             self.datasets_included = datasets_included_filtered
+
             df_filtered = self.df[
                 self.df.index.to_series().apply(
                     lambda x: any(
@@ -113,12 +128,9 @@ class DataSelector:
                 )
             ]
 
-        # It may also be possible that some people have NaNs on the trait wb measures -> exclude
         crit_col = f"crit_{self.crit}"
         df_filtered_crit_na = df_filtered.dropna(subset=[crit_col])
-        self.rows_dropped_crit_na = len(df_filtered) - len(df_filtered_crit_na)
 
-        # Sample for testing, if defined in the config
         if self.var_cfg["analysis"]["tests"]["sample"]:
             sample_size = self.var_cfg["analysis"]["tests"]["sample_size"]
             df_filtered_crit_na = df_filtered_crit_na.sample(
@@ -127,17 +139,16 @@ class DataSelector:
 
         self.df = df_filtered_crit_na
 
-    def select_features(self):
+    def select_features(self) -> pd.DataFrame:
         """
-        This method filters the columns of self.df according to the specifics of a given analysis.
+        Filters the columns of the DataFrame based on the feature combination.
 
-        The config defines which features to include for a given analysis. Features of different categories
-        can be differentiated by their prefix (e.g., pl_ for person-level features, i.e., personality traits,
-        sociodemographics, and political attitudes).
-        Some meta-columns are always included, as we need them later in the pipeline (e.g., grouping_id_col
+        - Includes features with specific prefixes (e.g., "pl_", "srmc_", "mac_").
+        - Adds metadata columns needed for downstream processing.
+        - Handles special cases like removing certain features for specific analyses (_nnse)
 
-        for ensuring correct train-test-splits)
-
+        Returns:
+            pd.DataFrame: DataFrame containing only the selected features.
         """
         selected_columns = copy(self.meta_vars)
         if self.samples_to_include in ["all", "selected"]:
@@ -146,9 +157,6 @@ class DataSelector:
             if "all_in" in self.feature_combination:  # include all features
                 feature_prefix_lst = ["pl", "srmc", "sens", "mac"]
                 if self.samples_to_include == "selected":
-                    #self.logger.log(
-                    #    f"    WARNING: No selected analysis needed for {self.feature_combination}, stop computations"
-                    #)
                     sys.exit(0)
 
         elif self.samples_to_include == "control":
@@ -156,10 +164,8 @@ class DataSelector:
 
             no_control_lst = self.var_cfg["analysis"]["no_control_lst"]
             if self.feature_combination in no_control_lst:
-                #self.logger.log(
-                #    f"    WARNING: No control analysis needed for {self.feature_combination}, stop computations"
-                #)
                 sys.exit(0)
+
         else:
             raise ValueError(
                 f"Invalid value #{self.samples_to_include}# for attr samples_to_include"
@@ -174,7 +180,6 @@ class DataSelector:
                 if col.startswith(feature_cat):
                     selected_columns.append(col)
 
-        # remove neuroticism facets and self-esteem for selected analysis
         if "nnse" in self.feature_combination:
             to_remove = [
                 "pl_depression",
@@ -185,38 +190,45 @@ class DataSelector:
             selected_columns = [col for col in selected_columns if col not in to_remove]
 
         X = self.df[selected_columns].copy()
-
         setattr(self, "X", X)
+
         return X
 
-    def select_criterion(self):
+    def select_criterion(self) -> pd.Series:
         """
-        This method loads the criterion (reactivities, either EB estimates of random slopes or OLS slopes)
-        according to the specifications in the var_cfg.
-        It gets the specific name of the file that contains the data, connect it to the feature path for the
-        current analysis and sets the loaded features as a class attribute "y".
+        Extracts the criterion column based on the analysis specification.
+
+        Ensures the number of rows in the feature DataFrame matches the criterion.
+
+        Returns:
+            pd.Series: The criterion column.
         """
         y = self.df[f"crit_{self.crit}"]
+
         assert len(self.X) == len(
             y
         ), f"Features and criterion differ in length, len(X) == {len(self.X)}, len(y) == {len(y)}"
 
         setattr(self, "y", y)
+
         return y
 
-    def select_best_features(self, df: pd.DataFrame, root_path: str, model: str, num_features: int = 10):
+    def select_best_features(
+        self, df: pd.DataFrame, root_path: str, model: str, num_features: int = 10
+    ) -> pd.DataFrame:
         """
-        This method gets the best features for a given analysis setting
-        (feature_combination, crit, samples_to_include, model) from the specific path
-        and filters the df accordingly
+        Filters the DataFrame to include only the top features based on prior feature selection results.
 
         Args:
-            df: The DataFrame containing the data
-            root_path: The root path to the feature selection results
-            model: mode, e.g., "randomforestregressor"
+            df: The DataFrame containing the data.
+            root_path: Root directory containing feature selection results.
+            model: Model type (e.g., "randomforestregressor").
+            num_features: Number of top features to include. Defaults to 10.
+
+        Note: This is only used in postprocessing, not in the ML-analysis.
 
         Returns:
-            Filtered df including only the x best features (and no meta columns)
+            pd.DataFrame: Filtered DataFrame including only the top features.
         """
         file_path = os.path.join(
             root_path,
@@ -231,4 +243,5 @@ class DataSelector:
             feature_lst = [line.strip() for line in file]
 
         df_filtered = df[feature_lst]
+
         return df_filtered
