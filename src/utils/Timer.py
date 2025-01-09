@@ -37,6 +37,7 @@ class Timer:
         Returns:
             Callable: The wrapped function with timing logic.
         """
+
         def wrapper(*args: Any, **kwargs: Any) -> Any:
             """
             A wrapper function to time the execution of the decorated function.

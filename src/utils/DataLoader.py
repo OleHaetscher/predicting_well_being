@@ -12,6 +12,7 @@ class DataLoader:
     Attributes:
         nrows (int): Number of rows to read when loading CSV files. If None, all rows are loaded.
     """
+
     def __init__(self, nrows: int = None) -> None:
         """
         Initializes the DataLoader with the specified number of rows to load (for CSV files).
@@ -40,13 +41,22 @@ class DataLoader:
             FileNotFoundError: If no CSV files are found in the specified directory.
         """
         files = os.listdir(path_to_dataset)
-        csv_files = [file for file in files if file.endswith('.csv') and os.path.isfile(os.path.join(path_to_dataset, file))]
+        csv_files = [
+            file
+            for file in files
+            if file.endswith(".csv")
+            and os.path.isfile(os.path.join(path_to_dataset, file))
+        ]
 
         if not csv_files:
             raise FileNotFoundError(f"No CSV datasets found in {path_to_dataset}")
 
-        df_dct = {file[:-4]: pd.read_csv(os.path.join(path_to_dataset, file), encoding="latin", nrows=self.nrows)
-                  for file in csv_files}
+        df_dct = {
+            file[:-4]: pd.read_csv(
+                os.path.join(path_to_dataset, file), encoding="latin", nrows=self.nrows
+            )
+            for file in csv_files
+        }
 
         for key, df in df_dct.items():
             if "Unnamed: 0" in df.columns:
@@ -71,7 +81,12 @@ class DataLoader:
             FileNotFoundError: If no R files are found in the specified directory.
         """
         files = os.listdir(path_to_dataset)
-        r_files = [file for file in files if file.endswith(('.RData', '.rds')) and os.path.isfile(os.path.join(path_to_dataset, file))]
+        r_files = [
+            file
+            for file in files
+            if file.endswith((".RData", ".rds"))
+            and os.path.isfile(os.path.join(path_to_dataset, file))
+        ]
 
         if not r_files:
             raise FileNotFoundError(f"No R datasets found in {path_to_dataset}")
@@ -81,7 +96,9 @@ class DataLoader:
             full_path = os.path.join(path_to_dataset, r_file)
             result = pyreadr.read_r(full_path)
 
-            df_dct[r_file[:-4]] = next(iter(result.values()))  # Assuming one DataFrame per R file
+            df_dct[r_file[:-4]] = next(
+                iter(result.values())
+            )  # Assuming one DataFrame per R file
 
         return df_dct
 
@@ -110,6 +127,6 @@ class DataLoader:
         Returns:
             pd.DataFrame: DataFrame loaded from the JSON file.
         """
-        with open(path_to_dataset, 'r') as f:
+        with open(path_to_dataset, "r") as f:
             data = json.load(f)
         return data

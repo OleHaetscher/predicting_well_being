@@ -17,7 +17,9 @@ class ConfigParser:
     """
 
     @staticmethod
-    def cfg_parser(cfg: Union[dict, NestedDict], var_type: Optional[str], *args: str) -> list[Union[dict, NestedDict]]:
+    def cfg_parser(
+        cfg: Union[dict, NestedDict], var_type: Optional[str], *args: str
+    ) -> list[Union[dict, NestedDict]]:
         """
         Parses a multi-level configuration dictionary and retrieves entries based on `var_type` and optional `name` values.
 
@@ -51,7 +53,9 @@ class ConfigParser:
                 node: The current node being traversed, which can be a dictionary, list, or other data type.
             """
             if isinstance(node, dict):
-                if "var_type" in node and (var_type is None or node["var_type"] == var_type):
+                if "var_type" in node and (
+                    var_type is None or node["var_type"] == var_type
+                ):
                     if args:
                         if "name" in node and node["name"] in args:
                             result.append(node)
@@ -70,7 +74,9 @@ class ConfigParser:
         return result
 
     @staticmethod
-    def find_key_in_config(cfg: Union[dict, NestedDict], key: str) -> list[Union[dict, NestedDict]]:
+    def find_key_in_config(
+        cfg: Union[dict, NestedDict], key: str
+    ) -> list[Union[dict, NestedDict]]:
         """
         Searches a multi-level configuration dictionary for entries containing a specified key.
 

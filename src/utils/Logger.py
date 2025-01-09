@@ -14,10 +14,17 @@ class Logger:
     Attributes:
         log_file (str): The path to the log file for this logger instance.
     """
+
     _instances: dict[tuple[int, str], "Logger"] = {}
     _instance_lock: dict[tuple[int, str], bool] = {}
 
-    def __new__(cls, log_dir: str = 'tests', log_file: str = 'log', rank: int = 0, rep: str = "all") -> "Logger":
+    def __new__(
+        cls,
+        log_dir: str = "tests",
+        log_file: str = "log",
+        rank: int = 0,
+        rep: str = "all",
+    ) -> "Logger":
         """
         Creates or retrieves a singleton instance of Logger based on the combination of `rank` and `rep`.
 
@@ -34,7 +41,6 @@ class Logger:
 
         # Ensure thread-safe access to _instances
         if key not in cls._instances:
-
             # Lock per key to prevent race conditions between processes
             cls._instance_lock[key] = cls._instance_lock.get(key, False)
 
@@ -42,8 +48,10 @@ class Logger:
                 cls._instance_lock[key] = True
                 try:
                     os.makedirs(log_dir, exist_ok=True)
-                    current_time = datetime.now().strftime('%Y-%m-%d_%H-%M-%S-%f')
-                    log_file_with_rank_rep = f'{log_file}_{current_time}_rank{rank}_rep{rep}.log'
+                    current_time = datetime.now().strftime("%Y-%m-%d_%H-%M-%S-%f")
+                    log_file_with_rank_rep = (
+                        f"{log_file}_{current_time}_rank{rank}_rep{rep}.log"
+                    )
                     log_file_path = os.path.join(log_dir, log_file_with_rank_rep)
 
                     instance = super(Logger, cls).__new__(cls)
@@ -61,9 +69,11 @@ class Logger:
         """
         Initializes the log file by writing a header indicating the logger's initialization time.
         """
-        with open(self.log_file, 'a') as file:
+        with open(self.log_file, "a") as file:
             file.write("-----------------------------------------------\n")
-            file.write(f"Logger initialized at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}.\n")
+            file.write(
+                f"Logger initialized at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}.\n"
+            )
             file.write("-----------------------------------------------\n")
 
     def log(self, message: str) -> None:
@@ -73,5 +83,5 @@ class Logger:
         Args:
             message: The log message to write.
         """
-        with open(self.log_file, 'a') as file:
+        with open(self.log_file, "a") as file:
             file.write(f"### - {message}\n")

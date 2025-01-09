@@ -53,7 +53,7 @@ class SanityChecker:
         self,
         df: pd.DataFrame,
         dataset: Optional[str] = None,
-        df_before_final_sel: Optional[pd.DataFrame] = None
+        df_before_final_sel: Optional[pd.DataFrame] = None,
     ) -> None:
         """
         Runs all configured sanity checks on the provided DataFrame.
@@ -67,14 +67,14 @@ class SanityChecker:
         self.logger.log("  Conduct sanity checks")
 
         sanity_checks = [
-            (self.check_nans, {'df': None}),
-            (self.check_country, {'df': None, 'dataset': dataset}),
-            (self.check_dtypes, {'df': None}),
-            (self.check_num_rows, {'df': None, 'dataset': dataset}),
-            (self.calc_reliability, {'df': df_before_final_sel, 'dataset': dataset}),
-            (self.check_zero_variance, {'df': None}),
-            (self.check_scale_endpoints, {'df': None, 'dataset': dataset}),
-            (self.calc_correlations, {'df': None}),
+            (self.check_nans, {"df": None}),
+            (self.check_country, {"df": None, "dataset": dataset}),
+            (self.check_dtypes, {"df": None}),
+            (self.check_num_rows, {"df": None, "dataset": dataset}),
+            (self.calc_reliability, {"df": df_before_final_sel, "dataset": dataset}),
+            (self.check_zero_variance, {"df": None}),
+            (self.check_scale_endpoints, {"df": None, "dataset": dataset}),
+            (self.calc_correlations, {"df": None}),
         ]
 
         for method, kwargs in sanity_checks:
@@ -110,7 +110,9 @@ class SanityChecker:
         nan_per_col_summary = df.isna().mean()
         for col, nan_ratio_col in nan_per_col_summary.items():
             if nan_ratio_col > nan_thresh:
-                self.logger.log(f"    WARNING: Column '{col}' has {np.round(nan_ratio_col * 100,3)}% NaNs.")
+                self.logger.log(
+                    f"    WARNING: Column '{col}' has {np.round(nan_ratio_col * 100,3)}% NaNs."
+                )
 
         self.logger.log(".")
         nan_row_count = 0
@@ -119,14 +121,20 @@ class SanityChecker:
             if nan_ratio_row > nan_thresh:
                 nan_row_count += 1
 
-        self.logger.log(f"    WARNING: {nan_row_count} rows have more then {nan_thresh*100}% NaNs.")
+        self.logger.log(
+            f"    WARNING: {nan_row_count} rows have more then {nan_thresh*100}% NaNs."
+        )
 
         self.logger.log(".")
         cats_to_check = ["pl_", "srmc_", "sens_"]
-        columns_to_check = [col for col in df.columns if any(cat in col for cat in cats_to_check)]
+        columns_to_check = [
+            col for col in df.columns if any(cat in col for cat in cats_to_check)
+        ]
 
         zero_non_nan_count = (df[columns_to_check].notna().sum(axis=1) == 0).sum()
-        self.logger.log(f"    WARNING: {zero_non_nan_count} rows have 0 non-NaN values in {cats_to_check}.")
+        self.logger.log(
+            f"    WARNING: {zero_non_nan_count} rows have 0 non-NaN values in {cats_to_check}."
+        )
 
     def check_country(self, df: pd.DataFrame, dataset: str) -> None:
         """
@@ -145,7 +153,9 @@ class SanityChecker:
 
         zero_non_nan_count_country = df["other_country"].isna().sum()
         if zero_non_nan_count_country > 0:
-            self.logger.log(f"    WARNING: {zero_non_nan_count_country} in country column")
+            self.logger.log(
+                f"    WARNING: {zero_non_nan_count_country} in country column"
+            )
 
             if dataset != "cocoesm":  # here we can infer the country
                 country = country_mapping[dataset]
@@ -169,16 +179,21 @@ class SanityChecker:
         """
         for col, dtype in df.dtypes.items():
             if not pd.api.types.is_numeric_dtype(dtype):
-
-                self.logger.log(f"    WARNING: Column '{col}' has non-numeric dtype: {dtype}, try to convert")
+                self.logger.log(
+                    f"    WARNING: Column '{col}' has non-numeric dtype: {dtype}, try to convert"
+                )
                 df[col] = df[col].replace("not_a_number", np.nan)
 
                 try:
-                    df[col] = df[col].apply(lambda x: pd.to_numeric(x) if not isinstance(x, tuple) else x)
+                    df[col] = df[col].apply(
+                        lambda x: pd.to_numeric(x) if not isinstance(x, tuple) else x
+                    )
                     self.logger.log(f"      Conversion successful for column '{col}'")
 
                 except ValueError:
-                    self.logger.log(f"      WARNING: Conversion was not successful. ML Models may fail ")
+                    self.logger.log(
+                        f"      WARNING: Conversion was not successful. ML Models may fail "
+                    )
 
     def check_num_rows(self, df: pd.DataFrame, dataset: str) -> None:
         """
@@ -200,9 +215,13 @@ class SanityChecker:
         sens_columns = [col for col in df.columns if col.startswith("sens_")]
         if dataset == "zpid":
             df_sensing_filtered = df[df[sens_columns].notna().any(axis=1)]
-            self.logger.log(f"    Num rows of df for {dataset} with sensing data: {len(df_sensing_filtered)}")
-            self.logger.log(f"    Percentage of samples that contain sensing data: "
-                            f"{np.round(len(df_sensing_filtered) / len(df), 3)}")
+            self.logger.log(
+                f"    Num rows of df for {dataset} with sensing data: {len(df_sensing_filtered)}"
+            )
+            self.logger.log(
+                f"    Percentage of samples that contain sensing data: "
+                f"{np.round(len(df_sensing_filtered) / len(df), 3)}"
+            )
 
         if dataset in ["cocout", "cocoms"]:
             for wave in df["other_studyWave"].unique():
@@ -210,10 +229,16 @@ class SanityChecker:
                 self.logger.log(f"      Num rows of df for {wave}: {len(df_tmp)}")
 
                 if dataset == "cocoms":
-                    df_sensing_filtered = df_tmp[df_tmp[sens_columns].notna().any(axis=1)]
-                    self.logger.log(f"    Num rows of df for {wave} with sensing data: {len(df_sensing_filtered)}")
-                    self.logger.log(f"    Percentage of samples of df for {wave} that contain sensing data: "
-                                    f"{np.round(len(df_sensing_filtered) / len(df_tmp), 3)}")
+                    df_sensing_filtered = df_tmp[
+                        df_tmp[sens_columns].notna().any(axis=1)
+                    ]
+                    self.logger.log(
+                        f"    Num rows of df for {wave} with sensing data: {len(df_sensing_filtered)}"
+                    )
+                    self.logger.log(
+                        f"    Percentage of samples of df for {wave} that contain sensing data: "
+                        f"{np.round(len(df_sensing_filtered) / len(df_tmp), 3)}"
+                    )
 
     def log_num_features_per_cat(self, df: pd.DataFrame, dataset: str) -> None:
         """
@@ -238,10 +263,14 @@ class SanityChecker:
 
         for cat in features_cats:
             self.logger.log(".")
-            col_lst_per_cat = [f"{cat}_{col}" for col in self.fix_cfg["var_assignments"][cat]]
+            col_lst_per_cat = [
+                f"{cat}_{col}" for col in self.fix_cfg["var_assignments"][cat]
+            ]
             cols_in_df = [col for col in df.columns if col in col_lst_per_cat]
 
-            self.logger.log(f"        Number of columns for feature category {cat}: {len(cols_in_df)}")
+            self.logger.log(
+                f"        Number of columns for feature category {cat}: {len(cols_in_df)}"
+            )
             for i in cols_in_df:
                 self.logger.log(f"          {i}")
 
@@ -284,7 +313,7 @@ class SanityChecker:
                         f"srmc_{var_name}_mean",
                         f"srmc_{var_name}_sd",
                         f"srmc_{var_name}_min",
-                        f"srmc_{var_name}_max"
+                        f"srmc_{var_name}_max",
                     ]
                 else:
                     return [f"srmc_{var_name}"]
@@ -300,25 +329,30 @@ class SanityChecker:
         for meta_cat in ["person_level", "esm_based"]:
             for cat, cat_entries in self.fix_cfg[meta_cat].items():
                 for var in cat_entries:
-
-                    if 'scale_endpoints' not in var or dataset not in var.get('item_names', []):
+                    if "scale_endpoints" not in var or dataset not in var.get(
+                        "item_names", []
+                    ):
                         continue
 
                     if var["name"] in ["sleep_quality", "number_interaction_partners"]:
                         scale_min = 0
                     else:
-                        scale_min = var['scale_endpoints']['min']
-                    scale_max = var['scale_endpoints']['max']
+                        scale_min = var["scale_endpoints"]["min"]
+                    scale_max = var["scale_endpoints"]["max"]
 
-                    column_names = get_column_names(cat, var['name'])
+                    column_names = get_column_names(cat, var["name"])
 
                     for col_name in column_names:
                         if col_name not in df.columns:
-                            self.logger.log(f"WARNING: Skip column '{col_name}', not found in DataFrame")
+                            self.logger.log(
+                                f"WARNING: Skip column '{col_name}', not found in DataFrame"
+                            )
                             continue
 
                         column_values = df[col_name]
-                        outside_values = column_values[(column_values < scale_min) | (column_values > scale_max)]
+                        outside_values = column_values[
+                            (column_values < scale_min) | (column_values > scale_max)
+                        ]
 
                         if not outside_values.empty:
                             self.logger.log(
@@ -370,10 +404,12 @@ class SanityChecker:
             df: The DataFrame containing the questionnaire data.
             dataset: The name of the dataset being processed.
         """
-        scale_entries = self.config_parser_class.find_key_in_config(cfg=self.fix_cfg, key="scale_endpoints")
+        scale_entries = self.config_parser_class.find_key_in_config(
+            cfg=self.fix_cfg, key="scale_endpoints"
+        )
 
         for scale in scale_entries:
-            scale_name = scale['name']
+            scale_name = scale["name"]
             if dataset in scale["item_names"]:
                 item_names = scale["item_names"][dataset]
 
@@ -389,11 +425,15 @@ class SanityChecker:
                 # Calculate Cronbach's alpha
                 alpha = pg.cronbach_alpha(data=items_df)[0]
                 if np.isnan(alpha):
-                    self.logger.log(f"    WARNING: Not enough items to calculate Cronbach's alpha for {scale_name} in {dataset}.")
+                    self.logger.log(
+                        f"    WARNING: Not enough items to calculate Cronbach's alpha for {scale_name} in {dataset}."
+                    )
                     continue
 
                 if alpha < self.cfg_sanity_checks["cron_alpha_thresh"]:
-                    self.logger.log(f"    WARNING: Low reliability (alpha = {alpha:.3f}) for {scale_name} in {dataset}.")
+                    self.logger.log(
+                        f"    WARNING: Low reliability (alpha = {alpha:.3f}) for {scale_name} in {dataset}."
+                    )
             else:
                 continue
 
@@ -409,24 +449,35 @@ class SanityChecker:
             df: The DataFrame to analyze.
         """
         df_cols_adjusted = df.copy()
-        df_cols_adjusted.columns = [col.split('_', 1)[1] if '_' in col else col for col in df.columns]
+        df_cols_adjusted.columns = [
+            col.split("_", 1)[1] if "_" in col else col for col in df.columns
+        ]
 
-        dataset_spec_cols = [col for col in df_cols_adjusted.columns if col in self.cfg_sanity_checks["expected_pos_corrs"]]
+        dataset_spec_cols = [
+            col
+            for col in df_cols_adjusted.columns
+            if col in self.cfg_sanity_checks["expected_pos_corrs"]
+        ]
         corr_table = df_cols_adjusted[dataset_spec_cols].corr()
 
         negative_correlations = []
         for i in range(len(corr_table.columns)):
             for j in range(i + 1, len(corr_table.columns)):  # Only check upper triangle
-
                 corr_value = corr_table.iloc[i, j]
                 if corr_value < 0:
-                    negative_correlations.append((corr_table.columns[i], corr_table.columns[j], corr_value))
+                    negative_correlations.append(
+                        (corr_table.columns[i], corr_table.columns[j], corr_value)
+                    )
 
         if negative_correlations:
             for col1, col2, corr in negative_correlations:
-                self.logger.log(f"    WARNING: Negative correlation detected between '{col1}' and '{col2}': {corr:.3f}")
+                self.logger.log(
+                    f"    WARNING: Negative correlation detected between '{col1}' and '{col2}': {corr:.3f}"
+                )
 
-    def sanity_check_sensing_data(self, df_sensing: pd.DataFrame, dataset: str) -> pd.DataFrame:
+    def sanity_check_sensing_data(
+        self, df_sensing: pd.DataFrame, dataset: str
+    ) -> pd.DataFrame:
         """
         Performs sanity checks on sensing data before computing summary statistics.
 
@@ -441,10 +492,12 @@ class SanityChecker:
         Returns:
             pd.DataFrame: The updated DataFrame after performing the sanity checks.
         """
-        vars_phone_sensing = self.config_parser_class.cfg_parser(self.fix_cfg["sensing_based"]["phone"],
-                                                                 "continuous")
-        vars_gps_weather = self.config_parser_class.cfg_parser(self.fix_cfg["sensing_based"]["gps_weather"],
-                                                               "continuous")
+        vars_phone_sensing = self.config_parser_class.cfg_parser(
+            self.fix_cfg["sensing_based"]["phone"], "continuous"
+        )
+        vars_gps_weather = self.config_parser_class.cfg_parser(
+            self.fix_cfg["sensing_based"]["gps_weather"], "continuous"
+        )
         total_vars = vars_phone_sensing + vars_gps_weather
 
         for sens_var in total_vars:
@@ -452,11 +505,15 @@ class SanityChecker:
             nan_percentage = df_sensing[col].isna().sum() / len(df_sensing)
 
             if nan_percentage > self.cfg_sanity_checks["sensing"]["nan_col_thresh"]:
-                self.logger.log(f"        WARNING: {np.round(nan_percentage*100, 1)}% NaNs in {col}")
+                self.logger.log(
+                    f"        WARNING: {np.round(nan_percentage*100, 1)}% NaNs in {col}"
+                )
             zero_percentage = (df_sensing[col] == 0).mean()
 
             if zero_percentage > self.cfg_sanity_checks["sensing"]["zero_col_thresh"]:
-                self.logger.log(f"        WARNING: {np.round(zero_percentage*100, 1)}% 0s in {col}")
+                self.logger.log(
+                    f"        WARNING: {np.round(zero_percentage*100, 1)}% 0s in {col}"
+                )
 
             mean = np.round(df_sensing[col].mean(), 3)
             sd = np.round(df_sensing[col].std(), 3)

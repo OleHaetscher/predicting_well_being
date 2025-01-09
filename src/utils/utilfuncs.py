@@ -7,7 +7,9 @@ import pandas as pd
 NestedDict = dict[Any, dict]
 
 
-def apply_name_mapping(features: list[str], name_mapping: NestedDict, prefix: bool) -> list[str]:
+def apply_name_mapping(
+    features: list[str], name_mapping: NestedDict, prefix: bool
+) -> list[str]:
     """
     Maps a list of features to their descriptive names based on the second-level name
     in the provided mapping dictionary.
@@ -26,7 +28,7 @@ def apply_name_mapping(features: list[str], name_mapping: NestedDict, prefix: bo
     for feature in features:
         try:
             if prefix:
-                first_level, _, second_level = feature.partition('_')
+                first_level, _, second_level = feature.partition("_")
                 second_level_mapped = name_mapping[first_level][second_level]
                 mapped_features.append(second_level_mapped)
 
@@ -45,7 +47,7 @@ def format_df(
     df: pd.DataFrame,
     capitalize: bool = False,
     columns: list[str] = None,
-    decimals: int = 2
+    decimals: int = 2,
 ) -> pd.DataFrame:
     """
     Formats specified numerical columns of a DataFrame to the given number of decimal places.
@@ -62,7 +64,7 @@ def format_df(
         pd.DataFrame: A DataFrame with the specified (or all numerical) columns rounded to the given number of decimal places.
     """
     if columns is None:
-        columns = df.select_dtypes(include=['number']).columns.tolist()
+        columns = df.select_dtypes(include=["number"]).columns.tolist()
 
     for column in columns:
         if column in df:
@@ -70,7 +72,7 @@ def format_df(
 
     if capitalize:
         df.columns = df.columns.str.capitalize()
-        for col in df.select_dtypes(include=['object', 'string']):
+        for col in df.select_dtypes(include=["object", "string"]):
             df[col] = df[col].str.capitalize()
 
     return df
@@ -98,13 +100,17 @@ def custom_round(value: float, decimals: int, max_decimals: int = 10) -> float:
         print(f"Max decimals reached for {value}")
         return 0
 
-    if rounded == 0 and decimals < max_decimals:  # If rounded result is zero, increase precision
+    if (
+        rounded == 0 and decimals < max_decimals
+    ):  # If rounded result is zero, increase precision
         return custom_round(value, decimals + 1, max_decimals)
 
     return rounded
 
 
-def defaultdict_to_dict(dct: Union[defaultdict, dict, NestedDict]) -> Union[dict, NestedDict]:
+def defaultdict_to_dict(
+    dct: Union[defaultdict, dict, NestedDict]
+) -> Union[dict, NestedDict]:
     """
     Recursively converts a defaultdict into a standard Python dictionary.
 
@@ -117,4 +123,3 @@ def defaultdict_to_dict(dct: Union[defaultdict, dict, NestedDict]) -> Union[dict
     if isinstance(dct, defaultdict):
         dct = {k: defaultdict_to_dict(v) for k, v in dct.items()}
     return dct
-

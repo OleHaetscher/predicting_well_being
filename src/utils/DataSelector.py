@@ -239,7 +239,7 @@ class DataSelector:
             f"top_{num_features}_features.txt",
         )
 
-        with open(file_path, 'r') as file:
+        with open(file_path, "r") as file:
             feature_lst = [line.strip() for line in file]
 
         df_filtered = df[feature_lst]

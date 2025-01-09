@@ -25,23 +25,60 @@ class SlurmHandler:
         """
         parser = argparse.ArgumentParser(description="CoCo WB ML - OH")
 
-        parser.add_argument("--prediction_model", type=str, help="elasticnet or randomforestregressor")
+        parser.add_argument(
+            "--prediction_model", type=str, help="elasticnet or randomforestregressor"
+        )
         parser.add_argument("--crit", type=str, help="state or trait wb/pa/na")
-        parser.add_argument("--feature_combination", type=str, help="Feature combinations defined in the PreReg")
-        parser.add_argument("--samples_to_include", type=str, help="all, selected, control")
+        parser.add_argument(
+            "--feature_combination",
+            type=str,
+            help="Feature combinations defined in the PreReg",
+        )
+        parser.add_argument(
+            "--samples_to_include", type=str, help="all, selected, control"
+        )
         parser.add_argument("--output_path", type=str, help="Output file path.")
 
-        parser.add_argument("--comp_shap_ia_values", type=self.str2bool, help="Calculate IA values for RFR, Bool")
-        parser.add_argument("--parallelize_imputation_runs", type=self.str2bool, help="Parallelize imputed datasets, Bool")
-        parser.add_argument("--parallelize_inner_cv", type=self.str2bool, help="Parallelize inner CV, Bool")
-        parser.add_argument("--parallelize_shap_ia_values", type=self.str2bool, help="Parallelize SHAP IA values, Bool")
-        parser.add_argument("--parallelize_shap", type=self.str2bool, help="Parallelize SHAP calculations, Bool")
-        parser.add_argument("--split_reps", type=self.str2bool, help="Split repetitions into separate jobs, Bool")
+        parser.add_argument(
+            "--comp_shap_ia_values",
+            type=self.str2bool,
+            help="Calculate IA values for RFR, Bool",
+        )
+        parser.add_argument(
+            "--parallelize_imputation_runs",
+            type=self.str2bool,
+            help="Parallelize imputed datasets, Bool",
+        )
+        parser.add_argument(
+            "--parallelize_inner_cv",
+            type=self.str2bool,
+            help="Parallelize inner CV, Bool",
+        )
+        parser.add_argument(
+            "--parallelize_shap_ia_values",
+            type=self.str2bool,
+            help="Parallelize SHAP IA values, Bool",
+        )
+        parser.add_argument(
+            "--parallelize_shap",
+            type=self.str2bool,
+            help="Parallelize SHAP calculations, Bool",
+        )
+        parser.add_argument(
+            "--split_reps",
+            type=self.str2bool,
+            help="Split repetitions into separate jobs, Bool",
+        )
 
         # We decided not to use MPI for final analysis, so this is always false (defined in the cfg)
         # parser.add_argument("--use_mpi", type=self.str2bool, help="Use mpi4py, Bool")
 
-        parser.add_argument("--rep", type=int, default=None, help="Repetition number, used when split_reps is true")
+        parser.add_argument(
+            "--rep",
+            type=int,
+            default=None,
+            help="Repetition number, used when split_reps is true",
+        )
 
         args = parser.parse_args()
 
@@ -77,7 +114,9 @@ class SlurmHandler:
             raise ValueError("Boolean value expected.")
 
     @staticmethod
-    def update_cfg_with_slurm_vars(var_cfg: NestedDict, args: argparse.Namespace) -> NestedDict:
+    def update_cfg_with_slurm_vars(
+        var_cfg: NestedDict, args: argparse.Namespace
+    ) -> NestedDict:
         """
         Updates the current YAML configuration (`var_cfg`) with SLURM-provided arguments.
 
@@ -119,7 +158,9 @@ class SlurmHandler:
                 var_cfg["analysis"]["output_path"] = arg_value
 
             else:
-                print(f"Warning: Argument {arg_name} not recognized. Skipping update for this argument.")
+                print(
+                    f"Warning: Argument {arg_name} not recognized. Skipping update for this argument."
+                )
 
         return var_cfg
 
@@ -209,12 +250,14 @@ class SlurmHandler:
         samples_to_include = var_cfg["analysis"]["params"]["samples_to_include"]
         prediction_model = var_cfg["analysis"]["params"]["prediction_model"]
 
-        local_output_path = os.path.normpath(os.path.join(
-            base_output_dir,
-            feature_combination,
-            samples_to_include,
-            crit,
-            prediction_model)
+        local_output_path = os.path.normpath(
+            os.path.join(
+                base_output_dir,
+                feature_combination,
+                samples_to_include,
+                crit,
+                prediction_model,
+            )
         )
 
         if not os.path.exists(local_output_path):

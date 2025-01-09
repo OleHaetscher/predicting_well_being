@@ -29,9 +29,13 @@ class ClusterSummarizer:
         num_reps (int): Number of repetitions expected for the results.
         rng_ (np.random.RandomState): Random number generator seeded for reproducibility.
     """
-    def __init__(self, base_result_dir: str,
-                 var_config_path: str = "../../configs/config_var.yaml",
-                 num_reps: int = 10) -> None:
+
+    def __init__(
+        self,
+        base_result_dir: str,
+        var_config_path: str = "../../configs/config_var.yaml",
+        num_reps: int = 10,
+    ) -> None:
         """
         Initializes the ClusterSummarizer with the base directory and configuration.
 
@@ -70,7 +74,9 @@ class ClusterSummarizer:
 
             # Summarize CV results
             if all(f"cv_results_rep_{i}.json" in files for i in range(self.num_reps)):
-                cv_results_files = [f"cv_results_rep_{i}.json" for i in range(self.num_reps)]
+                cv_results_files = [
+                    f"cv_results_rep_{i}.json" for i in range(self.num_reps)
+                ]
                 print(f"process cv_results in {root}")
                 summary = self.summarize_cv_results(root, cv_results_files)
 
@@ -81,11 +87,15 @@ class ClusterSummarizer:
             # Summarize linear model coefficients
             if all(f"best_models_rep_{i}.pkl" in files for i in range(self.num_reps)):
                 if "elasticnet" in root:
-                    best_models_files = [f"best_models_rep_{i}.pkl" for i in range(self.num_reps)]
+                    best_models_files = [
+                        f"best_models_rep_{i}.pkl" for i in range(self.num_reps)
+                    ]
                     print(f"process lin_model_coefs in {root}")
                     summary = self.summarize_lin_model_coefs(root, best_models_files)
 
-                    with open(os.path.join(root, "lin_model_coefs_summary.json"), "w") as f:
+                    with open(
+                        os.path.join(root, "lin_model_coefs_summary.json"), "w"
+                    ) as f:
                         json.dump(summary, f, indent=4)
                     print(f"stored summarized lin_model_coefs in {root}")
 
@@ -100,17 +110,27 @@ class ClusterSummarizer:
                 print(f"stored summarized shap_values in {root}")
 
             # Summarize SHAP IA Values
-            if all(f"shap_ia_values_rep_{i}.pkl" in files for i in range(self.num_reps)):
-                shap_ia_values_files = [f"shap_ia_values_rep_{i}.pkl" for i in range(self.num_reps)]
-                shap_ia_base_values_files = [f"shap_ia_base_values_rep_{i}.pkl" for i in range(self.num_reps)]
+            if all(
+                f"shap_ia_values_rep_{i}.pkl" in files for i in range(self.num_reps)
+            ):
+                shap_ia_values_files = [
+                    f"shap_ia_values_rep_{i}.pkl" for i in range(self.num_reps)
+                ]
+                shap_ia_base_values_files = [
+                    f"shap_ia_base_values_rep_{i}.pkl" for i in range(self.num_reps)
+                ]
                 print(f"process SHAP IA values in {root}")
-                summary = self.summarize_shap_ia_values(root, shap_ia_values_files, shap_ia_base_values_files)
+                summary = self.summarize_shap_ia_values(
+                    root, shap_ia_values_files, shap_ia_base_values_files
+                )
 
                 with open(os.path.join(root, "shap_ia_values_summary.pkl"), "wb") as f:
                     pickle.dump(summary, f)
                 print(f"stored summarized shap_ia_values in {root}")
 
-    def summarize_metrics(self, data_records: list[dict[str, int]], identifier_cols: list[str]) -> dict[str, dict[str, float]]:
+    def summarize_metrics(
+        self, data_records: list[dict[str, int]], identifier_cols: list[str]
+    ) -> dict[str, dict[str, float]]:
         """
         Computes summary statistics (mean and standard deviation) from a list of metric records.
 
@@ -132,22 +152,24 @@ class ClusterSummarizer:
         overall_mean = df[metric_cols].mean().round(4).to_dict()
         overall_std = df[metric_cols].std(ddof=0).round(5).to_dict()
 
-        sd_within_folds = df.groupby(['rep', 'outer_fold'])[metric_cols].std(ddof=0)
+        sd_within_folds = df.groupby(["rep", "outer_fold"])[metric_cols].std(ddof=0)
         sd_within_folds_across_imps = sd_within_folds.mean().round(5).to_dict()
 
-        sd_across_folds = df.groupby(['rep', 'imputation'])[metric_cols].std(ddof=0)
+        sd_across_folds = df.groupby(["rep", "imputation"])[metric_cols].std(ddof=0)
         sd_across_folds_within_imps = sd_across_folds.mean().round(5).to_dict()
 
         summary = {
-            'm': overall_mean,
-            'sd_across_folds_imps': overall_std,
-            'sd_within_folds_across_imps': sd_within_folds_across_imps,
-            'sd_across_folds_within_imps': sd_across_folds_within_imps
+            "m": overall_mean,
+            "sd_across_folds_imps": overall_std,
+            "sd_within_folds_across_imps": sd_within_folds_across_imps,
+            "sd_across_folds_within_imps": sd_across_folds_within_imps,
         }
 
         return summary
 
-    def summarize_cv_results(self, result_dir: str, file_names: list[str]) -> dict[str, dict[str, float]]:
+    def summarize_cv_results(
+        self, result_dir: str, file_names: list[str]
+    ) -> dict[str, dict[str, float]]:
         """
         Aggregates and summarizes cross-validation (CV) results from multiple files.
 
@@ -166,28 +188,30 @@ class ClusterSummarizer:
 
         for rep_idx, file_name in enumerate(file_names):
             file_path = os.path.join(result_dir, file_name)
-            with open(file_path, 'r') as f:
+            with open(file_path, "r") as f:
                 data = json.load(f)
 
             for outer_fold_key, imps in data.items():
-                outer_fold_idx = int(outer_fold_key.split('_')[-1])
+                outer_fold_idx = int(outer_fold_key.split("_")[-1])
 
                 for imp_key, metrics in imps.items():
-                    imp_idx = int(imp_key.split('_')[-1])
+                    imp_idx = int(imp_key.split("_")[-1])
                     record = {
-                        'rep': rep_idx,
-                        'outer_fold': outer_fold_idx,
-                        'imputation': imp_idx
+                        "rep": rep_idx,
+                        "outer_fold": outer_fold_idx,
+                        "imputation": imp_idx,
                     }
                     record.update(metrics)
                     data_records.append(record)
 
-        identifier_cols = ['rep', 'outer_fold', 'imputation']
+        identifier_cols = ["rep", "outer_fold", "imputation"]
         summary = self.summarize_metrics(data_records, identifier_cols)
 
         return summary
 
-    def summarize_lin_model_coefs(self, result_dir: str, file_names: list[str]) -> dict[str, dict[str, float]]:
+    def summarize_lin_model_coefs(
+        self, result_dir: str, file_names: list[str]
+    ) -> dict[str, dict[str, float]]:
         """
         Aggregates coefficients from linear models across repetitions, folds, and imputations.
 
@@ -215,38 +239,47 @@ class ClusterSummarizer:
 
         for rep_idx, file_name in enumerate(file_names):
             file_path = os.path.join(result_dir, file_name)
-            with open(file_path, 'rb') as f:
+            with open(file_path, "rb") as f:
                 data = pickle.load(f)
 
             for outer_fold_idx, imps in enumerate(data):
                 for imp_idx, model in enumerate(imps):
-                    if hasattr(model, 'coef_'):
-
+                    if hasattr(model, "coef_"):
                         coefs = dict(zip(model.feature_names_in_, model.coef_.ravel()))
                         record = {
-                            'rep': rep_idx,
-                            'outer_fold': outer_fold_idx,
-                            'imputation': imp_idx
+                            "rep": rep_idx,
+                            "outer_fold": outer_fold_idx,
+                            "imputation": imp_idx,
                         }
 
                         for feature_name, coef_value in coefs.items():
                             record[feature_name] = coef_value
                         data_records.append(record)
 
-        identifier_cols = ['rep', 'outer_fold', 'imputation']
+        identifier_cols = ["rep", "outer_fold", "imputation"]
         summary = self.summarize_metrics(data_records, identifier_cols)
         df = pd.DataFrame(data_records)
 
         metric_cols = [col for col in df.columns if col not in identifier_cols]
         non_zero_counts = (df[metric_cols] != 0).sum().to_dict()
 
-        sorted_features = sorted(summary['m'].keys(), key=lambda k: abs(summary['m'][k]), reverse=True)
+        sorted_features = sorted(
+            summary["m"].keys(), key=lambda k: abs(summary["m"][k]), reverse=True
+        )
 
-        summary['m'] = {k: summary['m'][k] for k in sorted_features}
-        summary['sd_across_folds_imps'] = {k: summary['sd_across_folds_imps'][k] for k in sorted_features}
-        summary['sd_within_folds_across_imps'] = {k: summary['sd_within_folds_across_imps'][k] for k in sorted_features}
-        summary['sd_across_folds_within_imps'] = {k: summary['sd_across_folds_within_imps'][k] for k in sorted_features}
-        summary['non_zero_coefs'] = {k: non_zero_counts.get(k, 0) for k in sorted_features}
+        summary["m"] = {k: summary["m"][k] for k in sorted_features}
+        summary["sd_across_folds_imps"] = {
+            k: summary["sd_across_folds_imps"][k] for k in sorted_features
+        }
+        summary["sd_within_folds_across_imps"] = {
+            k: summary["sd_within_folds_across_imps"][k] for k in sorted_features
+        }
+        summary["sd_across_folds_within_imps"] = {
+            k: summary["sd_across_folds_within_imps"][k] for k in sorted_features
+        }
+        summary["non_zero_coefs"] = {
+            k: non_zero_counts.get(k, 0) for k in sorted_features
+        }
 
         return summary
 
@@ -279,41 +312,59 @@ class ClusterSummarizer:
 
         for file_name in file_names:
             file_path = os.path.join(result_dir, file_name)
-            with open(file_path, 'rb') as f:
+            with open(file_path, "rb") as f:
                 shap_data = pickle.load(f)
 
             if "shap_values" in shap_data:
-                shap_values_list.append(np.expand_dims(shap_data["shap_values"], axis=0))
+                shap_values_list.append(
+                    np.expand_dims(shap_data["shap_values"], axis=0)
+                )
 
             if "data" in shap_data:
                 data_list.append(np.expand_dims(shap_data["data"], axis=0))
 
             if "base_values" in shap_data:
-                base_values_list.append(np.expand_dims(shap_data["base_values"], axis=0))
+                base_values_list.append(
+                    np.expand_dims(shap_data["base_values"], axis=0)
+                )
 
             if feature_names is None:
                 feature_names = shap_data.get("feature_names")
 
-        shap_values_array = np.concatenate(shap_values_list, axis=0)  # Shape: (reps, ...)
+        shap_values_array = np.concatenate(
+            shap_values_list, axis=0
+        )  # Shape: (reps, ...)
         data_array = np.concatenate(data_list, axis=0)  # Shape: (reps, ...)
-        base_values_array = np.concatenate(base_values_list, axis=0)  # Shape: (reps, ...)
+        base_values_array = np.concatenate(
+            base_values_list, axis=0
+        )  # Shape: (reps, ...)
 
         results = {}
-        for key, values in zip(["shap_values", "data", "base_values"],
-                               [shap_values_array, data_array, base_values_array]):
+        for key, values in zip(
+            ["shap_values", "data", "base_values"],
+            [shap_values_array, data_array, base_values_array],
+        ):
             imp_axis = 3 if values.ndim > 3 else 2
 
             results[key] = {
-                "mean": np.mean(values, axis=(0, imp_axis)).tolist(),  # Average across repetitions and imputations
-                "std": np.std(values, axis=(0, imp_axis)).tolist()  # Std dev across repetitions and imputations
+                "mean": np.mean(
+                    values, axis=(0, imp_axis)
+                ).tolist(),  # Average across repetitions and imputations
+                "std": np.std(
+                    values, axis=(0, imp_axis)
+                ).tolist(),  # Std dev across repetitions and imputations
             }
 
         results["feature_names"] = feature_names
 
         return results
 
-    def summarize_shap_ia_values(self, result_dir: str,
-                                 shap_ia_values_files: list[str], shap_ia_base_values_files: list[str]) -> NestedDict:
+    def summarize_shap_ia_values(
+        self,
+        result_dir: str,
+        shap_ia_values_files: list[str],
+        shap_ia_base_values_files: list[str],
+    ) -> NestedDict:
         """
         Aggregates SHAP interaction (IA) values across repetitions and imputations.
 
@@ -354,7 +405,9 @@ class ClusterSummarizer:
                 ia_values_all_reps[f"rep_{rep_idx}"] = shap_ia_results_reps_imps
 
             else:
-                print(f"Warning: SHAP IA values file for repetition {rep_idx} not found.")
+                print(
+                    f"Warning: SHAP IA values file for repetition {rep_idx} not found."
+                )
                 continue
 
         for rep_idx, file_name in enumerate(shap_ia_base_values_files):
@@ -366,18 +419,27 @@ class ClusterSummarizer:
                 base_values_all_reps[f"rep_{rep_idx}"] = base_values_reps_imps
 
             else:
-                print(f"Warning: SHAP IA base values file for repetition {rep_idx} not found.")
+                print(
+                    f"Warning: SHAP IA base values file for repetition {rep_idx} not found."
+                )
                 continue
 
         # Aggregate across repetitions and imputations
-        ia_values_agg_reps_imps, base_value_agg_reps_imps = self.agg_ia_values_across_reps(
+        (
+            ia_values_agg_reps_imps,
+            base_value_agg_reps_imps,
+        ) = self.agg_ia_values_across_reps(
             ia_value_dct=ia_values_all_reps,
             base_value_dct=base_values_all_reps,
         )
 
         # Aggregate results across samples
-        abs_ia_values_agg_reps_imps_samples, ia_values_agg_reps_imps_samples, \
-        abs_base_value_agg_reps_imps_samples, base_value_agg_reps_imps_samples = self.agg_results_across_samples(
+        (
+            abs_ia_values_agg_reps_imps_samples,
+            ia_values_agg_reps_imps_samples,
+            abs_base_value_agg_reps_imps_samples,
+            base_value_agg_reps_imps_samples,
+        ) = self.agg_results_across_samples(
             ia_value_dct=ia_values_agg_reps_imps.copy(),
             base_value_dct=base_value_agg_reps_imps.copy(),
         )
@@ -386,13 +448,13 @@ class ClusterSummarizer:
         abs_ia_values_agg_reps_imps_samples = self.map_combo_to_features(
             abs_ia_values_agg_reps_imps_samples,
             feature_index_mapping=feature_index_mapping,
-            combo_index_mapping=combo_index_mapping
+            combo_index_mapping=combo_index_mapping,
         )
         # Map combinations to features - raw ia values across samples
         ia_values_agg_reps_imps_samples = self.map_combo_to_features(
             ia_values_agg_reps_imps_samples,
             feature_index_mapping=feature_index_mapping,
-            combo_index_mapping=combo_index_mapping
+            combo_index_mapping=combo_index_mapping,
         )
         # Map combinations to features - ia values not aggregated across samples
         ia_values_agg_reps_imps = self.map_combo_to_features(
@@ -403,15 +465,13 @@ class ClusterSummarizer:
         # Sample aggregated results
         num_samples = self.var_cfg["analysis"]["shap_ia_values"]["num_samples"]
         ia_values_sample, base_values_sample = self.sample_aggregated_results(
-            ia_values_agg_reps_imps,
-            base_value_agg_reps_imps,
-            num_samples=num_samples
+            ia_values_agg_reps_imps, base_value_agg_reps_imps, num_samples=num_samples
         )
 
         # Prepare results dictionary to return
         shap_ia_results_processed = {
             "ia_values_sample": ia_values_sample,
-            "base_values_sample": base_values_sample
+            "base_values_sample": base_values_sample,
         }
 
         # Get top interactions # here we want the abs and the raw means
@@ -419,7 +479,6 @@ class ClusterSummarizer:
             abs_mapped_results_agg_samples=abs_ia_values_agg_reps_imps_samples,
             mapped_results_agg_samples=ia_values_agg_reps_imps_samples,
             mapped_results_no_agg_samples=ia_values_agg_reps_imps,
-
         )
 
         # Get most interacting features # here we only need the abs means
@@ -429,15 +488,18 @@ class ClusterSummarizer:
 
         shap_ia_results_processed["top_interactions"] = top_interactions_per_order
         shap_ia_results_processed["top_interacting_features"] = top_interacting_features
-        shap_ia_results_processed['abs_ia_value_agg_reps_imps_samples'] = abs_ia_values_agg_reps_imps_samples
+        shap_ia_results_processed[
+            "abs_ia_value_agg_reps_imps_samples"
+        ] = abs_ia_values_agg_reps_imps_samples
 
         print("Processed all SHAP IA values.")
 
         return shap_ia_results_processed
 
     @staticmethod
-    def agg_ia_values_across_reps(ia_value_dct: dict[str, np.ndarray], base_value_dct: dict[str, np.ndarray]) -> tuple[
-        dict[str, np.ndarray], dict[str, np.ndarray]]:
+    def agg_ia_values_across_reps(
+        ia_value_dct: dict[str, np.ndarray], base_value_dct: dict[str, np.ndarray]
+    ) -> tuple[dict[str, np.ndarray], dict[str, np.ndarray]]:
         """
         Aggregates interaction attribution (IA) values and base values across repetitions.
 
@@ -457,22 +519,30 @@ class ClusterSummarizer:
                 - Aggregated IA values with keys 'mean' and 'std'.
                 - Aggregated base values with keys 'mean' and 'std'.
         """
-        ia_values_array = np.stack(list(ia_value_dct.values()), axis=-1)  # Shape: (samples, combinations, imputations, repetitions)
+        ia_values_array = np.stack(
+            list(ia_value_dct.values()), axis=-1
+        )  # Shape: (samples, combinations, imputations, repetitions)
 
-        ia_mean = np.mean(ia_values_array, axis=-1)  # Resulting shape: (samples, combinations)
-        ia_std = np.std(ia_values_array, axis=-1)  # Resulting shape: (samples, combinations)
+        ia_mean = np.mean(
+            ia_values_array, axis=-1
+        )  # Resulting shape: (samples, combinations)
+        ia_std = np.std(
+            ia_values_array, axis=-1
+        )  # Resulting shape: (samples, combinations)
 
-        base_values_array = np.stack(list(base_value_dct.values()), axis=-1)  # Shape: (samples, imputations, repetitions)
+        base_values_array = np.stack(
+            list(base_value_dct.values()), axis=-1
+        )  # Shape: (samples, imputations, repetitions)
 
         base_mean = np.mean(base_values_array, axis=-1)  # Resulting shape: (samples,)
         base_std = np.std(base_values_array, axis=-1)  # Resulting shape: (samples,)
 
-        return ({'mean': ia_mean, 'std': ia_std},
-                {'mean': base_mean, 'std': base_std})
+        return ({"mean": ia_mean, "std": ia_std}, {"mean": base_mean, "std": base_std})
 
     @staticmethod
-    def agg_results_across_samples(ia_value_dct: dict[str, np.ndarray], base_value_dct: dict[str, np.ndarray]) -> tuple[
-        dict, dict, dict, dict]:
+    def agg_results_across_samples(
+        ia_value_dct: dict[str, np.ndarray], base_value_dct: dict[str, np.ndarray]
+    ) -> tuple[dict, dict, dict, dict]:
         """
         Aggregates IA and base values across samples to compute mean and standard deviation.
 
@@ -494,35 +564,46 @@ class ClusterSummarizer:
                 - Absolute mean and std of base values across samples.
                 - Raw mean and std of base values across samples.
         """
-        ia_mean = ia_value_dct['mean']  # Shape: (samples, combinations)
+        ia_mean = ia_value_dct["mean"]  # Shape: (samples, combinations)
 
         ia_abs_mean_across_samples = {
-            'mean': np.mean(np.abs(ia_mean), axis=0),  # Mean of absolute values, shape: (combinations,)
-            'std': np.std(np.abs(ia_mean), axis=0)  # Std of absolute values, shape: (combinations,)
+            "mean": np.mean(
+                np.abs(ia_mean), axis=0
+            ),  # Mean of absolute values, shape: (combinations,)
+            "std": np.std(
+                np.abs(ia_mean), axis=0
+            ),  # Std of absolute values, shape: (combinations,)
         }
 
         ia_raw_mean_across_samples = {
-            'mean': np.mean(ia_mean, axis=0),  # Mean of raw values, shape: (combinations,)
-            'std': np.std(ia_mean, axis=0)  # Std of raw values, shape: (combinations,)
+            "mean": np.mean(
+                ia_mean, axis=0
+            ),  # Mean of raw values, shape: (combinations,)
+            "std": np.std(ia_mean, axis=0),  # Std of raw values, shape: (combinations,)
         }
 
-        base_mean = base_value_dct['mean']  # Shape: (samples,)
+        base_mean = base_value_dct["mean"]  # Shape: (samples,)
 
         base_abs_mean_across_samples = {
-            'mean': np.mean(np.abs(base_mean)),  # Scalar
-            'std': np.std(np.abs(base_mean))  # Scalar
+            "mean": np.mean(np.abs(base_mean)),  # Scalar
+            "std": np.std(np.abs(base_mean)),  # Scalar
         }
 
         base_raw_mean_across_samples = {
-            'mean': np.mean(base_mean),  # Scalar
-            'std': np.std(base_mean)  # Scalar
+            "mean": np.mean(base_mean),  # Scalar
+            "std": np.std(base_mean),  # Scalar
         }
 
-        return (ia_abs_mean_across_samples, ia_raw_mean_across_samples,
-                base_abs_mean_across_samples, base_raw_mean_across_samples)
+        return (
+            ia_abs_mean_across_samples,
+            ia_raw_mean_across_samples,
+            base_abs_mean_across_samples,
+            base_raw_mean_across_samples,
+        )
 
-    def sample_aggregated_results(self, ia_value_dct: NestedDict, base_value_dct: NestedDict,
-                                  num_samples: int) -> tuple[NestedDict, NestedDict]:
+    def sample_aggregated_results(
+        self, ia_value_dct: NestedDict, base_value_dct: NestedDict, num_samples: int
+    ) -> tuple[NestedDict, NestedDict]:
         """
         Samples a fixed number of IA and base values from the aggregated results.
 
@@ -540,27 +621,34 @@ class ClusterSummarizer:
                 - Sampled IA values for each combination.
                 - Sampled base values.
         """
-        total_samples = next(iter(ia_value_dct.values()))['mean'].shape[0]
-        sampled_indices = self.rng_.choice(total_samples, size=num_samples, replace=False)
+        total_samples = next(iter(ia_value_dct.values()))["mean"].shape[0]
+        sampled_indices = self.rng_.choice(
+            total_samples, size=num_samples, replace=False
+        )
 
         sampled_ia_values = {}
         sampled_base_values = {}
 
         for combination, stats in ia_value_dct.items():
-            ia_mean_sampled = stats['mean'][sampled_indices]
-            ia_std_sampled = stats['std'][sampled_indices]
+            ia_mean_sampled = stats["mean"][sampled_indices]
+            ia_std_sampled = stats["std"][sampled_indices]
 
-            sampled_ia_values[combination] = {'mean': ia_mean_sampled, 'std': ia_std_sampled}
+            sampled_ia_values[combination] = {
+                "mean": ia_mean_sampled,
+                "std": ia_std_sampled,
+            }
 
-        sampled_base_values['mean'] = base_value_dct['mean'][sampled_indices]
-        sampled_base_values['std'] = base_value_dct['std'][sampled_indices]
+        sampled_base_values["mean"] = base_value_dct["mean"][sampled_indices]
+        sampled_base_values["std"] = base_value_dct["std"][sampled_indices]
 
         return sampled_ia_values, sampled_base_values
 
-    def map_combo_to_features(self,
-                              ia_mean_across_samples: dict[str, np.ndarray],
-                              feature_index_mapping: dict[int, str],
-                              combo_index_mapping: dict[int, tuple[int, int]]) -> NestedDict:
+    def map_combo_to_features(
+        self,
+        ia_mean_across_samples: dict[str, np.ndarray],
+        feature_index_mapping: dict[int, str],
+        combo_index_mapping: dict[int, tuple[int, int]],
+    ) -> NestedDict:
         """
         Maps feature combinations (index-based) to their corresponding feature names.
 
@@ -579,41 +667,50 @@ class ClusterSummarizer:
             dict: A dictionary where keys are tuples of feature names, and values are dicts containing 'mean' and 'std' arrays.
         """
         result = {}
-        mean_array = ia_mean_across_samples['mean']
-        std_array = ia_mean_across_samples['std']
+        mean_array = ia_mean_across_samples["mean"]
+        std_array = ia_mean_across_samples["std"]
 
         match mean_array.ndim:
             case 1:
                 num_combinations = len(mean_array)
                 for combination_index in range(num_combinations):
-
                     feature_indices = combo_index_mapping[combination_index]
-                    feature_names = tuple(feature_index_mapping[idx] for idx in feature_indices)
+                    feature_names = tuple(
+                        feature_index_mapping[idx] for idx in feature_indices
+                    )
 
                     mean_value = mean_array[combination_index]
                     std_value = std_array[combination_index]
 
-                    result[feature_names] = {'mean': mean_value, 'std': std_value}
+                    result[feature_names] = {"mean": mean_value, "std": std_value}
 
             case 2:
                 num_samples, num_combinations = mean_array.shape
                 for combination_index in range(num_combinations):
-
                     feature_indices = combo_index_mapping[combination_index]
-                    feature_names = tuple(feature_index_mapping[idx] for idx in feature_indices)
+                    feature_names = tuple(
+                        feature_index_mapping[idx] for idx in feature_indices
+                    )
 
                     mean_values = mean_array[:, combination_index]
                     std_values = std_array[:, combination_index]
 
-                    result[feature_names] = {'mean': mean_values, 'std': std_values}
+                    result[feature_names] = {"mean": mean_values, "std": std_values}
 
             case _:
-                raise ValueError("Expected mean array to be 1D or 2D, but got an array with shape: "
-                                 f"{mean_array.shape}")
+                raise ValueError(
+                    "Expected mean array to be 1D or 2D, but got an array with shape: "
+                    f"{mean_array.shape}"
+                )
         return result
 
-    def get_top_interactions(self, abs_mapped_results_agg_samples: NestedDict, mapped_results_agg_samples: NestedDict,
-                             mapped_results_no_agg_samples: NestedDict, top_n: int = 20) -> NestedDict:
+    def get_top_interactions(
+        self,
+        abs_mapped_results_agg_samples: NestedDict,
+        mapped_results_agg_samples: NestedDict,
+        mapped_results_no_agg_samples: NestedDict,
+        top_n: int = 20,
+    ) -> NestedDict:
         """
         Identifies the top N most important feature interactions.
 
@@ -639,67 +736,81 @@ class ClusterSummarizer:
         abs_order_dict = defaultdict(list)
         for feature_tuple, value_dict in abs_mapped_results_agg_samples.items():
             order = len(feature_tuple)
-            mean_value = value_dict['mean']
-            std_value = value_dict['std']
+            mean_value = value_dict["mean"]
+            std_value = value_dict["std"]
             abs_order_dict[order].append((feature_tuple, mean_value, std_value))
 
         # Step 2: Group the interactions by their order for raw values
         raw_order_dict = defaultdict(list)
         for feature_tuple, value_dict in mapped_results_agg_samples.items():
             order = len(feature_tuple)
-            mean_value = value_dict['mean']
-            std_value = value_dict['std']
+            mean_value = value_dict["mean"]
+            std_value = value_dict["std"]
             raw_order_dict[order].append((feature_tuple, mean_value, std_value))
 
         # Step 3: Extract the top N interactions for absolute values
         abs_res = {}
         abs_selected_interactions = set()
         for order, interactions in abs_order_dict.items():
-            interactions_sorted = sorted(interactions, key=lambda x: abs(x[1]), reverse=True)
+            interactions_sorted = sorted(
+                interactions, key=lambda x: abs(x[1]), reverse=True
+            )
 
             top_interactions = interactions_sorted[:top_n]
-            abs_selected_interactions.update([feat_tuple for feat_tuple, _, _ in top_interactions])
+            abs_selected_interactions.update(
+                [feat_tuple for feat_tuple, _, _ in top_interactions]
+            )
 
-            abs_res[f'order_{order}'] = {
-                feat_tuple: {'mean': mean_val, 'std': std_val} for feat_tuple, mean_val, std_val in top_interactions
+            abs_res[f"order_{order}"] = {
+                feat_tuple: {"mean": mean_val, "std": std_val}
+                for feat_tuple, mean_val, std_val in top_interactions
             }
 
         # Step 4: Extract the top N interactions for raw values
         raw_res = {}
         raw_selected_interactions = set()
         for order, interactions in raw_order_dict.items():
-            interactions_sorted = sorted(interactions, key=lambda x: abs(x[1]), reverse=True)
+            interactions_sorted = sorted(
+                interactions, key=lambda x: abs(x[1]), reverse=True
+            )
 
             top_interactions = interactions_sorted[:top_n]
 
-            raw_selected_interactions.update([feat_tuple for feat_tuple, _, _ in top_interactions])
+            raw_selected_interactions.update(
+                [feat_tuple for feat_tuple, _, _ in top_interactions]
+            )
 
-            raw_res[f'order_{order}'] = {
-                feat_tuple: {'mean': mean_val, 'std': std_val} for feat_tuple, mean_val, std_val in top_interactions
+            raw_res[f"order_{order}"] = {
+                feat_tuple: {"mean": mean_val, "std": std_val}
+                for feat_tuple, mean_val, std_val in top_interactions
             }
 
         # Step 5: Filter mapped_results_no_agg_samples for absolute and raw interactions
         abs_filtered_results = {
-            feat_tuple: value_dict for feat_tuple, value_dict in mapped_results_no_agg_samples.items()
+            feat_tuple: value_dict
+            for feat_tuple, value_dict in mapped_results_no_agg_samples.items()
             if feat_tuple in abs_selected_interactions
         }
 
         raw_filtered_results = {
-            feat_tuple: value_dict for feat_tuple, value_dict in mapped_results_no_agg_samples.items()
+            feat_tuple: value_dict
+            for feat_tuple, value_dict in mapped_results_no_agg_samples.items()
             if feat_tuple in raw_selected_interactions
         }
 
         # Step 6: Combine the results into the output dictionary
         final_res = {
-            'top_abs_interactions': abs_res,
-            'top_raw_interactions': raw_res,
-            'top_abs_interactions_of_sample': abs_filtered_results,
-            'top_raw_interactions_of_sample': raw_filtered_results
+            "top_abs_interactions": abs_res,
+            "top_raw_interactions": raw_res,
+            "top_abs_interactions_of_sample": abs_filtered_results,
+            "top_raw_interactions_of_sample": raw_filtered_results,
         }
 
         return final_res
 
-    def get_most_interacting_features(self, abs_mapped_results_agg_samples: NestedDict) -> dict[str, float]:
+    def get_most_interacting_features(
+        self, abs_mapped_results_agg_samples: NestedDict
+    ) -> dict[str, float]:
         """
         Computes the most interacting features across all higher-order interactions (order > 1).
 
@@ -728,13 +839,19 @@ class ClusterSummarizer:
 
         for feature_tuple, value_dict in abs_mapped_results_agg_samples.items():
             if len(feature_tuple) > 1:
-                mean_value = value_dict['mean']
+                mean_value = value_dict["mean"]
                 abs_mean_value = abs(mean_value)
 
                 for feature in feature_tuple:
-                    feature_interaction_sums[feature] = feature_interaction_sums.get(feature, 0.0) + abs_mean_value
+                    feature_interaction_sums[feature] = (
+                        feature_interaction_sums.get(feature, 0.0) + abs_mean_value
+                    )
 
-        sorted_features = dict(sorted(feature_interaction_sums.items(), key=lambda item: item[1], reverse=True))
+        sorted_features = dict(
+            sorted(
+                feature_interaction_sums.items(), key=lambda item: item[1], reverse=True
+            )
+        )
 
         return sorted_features
 
@@ -742,10 +859,7 @@ class ClusterSummarizer:
 if __name__ == "__main__":
     print("Hello")
     # adjust the path and num_reps as needed here
-    summarizer = ClusterSummarizer(base_result_dir="../../results/local_tests/srmc/all/wb_state/", num_reps=3)
+    summarizer = ClusterSummarizer(
+        base_result_dir="../../results/local_tests/srmc/all/wb_state/", num_reps=3
+    )
     summarizer.aggregate()
-
-
-
-
-
