@@ -1041,9 +1041,9 @@ class BaseMLAnalyzer(ABC):
 
         imputer.fit(X=X_train, num_imputation=num_imp)  # We need num_imp for different random seeds
         self.logger.log(f"    Number of Cols with NaNs in X_train: {len(X_train.columns[X_train.isna().any()])}")
-        X_train_imputed = imputer.transform(X=X_train, num_imputation=num_imp)
+        X_train_imputed = imputer.transform(X=X_train)
         self.logger.log(f"    Number of Cols with NaNs in X_test: {len(X_train.columns[X_val_or_test.isna().any()])}")
-        X_val_test_imputed = imputer.transform(X=X_val_or_test, num_imputation=num_imp)
+        X_val_test_imputed = imputer.transform(X=X_val_or_test)
 
         X_train_imputed = X_train_imputed.drop(columns=self.meta_vars, errors="ignore")
         X_val_test_imputed = X_val_test_imputed.drop(columns=self.meta_vars, errors="ignore")

@@ -1,47 +1,79 @@
 import os
 import pickle
 from collections import defaultdict
+from typing import Optional
 
+import pandas as pd
 from sklearn.linear_model import ElasticNet
 
 from src.analysis.BaseMLAnalyzer import BaseMLAnalyzer
+from src.utils.utilfuncs import defaultdict_to_dict, NestedDict
 
 
 class ENRAnalyzer(BaseMLAnalyzer):
     """
-    This class serves as a template for the linear models (lasso, linear_baseline_model) and implements methods
-    that do not differ between the both linear models. Inherits from BaseMLAnalyzer. For attributes, see
-    BaseMLAnalyzer. The model attribute is defined in the subclasses.
+    Implements functionality for linear models such as ElasticNet.
+
+    This class extends the `BaseMLAnalyzer` to provide specific implementations
+    for linear models, particularly ElasticNet. It handles tasks like coefficient
+    aggregation across cross-validation loops while leveraging the functionality
+    defined in the base class.
+
+    Attributes:
+        model (ElasticNet): The linear model used for prediction and analysis.
     """
 
-    def __init__(self, var_cfg, output_dir, df, rep, rank):
+    def __init__(
+        self,
+        var_cfg: NestedDict,
+        output_dir: str,
+        df: pd.DataFrame,
+        rep: Optional[int],
+        rank: Optional[int],
+    ) -> None:
         """
-        Constructor method of the LinearAnalyzer class.
+        Initializes the ENRAnalyzer instance with the specified configuration and data.
 
         Args:
-            var_cfg: YAML config determining specifics of the analysis
-            output_dir: Specific directory where the results are stored
+            var_cfg: YAML configuration object specifying the analysis parameters.
+            output_dir: Directory where the analysis results will be stored.
+            df: Input DataFrame containing features and labels for the analysis.
+            rep: Repetition index for cross-validation splits.
+            rank: Rank identifier for multi-node parallelism.
         """
         super().__init__(var_cfg, output_dir, df, rep, rank)
         self.model = ElasticNet(random_state=self.var_cfg["analysis"]["random_state"])
 
-    def get_average_coefficients(self):
-        """Calculate the average coefficients across all outer cv loops stored in self.best_models."""
+    def get_average_coefficients(self) -> None:
+        """
+        Computes the average coefficients across all outer CV loops.
+
+        This method:
+        - Reads the best-performing models for each repetition and outer fold from stored files.
+        - Extracts and aggregates the coefficients from these models.
+        - Organizes the coefficients into a nested dictionary structure and stores them in
+          the `self.lin_model_coefs` attribute.
+
+        The results are sorted by the absolute magnitude of coefficients for interpretability.
+        Requires that `self.best_models` has been properly populated during the analysis.
+        """
+
         if not self.split_reps:
             if self.rank == 0:
+
                 meta_vars_in_df = [col for col in self.meta_vars if col in self.X.columns]
                 feature_names = self.X.columns.drop(meta_vars_in_df).tolist()
                 coefs_dict = defaultdict(lambda: defaultdict(lambda: defaultdict(dict)))
 
                 for rep in range(self.num_reps):
                     best_models_file = os.path.join(self.spec_output_path, f"best_models_rep_{rep}.pkl")
-                    print(best_models_file)
+
                     if os.path.exists(best_models_file):
                         with open(best_models_file, "rb") as f:
                             best_models_rep = pickle.load(f)
+
                         for outer_fold_idx, outer_fold in enumerate(best_models_rep):
                             for imputation_idx, model in enumerate(outer_fold):
-                                print(rep, outer_fold_idx, imputation_idx)
                                 coefs_sub_dict = dict(zip(feature_names, model.coef_))
                                 sorted_coefs_sub_dict = dict(
                                     sorted(
@@ -51,12 +83,7 @@ class ENRAnalyzer(BaseMLAnalyzer):
                                 coefs_dict[f"rep_{rep}"][f"outer_fold_{outer_fold_idx}"][
                                     f"imputation_{imputation_idx}"] = sorted_coefs_sub_dict
                     else:
-                        print(f"Best models file for rep {rep} not found.")
+                        self.logger.log(f"WARNING: Best models file for rep {rep} not found")
 
-                regular_dict = self.defaultdict_to_dict(coefs_dict)
+                regular_dict = defaultdict_to_dict(coefs_dict)
                 self.lin_model_coefs = regular_dict
-
-    def defaultdict_to_dict(self, dct):
-        if isinstance(dct, defaultdict):
-            dct = {k: self.defaultdict_to_dict(v) for k, v in dct.items()}
-        return dct

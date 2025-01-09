@@ -11,11 +11,18 @@ import pandas as pd
 
 class CustomIterativeImputer(IterativeImputer):
     """
-    Custom iterative imputer extending `IterativeImputer` to include additional functionality for handling
-    categorical features and predictive mean matching (PMM). For other attributes, see the parent class.
+    Custom iterative imputer extending sklearn's `IterativeImputer` to include additional functionality
+    for handling categorical features and predictive mean matching (PMM).
+
+    This class inherits all functionality from `IterativeImputer` and adds support for:
+    - Categorical feature imputation using specific indices (`categorical_idx`).
+    - Predictive mean matching (PMM) for continuous variables with a specified number of neighbors (`pmm_k`).
+
+    For attributes and parameters not explicitly documented here, refer to the `IterativeImputer` class.
 
     Attributes:
-        categorical_idx (Optional[List[int]]): Indices of categorical features to be imputed differently.
+        categorical_idx (Optional[list[int]]): Indices of categorical features to be handled differently
+            during imputation (e.g., binary thresholding).
         pmm_k (int): Number of nearest neighbors to use for predictive mean matching (PMM).
     """
     def __init__(
@@ -39,33 +46,43 @@ class CustomIterativeImputer(IterativeImputer):
         pmm_k: int = 5,
     ) -> None:
         """
-        Initializes the CustomIterativeImputer with default and custom parameters. See "IterativeImputer"s documentation
-        for more information on the parameters. The additional parameters are explained more thorough below.
+        Initializes the CustomIterativeImputer with both inherited and custom parameters.
+
+        This subclass retains all parameters of `IterativeImputer` while introducing additional parameters
+        (`categorical_idx` and `pmm_k`) to enhance functionality for specific imputation scenarios.
 
         Args:
             estimator: The estimator to use for regression or classification during imputation. If None,
-                       a default BayesianRidge model is used.
-            missing_values: The placeholder for missing values. Default is `np.nan`.
-            sample_posterior: If True, sample posterior values as the prediction for each feature. Defaults to False.
-                              Note: This does not work with the non-bayesian models we are currently using for analysis,
-                              but we leave it in the code for completeness. It could be used e.g. with BayesianRidge.
-                              If False, it uses predictive mean matching (PMM) for continuous variables to select the
-                              imputed values.
-            max_iter: Maximum number of imputation iterations. Default is 10.
-            tol: Convergence tolerance. Defaults to 1e-3.
+                       a default BayesianRidge model is used. Inherited from `IterativeImputer`.
+            missing_values: Placeholder for missing values. Defaults to `np.nan`. Inherited from `IterativeImputer`.
+            sample_posterior: If True, samples posterior values during imputation. Defaults to False.
+                              Inherited from `IterativeImputer`.
+                              **Note**: This does not work with non-Bayesian models currently used but can
+                              be used with BayesianRidge.
+            max_iter: Maximum number of imputation iterations. Defaults to 10. Inherited from `IterativeImputer`.
+            tol: Convergence tolerance for stopping criteria. Defaults to 1e-3. Inherited from `IterativeImputer`.
             n_nearest_features: Number of nearest features to use for imputation. Defaults to None (all features).
-            initial_strategy: Strategy to initialize missing values.
-            imputation_order: Order in which features are imputed.
-            skip_complete: Whether to skip features without missing values. Defaults to False.
+                                Inherited from `IterativeImputer`.
+            initial_strategy: Strategy to initialize missing values (e.g., "mean", "median").
+                              Inherited from `IterativeImputer`.
+            imputation_order: Order in which features are imputed (e.g., "ascending", "random").
+                              Inherited from `IterativeImputer`.
+            skip_complete: Whether to skip features without missing values during imputation. Defaults to False.
+                           Inherited from `IterativeImputer`.
             min_value: Minimum allowable value for imputed values. Defaults to `-np.inf`.
+                       Inherited from `IterativeImputer`.
             max_value: Maximum allowable value for imputed values. Defaults to `np.inf`.
-            verbose: Verbosity level. Defaults to 0.
-            random_state: Random state for reproducibility. Defaults to None.
+                       Inherited from `IterativeImputer`.
+            verbose: Controls verbosity of output. Defaults to 0. Inherited from `IterativeImputer`.
+            random_state: Random state for reproducibility. Defaults to None. Inherited from `IterativeImputer`.
             add_indicator: Whether to add a missingness indicator for features. Defaults to False.
-            keep_empty_features: Whether to keep features with no observed values. Defaults to False.
-
-            categorical_idx: List of indices for categorical features. Defaults to None.
+                           Inherited from `IterativeImputer`.
+            keep_empty_features: Whether to keep features with no observed values during imputation.
+                                 Defaults to False. Inherited from `IterativeImputer`.
+            categorical_idx: Indices of categorical features. Defaults to None. Used for imputation of binary
+                             or categorical features using specialized handling.
             pmm_k: Number of nearest neighbors to use for predictive mean matching (PMM). Defaults to 5.
+                   This parameter determines the degree of randomization in PMM-based imputation.
         """
         super().__init__(
             estimator=estimator,
@@ -106,6 +123,10 @@ class CustomIterativeImputer(IterativeImputer):
         - Continuous features: Uses predictive mean matching (PMM) or direct predictions.
         - Binary features: Imputes probabilities using `predict_proba`.
         - Sample posterior: Samples imputed values from a truncated normal distribution.
+
+        With this method, we overwrite the _impute_one_feature method of the parent class
+        (sklearns Iterative Imputer). Most functionality are comparable, with the slight
+        differences described above.
 
         **Implementation**:
         1. **Estimator Initialization**:
@@ -266,8 +287,34 @@ class CustomIterativeImputer(IterativeImputer):
         return X_filled, estimator
 
 
-def safe_indexing(X, indices, axis=0):
-    """Safely index X along the specified axis for both 1D and 2D arrays or DataFrames."""
+def safe_indexing(
+    X: Union[np.ndarray, pd.DataFrame, pd.Series, list],
+    indices: Union[np.ndarray, list, slice],
+    axis: int = 0,
+) -> Union[np.ndarray, pd.DataFrame, pd.Series, list]:
+    """
+    Safely index an array-like object along the specified axis.
+
+    This function supports indexing for:
+    - Pandas DataFrame or Series: Uses `.iloc` for safe indexing.
+    - NumPy arrays (1D or 2D): Handles row or column indexing.
+    - Python lists: Supports only row indexing (axis=0).
+
+    Args:
+        X: The input object to index. Can be a NumPy array, Pandas DataFrame, Series, or Python list.
+        indices: The indices to use for selection. Can be a list, NumPy array, or slice.
+        axis: The axis along which to index.
+            - `0`: Rows.
+            - `1`: Columns (only for 2D arrays or DataFrames).
+
+    Returns:
+        The indexed subset of `X`, with the same type as the input object.
+
+    Raises:
+        ValueError: If the axis is invalid for the given input type or object.
+        IndexError: If attempting to index along an invalid axis for 1D NumPy arrays.
+        ValueError: If the input object type is unsupported.
+    """
     if isinstance(X, pd.DataFrame) or isinstance(X, pd.Series):
         if axis == 0:
             return X.iloc[indices]
@@ -277,25 +324,22 @@ def safe_indexing(X, indices, axis=0):
             raise ValueError(f"Invalid axis {axis} for pandas object.")
 
     elif isinstance(X, np.ndarray):
-        X = np.asarray(X)  # Ensure it's a NumPy array
+        X = np.asarray(X)
 
         if X.ndim == 1:
-            # If 1D, we can only index along axis 0 (rows)
             if axis != 0:
                 raise IndexError("Axis out of bounds for 1D array.")
             return X[indices]
 
         elif X.ndim == 2:
-            # If 2D, index appropriately based on the axis
             if axis == 0:
-                return X[indices, :]  # Index rows
+                return X[indices, :]
             elif axis == 1:
-                return X[:, indices]  # Index columns
+                return X[:, indices]
             else:
                 raise ValueError(f"Invalid axis {axis} for 2D array.")
 
     elif isinstance(X, list):
-        # For lists, we can only index by rows (axis=0)
         if axis != 0:
             raise ValueError("safe_indexing only supports axis=0 for lists.")
         return [X[i] for i in indices]
@@ -304,8 +348,31 @@ def safe_indexing(X, indices, axis=0):
         raise ValueError(f"Unsupported data type: {type(X)}")
 
 
-def safe_assign(X, values, row_indexer=None, column_indexer=None):
-    """Safely assign values to X at specified indices."""
+def safe_assign(
+    X: Union[np.ndarray, pd.DataFrame, pd.Series],
+    values: Union[np.ndarray, pd.Series, list],
+    row_indexer: Optional[Union[np.ndarray, list]] = None,
+    column_indexer: Optional[Union[np.ndarray, list, int]] = None,
+) -> None:
+    """
+    Safely assign values to specific indices of an array-like object.
+
+    This function modifies the input object `X` by assigning the provided `values`
+    to the specified rows and/or columns. It supports:
+    - Pandas DataFrame or Series: Uses `.iloc` for safe assignment.
+    - NumPy arrays (2D or higher): Handles assignment along rows and/or columns.
+
+    Args:
+        X: The input object to modify. Can be a NumPy array, Pandas DataFrame, or Series.
+        values: The values to assign. The shape of `values` must match the shape of the
+                specified indices in `X`.
+        row_indexer: Indices of rows to update. Can be a list, NumPy array, or None.
+        column_indexer: Indices of columns to update. Can be a list, NumPy array, single integer, or None.
+
+    Raises:
+        ValueError: If neither `row_indexer` nor `column_indexer` is provided.
+        ValueError: If the input object type is unsupported.
+    """
     if isinstance(X, pd.DataFrame) or isinstance(X, pd.Series):
         if row_indexer is not None and column_indexer is not None:
             X.iloc[row_indexer, column_indexer] = values
@@ -318,15 +385,16 @@ def safe_assign(X, values, row_indexer=None, column_indexer=None):
 
     elif isinstance(X, np.ndarray):
         if row_indexer is not None and column_indexer is not None:
-            # Fix: Ensure values match the shape of the slice
             if np.isscalar(column_indexer):
-                # Reshape the values if assigning to a single column
                 values = np.asarray(values).reshape(-1, 1)
             X[np.ix_(row_indexer, [column_indexer])] = values
+
         elif row_indexer is not None:
             X[row_indexer, :] = values
+
         elif column_indexer is not None:
             X[:, column_indexer] = values
+
         else:
             raise ValueError("Either row_indexer or column_indexer must be provided.")
 
