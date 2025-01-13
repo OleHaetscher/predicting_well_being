@@ -21,7 +21,7 @@ if __name__ == "__main__":
     slurm_handler = SlurmHandler()
 
     # Parse arguments before importing mpi4py
-    args = slurm_handler.get_slurm_vars(var_cfg=var_cfg)
+    args = slurm_handler.get_slurm_vars()
     var_cfg_updated = slurm_handler.update_cfg_with_slurm_vars(var_cfg=var_cfg, args=args)
     use_mpi = var_cfg_updated["analysis"]["use_mpi4py"]
     split_reps = var_cfg_updated["analysis"]["split_reps"]

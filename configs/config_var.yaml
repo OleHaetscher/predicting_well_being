@@ -69,6 +69,13 @@ preprocessing:
       nan_col_thresh: 0.15
       zero_col_thresh: 0.30
 
+    fix_country_mappings:
+      cocout: "usa"
+      pia: "germany"
+      emotions: "germany"
+      zpid: "germany"
+      cocoms: "germany"
+
     nan_thresh: 0.3 # 30% NaNs -> warn
     cron_alpha_thresh: 0.6
     expected_pos_corrs:
@@ -98,7 +105,7 @@ analysis:
   store_pred_and_true: true
 
   tests:
-    sample: true
+    sample: false
     sample_size: 100
 
   methods_to_apply:
@@ -166,14 +173,14 @@ analysis:
   params: # adjusted by SLURM
     prediction_model: elasticnet  # elasticnet, randomforestregressor
     crit: wb_state  # wb_state, wb_trait, etc
-    feature_combination: srmc # pl, srmc, sens, mac, pl_srmc, pl_sens, pl_srmc_sens, pl_mac, pl_srmc_mac, all_in
+    feature_combination: pl_srmc_mac_nnse # pl, srmc, sens, mac, pl_srmc, pl_sens, pl_srmc_sens, pl_mac, pl_srmc_mac, all_in
     samples_to_include: all  # all, selected, control
 
   cv:
-    num_inner_cv: 10  # 10
+    num_inner_cv: 3  # 10
     verbose_inner_cv: 0
-    num_outer_cv: 10 # 10
-    num_reps: 10  # 10
+    num_outer_cv: 3 # 10
+    num_reps: 1  # 10
     id_grouping_col: other_unique_id
     cache_pipe: false  # not improving performance
     warm_start: false  # not improving performance
@@ -219,12 +226,12 @@ analysis:
       #model__regressor__max_iter: [ 1000, 10000 ]
       #model__regressor__tol: [0.1, 0.01, 0.001, 0.0001]
     randomforestregressor:
-      #model__regressor__max_depth: [ 4, 6 ]
-      #model__regressor__max_features: [ 0.2 ]
-      model__regressor__n_estimators: [ 100, 500 ]
-      model__regressor__max_features: [ 0.25, 0.5, 0.75]
-      model__regressor__max_depth: [4, 6, 8, 10, 12]
-      model__regressor__min_samples_split: [5, 10, 15, 20]
+      model__regressor__max_depth: [ 4, 6 ]
+      model__regressor__max_features: [ 0.2 ]
+      #model__regressor__n_estimators: [ 100, 500 ]
+      #model__regressor__max_features: [ 0.25, 0.5, 0.75]
+      #model__regressor__max_depth: [4, 6, 8, 10, 12]
+      #model__regressor__min_samples_split: [5, 10, 15, 20]
 
   parallelize:
     parallelize_shap: true
@@ -255,14 +262,14 @@ analysis:
 
 postprocessing:
   methods:
-    #- calculate_lin_models
+    - calculate_lin_models
     #- sanity_check_pred_vs_true
     #- condense_cv_results
     #- condense_lin_model_coefs
     #- create_descriptives
     #- conduct_significance_tests
     #- create_cv_results_plots
-    - create_shap_plots
+    #- create_shap_plots
 
   # We do merging on the cluster, thus, we have only one result path with the processed results
   processed_results_path: "../results/run_2012"
@@ -333,13 +340,14 @@ postprocessing:
     - spearman
     - r2
     - pearson
+    - neg_mean_squared_error
 
   significance_tests:
     base_result_path: "../results/sig_tests_1312"  # this contains only the results necessary for testing
     alpha: 0.05 # .05
     metric: r2 # r2
     crit: wb_state  # do this only for wb_state
-    store: true
+    store: false
     stat_order_compare_models: ["elasticnet M (SD)", "randomforestregressor M (SD)", "t_val", "p_val", "p_val_fdr"]
     stat_order_compare_predictor_classes: ["Personal M (SD)", "Personal + X M (SD)", "t_val", "p_val", "p_val_fdr"]
 
@@ -347,8 +355,8 @@ postprocessing:
       t_val: "t"
       p_val: "p"
       p_val_fdr: "p (FDR-corrected)"
-      "elasticnet M (SD)": "M (SD) ENR"
-      "randomforestregressor M (SD)": "M (SD) RFR"
+      "elasticnet M (SD)": "MSD ENR"
+      "randomforestregressor M (SD)": "MSD RFR"
 
     compare_models: true
     compare_predictor_classes: true
@@ -381,28 +389,28 @@ postprocessing:
         - all
         - selected
         - control
-  linear_regressor:
+  linear_regressor:  # TODO To excel
     feature_combinations:
-      - pl
-      - srmc
-      - sens
-      - mac
-      - pl_srmc
-      - pl_sens
-      - pl_srmc_sens
-      - pl_mac
-      - pl_srmc_mac
+      #- pl
+      #- srmc
+      #- sens
+      #- mac
+      #- pl_srmc
+      #- pl_sens
+      #- pl_srmc_sens
+      #- pl_mac
+      #- pl_srmc_mac
       - all_in
     samples_to_include:
-      - selected
+      - all  # selected
     crits:
       - wb_state
     models:
       - randomforestregressor
-    num_features: 10
+    num_features: 6
 
   plots:  # TODO: Adhere to NHB Style
-    store_plots: true
+    store_plots: false
     plots:
       # - importance_plot  # not used right now
       - beeswarm_plot
@@ -427,13 +435,16 @@ postprocessing:
       pl_mac: "Personal + Societal"
       pl_srmc_mac: "Personal + Situational (ESM) + Societal"
       all_in: "Personal + Situational (ESM) + Situational (Sensing) + Societal"
-      mac_ia_values: "Societal - Interaction Values"
       srmc_ia_values: "Situational (ESM): Interaction Values"
 
       # Additional analyses
       pl_nnse: "Personal without neuroticism facets and self-esteem"
+      pl_srmc_nnse: "Personal + Situational (ESM) without neuroticism facets and self-esteem"
+      pl_sens_nnse: "Personal + Situational (Sensing) without neuroticism facets and self-esteem"
       pl_mac_nnse: "Personal + Societal without neuroticism facets and self-esteem"
-      pl_srmc_nnse: "Personal + ESM without neuroticism facets and self-esteem"
+      pl_srmc_mac_nnse: "Personal + Situational (ESM) + Societal without neuroticism facets and self-esteem"
+      pl_srmc_sens_nnse: "Personal + Situational (ESM) + Situational (Sensing) without neuroticism facets and self-esteem"
+      all_in_nnse: "Personal + Situational (ESM) + Situational (Sensing) + Societal without neuroticism facets and self-esteem"
       pl_srmc_control: "Personal + ESM only for CoCoMS samples that contain Sensing data"
       srmc_control: "ESM only for CoCoMS samples that contain Sensing data"
 
@@ -499,10 +510,12 @@ postprocessing:
         pl_srmc_mac: "Personal + Situational (ESM) + Societal; n = 10,015"
         all_in: "Personal + Situational (ESM) + Situational (Sensing) + Societal; n = 10,015"
 
+
+
     shap_beeswarm_plot:  # could define dpi, etc as well here
 
       prediction_model: [ randomforestregressor ]  # must be iterable
-      crit: [wb_trait, pa_state, na_state]  # must be iterable
+      crit: [wb_state]  # must be iterable
       samples_to_include: [selected]  # must be iterable
       num_to_display: 6
       shap_ia_values:

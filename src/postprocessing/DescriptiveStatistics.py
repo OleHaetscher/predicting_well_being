@@ -50,6 +50,11 @@ class DescriptiveStatistics:
         results = []
         feature_cats = self.var_cfg["analysis"]["feature_combinations"]
 
+        # TEST
+        x = full_df["sens_spirituality_apps_min"].mean()
+        y = full_df["sens_spirituality_apps_min"].std()
+        print()  # TODO Integrate properly
+
         for cat in feature_cats:
             prefix = f"{cat}_"
             prefixed_cols = [col for col in full_df.columns if col.startswith(prefix)]
@@ -122,7 +127,34 @@ class DescriptiveStatistics:
                 data=final_table,
                 file_name="predictors_m_sd",
                 file_path=self.desc_results_base_path,
-                filetype="xlsx"
+                filetype="xlsx",
+            )
+
+    def create_crit_table(self) -> None:
+        """
+        Calculates the mean (M) and standard deviation (SD) for all features in the dataset
+        and saves the results as an Excel file.
+        """
+        # Load the full dataset
+        full_df = self.data_loader.read_pkl(self.full_data_path)
+        crit_cols = [col for col in full_df.columns if col.startswith("crit_")]
+        crit_df = full_df[crit_cols]
+
+        # Calculate Mean and Standard Deviation for all features
+        crit_table = crit_df.describe().loc[['mean', 'std']].transpose()
+        crit_table.columns = ['M', 'SD']
+
+        # Save the table as an Excel file
+        # crit_table.to_excel("crit_m_sd.xlsx", index=True)
+
+        # If defined in the cfg, store results
+        if self.desc_cfg["store"]:
+            self.save_file(
+                data=crit_table,
+                file_name="crit_m_sd",
+                file_path=self.desc_results_base_path,
+                filetype="xlsx",
+                index=True
             )
 
     def get_scale_endpoints(self, data: dict, feature_name: str) -> Union[np.nan, tuple[float, float]]:

@@ -20,7 +20,8 @@ class LinearRegressor:
         samples_to_include,
         processed_output_path,
         model_for_features,
-        num_features=10,
+        meta_vars,
+        num_features=6,
     ):
         self.var_cfg = var_cfg
         self.processed_output_path = processed_output_path
@@ -36,13 +37,15 @@ class LinearRegressor:
         self.X = None
         self.y = None
         self.rows_dropped_crit_na = None
+        self.meta_vars = meta_vars
 
         self.dataselector = DataSelector(
             self.var_cfg,
             self.df,
             self.feature_combination,
             self.crit,
-            self.samples_to_include
+            self.samples_to_include,
+            self.meta_vars
         )
 
     def get_regression_data(self):
@@ -92,32 +95,6 @@ class LinearRegressor:
         print("-----")
         print(f"Regression results for {self.feature_combination} - {self.crit}")
         print(model.summary())
-
-        ###### curiosity test
-        if self.feature_combination == "srmc":
-            # Add specified interaction terms
-            interaction_terms = {
-                'percentage_interactions - sleep_quality_mean': X_scaled['srmc_percentage_interactions'] * X_scaled['srmc_sleep_quality_mean'],
-                'sleep_quality_mean - sleep_quality_max': X_scaled['srmc_sleep_quality_mean'] * X_scaled['srmc_sleep_quality_max'],
-                'sleep_quality_mean - sleep_quality_min': X_scaled['srmc_sleep_quality_mean'] * X_scaled['srmc_sleep_quality_min'],
-                'percentage_interactions - ftf_interactions': X_scaled['srmc_percentage_interactions'] * X_scaled['srmc_ftf_interactions'],
-                # 'sleep_quality_mean - percentage_responses': X_scaled['srmc_sleep_quality_mean'] * X_scaled['srmc_percentage_responses'],
-                'number_interactions - percentage_interactions': X_scaled['srmc_number_interactions'] * X_scaled['srmc_percentage_interactions'],
-            }
-            # Add interaction terms to the DataFrame
-            for name, term in interaction_terms.items():
-                X_scaled[name] = term
-
-            # Add an intercept to the model
-            X_scaled_intercept_ia = sm.add_constant(X_scaled)
-
-            # Fit OLS regression model
-            model = sm.OLS(self.y, X_scaled_intercept_ia).fit()
-
-            # Print the summary of the regression results
-            print("-----")
-            print(f"Regression results for {self.feature_combination} - {self.crit}, interaction values ")
-            print(model.summary())
 
     def store_regression_results(self):
         pass

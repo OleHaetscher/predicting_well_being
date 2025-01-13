@@ -247,6 +247,7 @@ class BaseMLAnalyzer(ABC):
             feature_combination=self.feature_combination,
             crit=self.crit,
             samples_to_include=self.samples_to_include,
+            meta_vars=self.meta_vars
         )
 
         # Methods that get clocked

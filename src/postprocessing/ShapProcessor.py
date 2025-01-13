@@ -115,7 +115,7 @@ class ShapProcessor:
                             shap_values=shap_exp.values,
                             feature_names=feature_names_raw,  # use feature_names from code
                             root=root,
-                            n=10,
+                            n=6,
                             store=True
                         )
         return result_dct
@@ -146,6 +146,7 @@ class ShapProcessor:
 
         # Write the top feature names to a file in the current folder "root"
         if store:
+            print("STORE")
             output_file = os.path.join(root, f"top_{n}_features.txt")
             with open(output_file, 'w') as f:
                 for feature in top_features:

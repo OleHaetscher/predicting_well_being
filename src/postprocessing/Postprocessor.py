@@ -14,6 +14,7 @@ from src.postprocessing.ShapProcessor import ShapProcessor
 from src.postprocessing.SignificanceTesting import SignificanceTesting
 from src.utils.DataLoader import DataLoader
 from src.utils.Logger import Logger
+from src.utils.utilfuncs import custom_round, apply_name_mapping
 
 
 class Postprocessor:
@@ -35,6 +36,11 @@ class Postprocessor:
         self.metrics = self.var_cfg["postprocessing"]["metrics"]
         self.methods_to_apply = self.var_cfg["postprocessing"]["methods"]
         self.datasets = self.var_cfg["general"]["datasets_to_be_included"]
+        self.meta_vars = [
+            self.var_cfg["analysis"]["cv"]["id_grouping_col"],
+            self.var_cfg["analysis"]["imputation"]["country_grouping_col"],
+            self.var_cfg["analysis"]["imputation"]["years_col"]
+        ]
 
         self.data_loader = DataLoader()
         self.logger = Logger(
@@ -99,6 +105,7 @@ class Postprocessor:
                                 crit=crit,
                                 samples_to_include=samples_to_include,
                                 model_for_features=model_for_features,
+                                meta_vars=self.meta_vars
                             )
                             linearregressor.get_regression_data()
                             linearregressor.compute_regression_models()
@@ -118,8 +125,7 @@ class Postprocessor:
                     data=data_points,
                     metric=metric,
                     output_dir=self.processed_output_path,
-                    custom_order=self.var_cfg["postprocessing"]["cv_results"]["table_feature_combo_order"],
-                    feature_combo_mapping=self.var_cfg["postprocessing"] ["plots"]["feature_combo_name_mapping"],
+                    feature_combo_mapping=self.var_cfg["postprocessing"]["plots"]["feature_combo_name_mapping"],
                 )
                 self.cv_results_dct[metric] = metric_dict
 
@@ -128,6 +134,12 @@ class Postprocessor:
                 base_dir=self.processed_output_path,
                 coef_filename=self.var_cfg["postprocessing"]["summarized_file_names"]["lin_model_coefs"]
             )
+            # store coefficients in a seperate directory
+            self.create_lin_model_coefs_dir(
+                base_dir="../results/run_2012",
+                file_name="lin_model_coefs_summary.json",
+                output_base_dir="../results/run_2012_lin_model_coefs"
+            )
             self.create_coefficients_dataframe(
                 data=coefficient_points,
                 output_dir=self.processed_output_path
@@ -135,6 +147,7 @@ class Postprocessor:
 
         if "create_descriptives" in self.methods_to_apply:
             self.descriptives_creator.create_m_sd_feature_table()
+            self.descriptives_creator.create_crit_table()
             print()
 
             # Also a function that creates
@@ -160,7 +173,7 @@ class Postprocessor:
             if self.cv_results_dct:
                 # for metric in self.var_cfg["postprocessing"]["plots"]["cv_results_plot"]["metrics"]:
                 self.plotter.plot_cv_results_plots_wrapper(
-                    cv_results_dct=self.cv_results_dct, # self.cv_results_dct[metric],
+                    cv_results_dct=self.cv_results_dct,  # self.cv_results_dct[metric],
                     rel=None,
                     # metric=metric,
                 )
@@ -301,7 +314,8 @@ class Postprocessor:
                         'model': model,
                         'samples_to_include': samples_to_include,
                         'feature_combination': feature_combination,
-                        f"m_{metric}": m_metric
+                        f"m_{metric}": m_metric,
+                        f"sd_{metric}": sd_metric,
                     })
 
                 except Exception as e:
@@ -384,7 +398,7 @@ class Postprocessor:
             return None
 
     @staticmethod
-    def create_df_table(data, metric, output_dir, custom_order, feature_combo_mapping):
+    def create_df_table(data, metric, output_dir, feature_combo_mapping):
         """
         Create DataFrame from metrics data, save to Excel.
 
@@ -392,25 +406,127 @@ class Postprocessor:
             data (list): Data points extracted for DataFrame.
             metric (str): The metric used for the heatmap title.
             output_dir (str): Directory to save the Excel file.
+            custom_order (list): The desired order of feature combinations for the top-level columns.
+            feature_combo_mapping (dict): Mapping from feature_combination keys to descriptive labels.
         """
-        if data:
-            filtered_data_points = data  # [entry for entry in data if entry.get('samples_to_include') != 'control']
-            df = pd.DataFrame(filtered_data_points)
-            df.set_index(['crit', 'model', 'samples_to_include'], inplace=True)
-            df_pivot = df.pivot_table(
-                values=f"m_{metric}",
-                index=['crit', 'model', 'samples_to_include'],
-                columns='feature_combination',
-                aggfunc=np.mean
-            )
-            df_pivot = (df_pivot
-                        .reindex(columns=custom_order)
-                        .rename(columns=feature_combo_mapping)
-                        .round(3)
-                        )
+        if not data:
+            return  # No data to process
 
-            output_path = os.path.join(output_dir, f'cv_results_{metric}.xlsx')
-            df_pivot.to_excel(output_path, merge_cells=True)
+        # Convert data to DataFrame
+        df = pd.DataFrame(data)
+
+        # Map the feature_combination column to meaningful labels
+        df['feature_combination'] = df['feature_combination'].map(feature_combo_mapping)
+
+        custom_order = list(feature_combo_mapping.values())
+        custom_order = [fc for fc in custom_order
+                        if "Interaction Values" not in fc]
+
+        df["model"] = df["model"].map(
+            {"elasticnet": "ENR", "randomforestregressor": "RFR"}
+        )
+
+        df["crit"] = df["crit"].map(
+            {
+            "wb_state": "Experienced well-being",
+            "wb_trait": "Remembered well-being",
+            "pa_state": "Experienced positive affect",
+            "na_state": "Experienced negative affect",
+            "pa_trait": "Remembered positive affect",
+            "na_trait": "Remembered positive affect",
+            }
+        )
+        df["samples_to_include"] = df["samples_to_include"].map(
+            {
+            "all": "Experienced well-being",
+            "wb_trait": "Remembered well-being",
+            "pa_state": "Experienced positive affect",
+            "na_state": "Experienced negative affect",
+            "pa_trait": "Remembered positive affect",
+            "na_trait": "Remembered positive affect",
+            }
+        )
+
+        # Set multi-index
+        df.set_index(['crit', 'model', 'samples_to_include'], inplace=True)
+
+        # Pivot for mean (M) and std (SD)
+        df_mean = df.pivot_table(
+            values=f"m_{metric}",
+            index=['crit', 'model', 'samples_to_include'],
+            columns='feature_combination',
+            aggfunc=np.mean
+        )
+        df_sd = df.pivot_table(
+            values=f"sd_{metric}",
+            index=['crit', 'model', 'samples_to_include'],
+            columns='feature_combination',
+            aggfunc=np.mean
+        )
+
+        # Concatenate mean and SD, creating a multi-index with levels ['M','SD']
+        combined_df = pd.concat([df_mean, df_sd], keys=['M', 'SD'], axis=1)
+
+        # By default, the new columns have a MultiIndex of the form: (M, fc1), (M, fc2), ... (SD, fc1), (SD, fc2)...
+        # We want the top level to be feature_combinations and the second level to be M / SD.
+        # So we reorder levels: [1, 0] means "feature_combination" on top, then M/SD as second.
+        combined_df = combined_df.reorder_levels([1, 0], axis=1)
+
+        # Now explicitly build the column order. For each feature combination in custom_order, we want (fc, 'M') then (fc, 'SD').
+        desired_cols = []
+        for fc in custom_order:
+            desired_cols.append((fc, 'M'))
+            desired_cols.append((fc, 'SD'))
+
+        # Reindex the DataFrame to enforce that column order.
+        # Columns not in `desired_cols` will be dropped; columns in `desired_cols` but not present will become NaN.
+        combined_df = combined_df.reindex(columns=desired_cols)
+
+        # Round to three decimals
+        # combined_df = combined_df.round(3)
+        combined_df = combined_df.applymap(lambda x: custom_round(x, 3) if not np.isnan(x) else x)
+
+
+        combined_df = combined_df.T
+
+        output_path = os.path.join(output_dir, f'cv_results_{metric}.xlsx')
+        combined_df.to_excel(output_path, merge_cells=True)
+
+    def create_lin_model_coefs_dir(
+            self,
+            base_dir: str,
+            file_name: str,
+            output_base_dir: str,
+    ) -> None:
+        """
+        """
+        for root, _, files in os.walk(base_dir):
+            if file_name in files:
+                relative_path = os.path.relpath(root, base_dir)
+                target_dir = os.path.join(output_base_dir, relative_path)
+                os.makedirs(target_dir, exist_ok=True)
+
+                input_file_path = os.path.join(root, file_name)
+                output_file_path = os.path.join(target_dir, file_name)
+
+                # Load JSON content
+                with open(input_file_path, 'r') as infile:
+                    lin_model_coefs = json.load(infile)
+
+                for stat, vals in lin_model_coefs.items():
+                    new_feature_names = apply_name_mapping(
+                        features=list(vals.keys()),
+                        name_mapping=self.name_mapping,
+                        prefix=True
+                    )
+                    # Replace old names with new_feature_names while maintaining the values
+                    updated_vals = {new_name: vals[old_name] for old_name, new_name in zip(vals.keys(), new_feature_names)}
+
+                    lin_model_coefs[stat] = updated_vals
+
+                # Save the transformed content back to a file
+                with open(output_file_path, 'w') as outfile:
+                    json.dump(lin_model_coefs, outfile, indent=4)
 
     @staticmethod
     def create_coefficients_dataframe(data, output_dir):

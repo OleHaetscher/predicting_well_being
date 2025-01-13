@@ -450,8 +450,11 @@ class SignificanceTesting:
                 t_val, p_val = self.corrected_dependent_ttest(cv_results_model1, cv_results_model2)
 
                 sig_results_dct[fc][sti] = {
-                    f"{model1_name} M (SD)": f"{np.round(cv_results_model1_mean, 3)} ({np.round(cv_results_model1_sd, 3)})",
-                    f"{model2_name} M (SD)": f"{np.round(cv_results_model2_mean, 3)} ({np.round(cv_results_model2_sd, 3)})",
+                    f"{model1_name} M": np.round(cv_results_model1_mean, 3),
+                    f"{model1_name} SD": np.round(cv_results_model1_sd, 3),
+                    f"{model2_name} M": np.round(cv_results_model2_mean, 3),
+                    f"{model2_name} SD": np.round(cv_results_model2_sd, 3),
+                    f"deltaR2": np.round(cv_results_model1_mean - cv_results_model2_mean, 3),
                     'p_val': p_val,
                     't_val': np.round(t_val, 2)
                 }
@@ -490,8 +493,11 @@ class SignificanceTesting:
 
                         # Get results into the result_dct
                         sig_results_dct[model][samples_to_include][pl_combo_key] = {
-                            f"Personal M (SD)": f"{np.round(cv_results_pl_m, 3)} ({np.round(cv_results_pl_sd, 3)})",
-                            f"Personal + X M (SD)": f"{np.round(cv_results_pl_combo_m, 3)} ({np.round(cv_results_pl_combo_sd, 3)})",
+                            f"MR2 (Personal)": np.round(cv_results_pl_m, 3),
+                            f"SDR2 (Personal)": np.round(cv_results_pl_sd, 3),
+                            f"MR2 (Personal + Other)": np.round(cv_results_pl_combo_m, 3),
+                            f"SDR2 (Personal + Other)": np.round(cv_results_pl_combo_sd, 3),
+                            f"deltaR2": np.round(cv_results_pl_combo_m - cv_results_pl_m, 3),
                             'p_val': p_val,
                             't_val': np.round(t_val, 2)
                         }
@@ -574,6 +580,7 @@ class SignificanceTesting:
 
         t_stat = np.round(divisor / denominator, 2)
         df = n - 1  # degrees of freedom
+        print(df)
         p = np.round((1.0 - t.cdf(abs(t_stat), df)) * 2.0, 4)  # p value
 
         return t_stat, p

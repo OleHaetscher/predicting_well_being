@@ -60,7 +60,7 @@ class DataSelector:
         self.X = None
         self.y = None
 
-    def select_samples(self) -> None:
+    def select_samples(self, dataset: str = None) -> None:
         """
         Selects samples based on the specified `samples_to_include` and `feature_combination`.
 
