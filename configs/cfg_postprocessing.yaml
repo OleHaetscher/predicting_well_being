@@ -1,3 +1,83 @@
+# TODO: Refactor this, remove redundancies
+general:
+  feature_combinations:
+    name_mapping:
+
+      # Main analyses
+      pl: "Personal"
+      srmc: "Situational (ESM)"  # self-reported
+      sens: "Situational (Sensing)"
+      mac: "Societal" # "Macro-level"
+      pl_srmc: "Personal + Situational (ESM)"
+      pl_sens: "Personal + Situational (Sensing)"
+      pl_srmc_sens: "Personal + Situational (ESM) + Situational (Sensing)"
+      pl_mac: "Personal + Societal"
+      pl_srmc_mac: "Personal + Situational (ESM) + Societal"
+      all_in: "Personal + Situational (ESM) + Situational (Sensing) + Societal"
+      # srmc_ia_values: "Situational (ESM): Interaction Values"  # TODO Does this make sense here?
+
+      # Additional analyses
+      pl_nnse: "Personal without neuroticism facets and self-esteem"
+      pl_srmc_nnse: "Personal + Situational (ESM) without neuroticism facets and self-esteem"
+      pl_sens_nnse: "Personal + Situational (Sensing) without neuroticism facets and self-esteem"
+      pl_mac_nnse: "Personal + Societal without neuroticism facets and self-esteem"
+      pl_srmc_mac_nnse: "Personal + Situational (ESM) + Societal without neuroticism facets and self-esteem"
+      pl_srmc_sens_nnse: "Personal + Situational (ESM) + Situational (Sensing) without neuroticism facets and self-esteem"
+      all_in_nnse: "Personal + Situational (ESM) + Situational (Sensing) + Societal without neuroticism facets and self-esteem"
+
+      # Currently these are not integrated
+      # pl_srmc_control: "Personal + ESM only for CoCoMS samples that contain Sensing data"
+      # srmc_control: "ESM only for CoCoMS samples that contain Sensing data"
+  samples_to_include:
+    name_mapping:
+      all: "Full dataset"
+      selected: "Reduced dataset"
+      control: "Control dataset"
+  crits:
+    name_mapping:
+      wb_state: "Experienced well-being"
+      wb_trait: "Remembered well-being"
+      pa_state: "Experienced positive affect"
+      na_state: "Experienced negative affect"
+      pa_trait: "Remembered positive affect"
+      na_trait: "Remembered positive affect"
+  models:
+    name_mapping:
+      elasticnet: "ENR"
+      randomforestregressor: "RFR"
+  metrics:
+    name_mapping:
+      pearson: "r"
+      r2: "R2"
+      spearman: "rho"
+      neg_mean_squared_error: "MSE"
+
+filenames:
+  cv_results_summarized: "cv_results_summary.json"
+  lin_model_coefs_summarized: "lin_model_coefs_summary.json"
+  shap_values_summarized: "shap_values_summary.pkl"
+  shap_ia_values_summarized: "shap_ia_values_summary.pkl"
+
+# More specific configurations (should be named as the postprocessing steps)
+
+condense_cv_results:
+  metrics:
+    - pearson
+    - r2
+    - spearman
+    - neg_mean_squared_error
+
+
+
+
+
+
+
+
+
+
+
+
 methods:
   - calculate_lin_models
   #- sanity_check_pred_vs_true
@@ -324,3 +404,18 @@ plots:  # TODO: Adhere to NHB Style
     figure:
       width: 8
       height: 8
+
+
+##### New, 13.01.2025
+
+result_table_creator:    # TODO Make this global?
+  var_mapping:
+    samples_to_include:
+      all: "Full dataset"
+      selected: "Reduced dataset"
+      control: "Control dataset"
+
+
+
+
+

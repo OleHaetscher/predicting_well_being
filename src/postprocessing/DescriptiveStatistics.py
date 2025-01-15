@@ -54,6 +54,7 @@ class DescriptiveStatistics:
         x = full_df["sens_spirituality_apps_min"].mean()
         y = full_df["sens_spirituality_apps_min"].std()
         print()  # TODO Integrate properly
+        # TODO Integrate criteria
 
         for cat in feature_cats:
             prefix = f"{cat}_"

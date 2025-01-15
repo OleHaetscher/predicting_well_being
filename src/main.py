@@ -14,6 +14,9 @@ if __name__ == "__main__":
     fix_config_path = "../configs/config_fix.yaml"
     with open(fix_config_path, "r") as f:
         fix_cfg = yaml.safe_load(f)
+    postprocessing_config_path = "../configs/cfg_postprocessing.yaml"
+    with open(postprocessing_config_path, "r") as f:
+        cfg_postprocessing = yaml.safe_load(f)
     name_mapping_path = "../configs/name_mapping.yaml"
     with open(name_mapping_path, "r") as f:
         name_mapping = yaml.safe_load(f)
@@ -138,11 +141,17 @@ if __name__ == "__main__":
     # Postprocessing step
     if var_cfg_updated["general"]["steps"]["postprocessing"]:
         if use_mpi and rank == 0:
-            postprocessor = Postprocessor(fix_cfg=fix_cfg, var_cfg=var_cfg_updated, name_mapping=name_mapping)
+            postprocessor = Postprocessor(fix_cfg=fix_cfg,
+                                          var_cfg=var_cfg_updated,
+                                          cfg_postprocessing=cfg_postprocessing,
+                                          name_mapping=name_mapping)
             postprocessor.postprocess()
         elif not use_mpi:
             # Run postprocessing after all repetitions have been completed
-            postprocessor = Postprocessor(fix_cfg=fix_cfg, var_cfg=var_cfg_updated, name_mapping=name_mapping)
+            postprocessor = Postprocessor(fix_cfg=fix_cfg,
+                                          var_cfg=var_cfg_updated,
+                                          cfg_postprocessing=cfg_postprocessing,
+                                          name_mapping=name_mapping)
             postprocessor.postprocess()
 
 

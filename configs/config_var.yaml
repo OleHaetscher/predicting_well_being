@@ -262,12 +262,12 @@ analysis:
 
 postprocessing:
   methods:
-    - calculate_lin_models
+    #- calculate_lin_models
     #- sanity_check_pred_vs_true
     #- condense_cv_results
     #- condense_lin_model_coefs
     #- create_descriptives
-    #- conduct_significance_tests
+    - conduct_significance_tests
     #- create_cv_results_plots
     #- create_shap_plots
 
@@ -347,18 +347,34 @@ postprocessing:
     alpha: 0.05 # .05
     metric: r2 # r2
     crit: wb_state  # do this only for wb_state
-    store: false
-    stat_order_compare_models: ["elasticnet M (SD)", "randomforestregressor M (SD)", "t_val", "p_val", "p_val_fdr"]
-    stat_order_compare_predictor_classes: ["Personal M (SD)", "Personal + X M (SD)", "t_val", "p_val", "p_val_fdr"]
+    store: true  # TODO Change order
+    stat_order_compare_models:
+      - "M (ENR)"
+      - "SD (ENR)"
+      - "M (RFR)"
+      - "SD (RFR)"
+      - "delta_R2"
+      - "t"
+      - "p"
+      - "p (FDR-corrected)"
+    stat_order_compare_predictor_classes:
+      - "M (Personal)"
+      - "SD (Personal)"
+      - "M (Other)"
+      - "SD (Other)"
+      - "delta_R2"
+      - "t"
+      - "p"
+      - "p (FDR-corrected)"
 
     stat_mapping:
       t_val: "t"
       p_val: "p"
       p_val_fdr: "p (FDR-corrected)"
-      "elasticnet M (SD)": "MSD ENR"
-      "randomforestregressor M (SD)": "MSD RFR"
+      #"elasticnet M (SD)": "MSD ENR"  # TODO DO I still need this?
+      #"randomforestregressor M (SD)": "MSD RFR"
 
-    compare_models: true
+    compare_models: false
     compare_predictor_classes: true
 
     model_comparison_data:
@@ -410,7 +426,7 @@ postprocessing:
     num_features: 6
 
   plots:  # TODO: Adhere to NHB Style
-    store_plots: false
+    store_plots: true
     plots:
       # - importance_plot  # not used right now
       - beeswarm_plot
@@ -498,7 +514,7 @@ postprocessing:
         - "a) One-level predictions"  # "a) Within Predictor Levels"
         - "b) Two-level predictions" # "b) Across Two Predictor Levels"
         - "c) Three-level predictions" # "c) Across Three Predictor Levels"
-      feature_combo_name_mapping:
+      feature_combo_name_mapping:  # TODO remove
         pl: "Personal; n = 9,118"
         srmc: "Situational (ESM); n = 9,118"
         sens: "Situational (Sensing); n = 1,338"
@@ -514,12 +530,12 @@ postprocessing:
 
     shap_beeswarm_plot:  # could define dpi, etc as well here
 
-      prediction_model: [ randomforestregressor ]  # must be iterable
-      crit: [wb_state]  # must be iterable
-      samples_to_include: [selected]  # must be iterable
+      prediction_model: [ randomforestregressor, elasticnet ]  # must be iterable
+      crit: [wb_trait, wb_state]  # must be iterable
+      samples_to_include: [selected, all]  # must be iterable
       num_to_display: 6
       shap_ia_values:
-        add: true
+        add: false
         position: [3, 2]  # below the "all_in"
         feature_combination: srmc
         short_feature_names: False
@@ -530,7 +546,7 @@ postprocessing:
         title_split_strng: ":"
         abbreviation: "IA"
 
-      n_samples_mapping:  # TODO: Other configurations?
+      n_samples_mapping:  # TODO: Remove
         pl: "n = 9,118"
         srmc: "n = 9,118"
         sens: "n = 1,338"
@@ -577,7 +593,7 @@ postprocessing:
           row_3: 3
         max_char_on_line: 26
         split_strng: "+"
-        add_n: False
+        add_n: True
       col_assignment:
         first_col: [ "pl", "srmc", "sens", "mac" ]
         second_col: [ "pl_srmc", "pl_sens", "pl_srmc_sens", "pl_mac" ]

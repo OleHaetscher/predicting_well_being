@@ -242,6 +242,6 @@ class DataSelector:
         with open(file_path, "r") as file:
             feature_lst = [line.strip() for line in file]
 
-        df_filtered = df[feature_lst]
+        df_filtered = df[feature_lst + self.meta_vars]
 
         return df_filtered

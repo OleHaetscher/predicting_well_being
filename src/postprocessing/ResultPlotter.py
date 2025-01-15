@@ -15,6 +15,8 @@ from matplotlib.ticker import FuncFormatter
 from numpy import ndarray
 from shap import Explanation
 
+from src.utils.utilfuncs import NestedDict
+
 
 class ResultPlotter:
     """
@@ -27,8 +29,9 @@ class ResultPlotter:
         - Adjusting the format
     """
 
-    def __init__(self, var_cfg, plot_base_dir):
+    def __init__(self, var_cfg, cfg_postprocessing, plot_base_dir):
         self.var_cfg = var_cfg
+        self.cfg_postprocessing = cfg_postprocessing
         self.plot_cfg = self.var_cfg["postprocessing"]["plots"]
 
         self.plot_base_dir = os.path.join(plot_base_dir, "plots")  # this is the folder containing the processed final results
@@ -95,21 +98,23 @@ class ResultPlotter:
                     )
 
                     # Get the specific data to plot and extract the increment and base values for 2- and 3-level analyses
-                    filtered_metrics_col = self.prepare_cv_results_plot_data(
-                        cv_results_dct=cv_results_dct[metric],
+                    filtered_metrics_cols = self.prepare_cv_results_plot_data(
+                        cv_results_dct=cv_results_dct,
                         crit=crit,
                         samples_to_include=samples_to_include,
+                        metric=metric,
                         models=self.cv_plot_params["models"],
                         feature_combinations=self.cv_plot_params["feature_combos"]
                     )
                     ref_dct = self.get_refs(
-                        cv_results_dct=cv_results_dct[metric],
+                        cv_results_dct=cv_results_dct,
                         crit=crit,
+                        metric=metric,
                         samples_to_include="all",
                         ref_feature_combo="pl"
                     )
                     margin_dct = self.get_margins(
-                        cv_results_dct=cv_results_dct[metric],
+                        cv_results_dct=cv_results_dct,
                         ref_dct=ref_dct,
                         metric=metric,
                         crit=crit,
@@ -123,7 +128,7 @@ class ResultPlotter:
                         crit=crit,
                         samples_to_include=samples_to_include,
                         titles=self.cv_plot_params["titles"],
-                        filtered_metrics_col=filtered_metrics_col,
+                        filtered_metrics_col=filtered_metrics_cols,
                         margin_dct=margin_dct,
                         ref_dct=ref_dct,
                         fig=fig,
@@ -136,80 +141,101 @@ class ResultPlotter:
                         rel=rel,
                     )
 
-    def prepare_cv_results_plot_data(self,
-                                     cv_results_dct: dict[str, dict[str, float]],
-                                     crit: str,
-                                     samples_to_include: str,
-                                     models: list[str],
-                                     feature_combinations: list[list[str]]) \
-            -> list[dict[str, dict[str, float]]]:
+    def prepare_cv_results_plot_data(
+            self,
+            cv_results_dct: NestedDict,
+            crit: str,
+            metric: str,
+            samples_to_include: str,
+            models: list[str],
+            feature_combinations: list[list[str]]
+    ) -> list[NestedDict]:
         """
         Prepares the filtered data for CV results plotting.
-            - Filters the data to include only the current crit / samples_to_include
-            - Extracts the right metrics for each subplot location on the base plot
 
-        Note:
-            For the "combo" scenario:
-            - The results for samples_to_include == "selected" are used in the first column (one-level analysis)
-            - The results for samples_to_include == "all" are used in the 2nd and 3rd column (two- and three-level analysis).
+        This function:
+        - Filters the data to include only the specified `crit` and `samples_to_include`.
+        - Extracts the relevant metrics for each subplot location based on the feature_combinations and models.
 
         Args:
-            cv_results_dct: Dict containing the cv_results (m/sd) for a given crit/feature_combo/samples_to_include/model
-                and the metric specified
-            crit: The current criterion being processed.
+            cv_results_dct: Nested dictionary containing CV results for a given crit, feature_combo, samples_to_include, model, and metric.
+            crit: The criterion being processed (e.g., 'na_state').
             samples_to_include: The sample type to include ("all", "selected", or "combo").
-            models: List of models to include.
-            feature_combinations: Feature groups to consider for filtering.
+            models: List of models to include (e.g., ['elasticnet', 'randomforestregressor']).
+            feature_combinations: List of feature groups to consider for filtering.
 
         Returns:
-            tuple[dict, list[dict]]: (filtered_metrics, filtered_metrics_col)
+            list[dict[str, dict[str, float]]]: A list where each element contains filtered data for one feature group.
         """
         if samples_to_include not in ["all", "selected", "combo"]:
             raise ValueError("Invalid value for samples_to_include. Must be one of ['all', 'selected', 'combo'].")
 
-        filtered_metrics_col = []
+        filtered_metrics_cols = []
 
         for i, group in enumerate(feature_combinations):
-            if samples_to_include == "combo":
-                sublist_sample = "selected" if i == 0 else "all"
-            else:
-                sublist_sample = samples_to_include
+            # For "combo", the first column uses "selected" samples, and the others use "all"
+            sublist_sample = "selected" if samples_to_include == "combo" and i == 0 else "all"
 
+            print(sublist_sample)
             filtered_metrics = self.filter_cv_results_data(
                 cv_results_dct=cv_results_dct,
                 crit=crit,
-                samples_to_include=sublist_sample
+                samples_to_include=sublist_sample,
+                metric=metric
             )
-            filtered_metric_col = {
-                key: value for key, value in filtered_metrics.items()
-                if key in [f"{prefix}_{model}" for prefix, model in product(group, models)]
-            }
-            filtered_metrics_col.append(filtered_metric_col)
 
-        return filtered_metrics_col
+            # Filter metrics for the specific feature group and models
+            filtered_metric_col = {
+                f"{feature_combo}_{model}": model_vals
+                for feature_combo, feature_combo_vals in filtered_metrics.items()
+                for model, model_vals in feature_combo_vals.items()
+                if feature_combo in group
+            }
+
+            filtered_metrics_cols.append(filtered_metric_col)
+
+        return filtered_metrics_cols
 
     @staticmethod
     def filter_cv_results_data(
-                               cv_results_dct: dict[str, dict[str, float]],
-                               crit: str,
-                               samples_to_include: str) -> dict[str, dict[str, float]]:
+            cv_results_dct: NestedDict,
+            crit: str,
+            metric: str,
+            samples_to_include: str
+    ) -> NestedDict:
         """
-        This function filters the cv_results_dct for a specific crit and samples_to_include
+        Filters the cv_results_dct for a specific criterion and sample type.
 
         Args:
-            cv_results_dct:
-            crit:
-            samples_to_include:
+            cv_results_dct: Nested dictionary containing CV results for crit, feature_combo, samples_to_include, model, and metric.
+            crit: The criterion to filter by (e.g., 'na_state').
+            samples_to_include: The sample type to filter by (e.g., 'all' or 'selected').
 
         Returns:
-            dict: Containing the filtered dict with adjusted keys
-
+            dict[str, dict[str, dict[str, float]]]: Filtered dictionary with keys for feature_combinations,
+                                                    models, and metrics.
         """
-        return {
-                key.replace(f"{crit}_", "").replace(f"_{samples_to_include}", ""): value
-                for key, value in cv_results_dct.items()
-                if key.startswith(crit) and key.endswith(samples_to_include)
+        if crit not in cv_results_dct:
+            raise KeyError(f"Criterion '{crit}' not found in the provided CV results dictionary.")
+
+        crit_results = cv_results_dct[crit]
+
+        if samples_to_include not in crit_results:
+            raise KeyError(f"Samples_to_include '{samples_to_include}' not found for criterion '{crit}'.")
+
+        # Extract results for the given criterion and samples_to_include
+        samples_results = crit_results[samples_to_include]
+
+        # Restructure to exclude the metric hierarchy and keep only values for the specified metric
+        filtered_results = {
+            feature_comb: {
+                model: metrics.get(metric, {})
+                for model, metrics in models_metrics.items()
             }
+            for feature_comb, models_metrics in samples_results.items()
+        }
+
+        return filtered_results
 
     def plot_cv_results_plots(self,
                               feature_combinations: list[list[str]],
@@ -431,8 +457,8 @@ class ResultPlotter:
             row_idx
             rel: vertical line value to indicate a threshold.
         """
-        m_metric = f"m_{metric}"
-        sd_metric = f"sd_{metric}"
+        m_metric = "M"
+        sd_metric = "SD"
         y_positions = np.arange(len(order))
 
         # Loop through each model and feature group
@@ -498,8 +524,8 @@ class ResultPlotter:
             rel: vertical line value to indicate a threshold.
         """
         print(metric)
-        m_metric = f"m_{metric}"
-        sd_metric = f"sd_{metric}"
+        m_metric = "M"
+        sd_metric = "SD"
         y_positions = np.arange(len(order))
 
         for i, model in enumerate(models):
@@ -688,36 +714,38 @@ class ResultPlotter:
             dict: Dictionary containing incremental performance differences for each 'pl' combination and model.
         """
         margin_dict = {}
-        m_metric = f"m_{metric}"
-        sd_metric = f"sd_{metric}"
+        m_metric = "M"
+        sd_metric = "SD"
         ref = f"{ref_feature_combo}_"
 
         filtered_metrics = self.filter_cv_results_data(
             cv_results_dct=cv_results_dct,
             crit=crit,
             samples_to_include=samples_to_include,
+            metric=metric
         )
 
         # Loop over each key in the filtered_metrics that contains ref but is not ref (e.g., pl_srmc vs. pl)
-        for key, value in filtered_metrics.items():
-            if key.startswith(ref) and key not in ref_dct or key.startswith("all_in"):
-                model = key.split('_')[-1]
-                base_key = f"{ref}{model}"
+        for feature_combo, feature_combo_vals in filtered_metrics.items():
+            for model, model_vals in feature_combo_vals.items():
+                if feature_combo.startswith(ref) and feature_combo not in ref_dct or feature_combo.startswith("all_in"):
+                    ref_key = f"{ref}{model}"
 
-                if base_key in ref_dct:
-                    incremental_difference = value[m_metric] - ref_dct[base_key][m_metric]
-                    margin_dict[key] = {
-                        f'incremental_m_{metric}': incremental_difference,
-                        sd_metric: value[sd_metric]  # Note: We need the SD of the combined metric for the plots
-                    }
+                    if ref_key in ref_dct:
+                        incremental_difference = model_vals[m_metric] - ref_dct[ref_key][m_metric]
+                        margin_dict[f"{feature_combo}_{model}"] = {
+                            f'incremental_{m_metric}': incremental_difference,
+                            sd_metric: model_vals[sd_metric]  # Note: We need the SD of the combined metric for the plots
+                        }
 
         return margin_dict
 
     @staticmethod
-    def get_refs(cv_results_dct: dict[str, dict[str, float]],  # TODO check
+    def get_refs(cv_results_dct: NestedDict,
                  crit: str,
+                 metric: str,
                  samples_to_include: str,
-                 ref_feature_combo: str = "pl") -> dict[str, dict[str, float]]:
+                 ref_feature_combo: str = "pl") -> NestedDict:
         """
         This function extracts the reference values for the two- and three-level analysis in the cv_result plots.
 
@@ -732,14 +760,16 @@ class ResultPlotter:
             dict: Contaning the reference values used in the plot for both models
 
         """
+        enr_subdct = cv_results_dct[crit][samples_to_include][ref_feature_combo]["elasticnet"][metric]
+        rfr_subdct = cv_results_dct[crit][samples_to_include][ref_feature_combo]["randomforestregressor"][metric]
         return {
-            f"{ref_feature_combo}_elasticnet":
-                cv_results_dct[f"{crit}_{ref_feature_combo}_elasticnet_{samples_to_include}"],
-            f"{ref_feature_combo}_randomforestregressor":
-                cv_results_dct[f"{crit}_{ref_feature_combo}_randomforestregressor_{samples_to_include}"]
+            f"{ref_feature_combo}_elasticnet": enr_subdct,
+            f"{ref_feature_combo}_randomforestregressor": rfr_subdct
         }
 
-    def plot_shap_beeswarm_plots(self, prepare_shap_data_func: Callable, prepare_shap_ia_data_func: Callable = None):
+    def plot_shap_beeswarm_plots(self,
+                                 prepare_shap_data_func: Callable,
+                                 prepare_shap_ia_data_func: Callable = None) -> None:
         """
         Plots SHAP beeswarm plots for different predictor combinations arranged in a grid.
 
@@ -765,7 +795,9 @@ class ResultPlotter:
         # Create custom colormap
         colors = self.plot_cfg["custom_cmap_colors"]
         cmap = LinearSegmentedColormap.from_list("custom_cmap", colors)
-        feature_combo_name_mapping = self.plot_cfg["feature_combo_name_mapping"]
+
+        feature_combo_name_mapping = self.cfg_postprocessing["general"]["feature_combinations"]["name_mapping"]
+
         num_to_display = self.plot_cfg["shap_beeswarm_plot"]["num_to_display"]
 
         beeswarm_figure_params = self.plot_cfg["shap_beeswarm_plot"]["figure"]
@@ -814,9 +846,14 @@ class ResultPlotter:
                     # Iterate over the positions and plot the SHAP beeswarm plots
                     for (row, col), predictor_combination in positions.items():
                         if predictor_combination in data_current:
+
+                            # Get n_samples per crit / samples_to_include / predictor combination
+                            n_samples = None # n_samples_dct[predictor_combination][samples_to_include][crit]
+
                             shap_values = data_current[predictor_combination]
                             self.plot_shap_beeswarm(
                                 shap_values=shap_values,
+                                n_samples=n_samples,
                                 ax=axes[row, col],
                                 row=row,
                                 beeswarm_fontsizes=beeswarm_fontsizes,
@@ -827,6 +864,7 @@ class ResultPlotter:
                                 predictor_combination=predictor_combination,
                                 title_line_dct=beeswarm_title_params["line_dct"]
                             )
+
                             # Add the main title (first-row axes only)
                             if row == 0:
                                 first_row_heading = beeswarm_title_params["shap_values"][col]
@@ -845,6 +883,7 @@ class ResultPlotter:
                                     shap_ia_data = ia_data_current[predictor_combination]
                                     self.plot_shap_beeswarm(
                                         shap_values=shap_ia_data,
+                                        n_samples=n_samples,
                                         ax=axes[row, col],
                                         row=row,
                                         beeswarm_fontsizes=beeswarm_fontsizes,
@@ -895,8 +934,42 @@ class ResultPlotter:
                     else:
                         plt.show()
 
+    @staticmethod
+    def add_n_to_title(input_string: str, n_samples: int) -> str:
+        """
+        Formats a string to include the number of samples, with 'n' in italics, and places it on a new line.
+
+        Args:
+            input_string (str): The main title or string to format.
+            n_samples (int): The number of samples to include in the title.
+
+        Returns:
+            str: A formatted string in the format: "<input_string>\n*n* = <formatted_number>",
+                 where 'n' is italicized, and large numbers are formatted with commas.
+
+        Example:
+            add_n_to_title("My Title", 10333) -> "My Title\n*n* = 10,333"
+        """
+        # Format the number with commas
+        #formatted_n = f"n = {n_samples:,}"
+
+        # Replace 'n' with the italicized version
+        #n_samples_formatted = re.sub(r'\bn\b', r'*n*', formatted_n, flags=re.IGNORECASE)
+
+        # Combine the input string and the formatted n value
+        #formatted_title = f"{input_string}\n{n_samples_formatted}"
+        # Format the number with commas
+        formatted_n = f"$n$ = {n_samples:,}"
+
+        # Combine the input string and the formatted n value
+        formatted_title = f"{input_string}\n{formatted_n}"
+
+        return formatted_title
+
+
     def plot_shap_beeswarm(self,
                            shap_values: shap.Explanation,
+                           n_samples,
                            ax,
                            row,
                            beeswarm_fontsizes: dict,
@@ -964,22 +1037,18 @@ class ResultPlotter:
             max_char_on_line=self.plot_cfg["shap_beeswarm_plot"]["titles"]["max_char_on_line"],
             split_strng=split_strng,
         )
-
-        if self.plot_cfg["shap_beeswarm_plot"]["titles"]["add_n"]:
-            n_sample_mapping = self.plot_cfg["shap_beeswarm_plot"]["n_samples_mapping"]
-            n_samples_formatted = n_sample_mapping[predictor_combination]
-
-            print(n_samples_formatted)
-            n_samples_formatted = re.sub(r'\bn\b', r'$n$', n_samples_formatted, flags=re.IGNORECASE)
-            formatted_title += f"\n{n_samples_formatted}"
+        n_samples = shap_values.shape[0]
+        formatted_title_with_n = self.add_n_to_title(
+            formatted_title, n_samples
+        )
 
         # Determine the maximum line count for the current row
         max_lines_in_row = title_line_dct[f"row_{row}"]
-        current_title_line_count = formatted_title.count("\n") + 1
+        current_title_line_count = formatted_title_with_n.count("\n") + 1
         y_position = 1.0 + 0.05 * (max_lines_in_row - current_title_line_count)
 
         ax.set_title(
-            formatted_title,
+            formatted_title_with_n,
             fontsize=beeswarm_fontsizes["title"],
             y=y_position
         )

@@ -110,6 +110,26 @@ def custom_round(value: float, decimals: int, max_decimals: int = 10) -> float:
     return rounded
 
 
+def create_defaultdict(n_nesting: int, default_factory: Any = int) -> defaultdict:
+    """
+    Recursively creates a nested defaultdict with a specified level of nesting.
+
+    Args:
+        n_nesting (int): The number of nested levels for the defaultdict.
+        default_factory (Any): The default value for the innermost level.
+                               Defaults to `int`.
+
+    Returns:
+        defaultdict: A nested defaultdict with `n_nesting` levels.
+    """
+    if n_nesting < 1:
+        raise ValueError("n_nesting must be at least 1")
+
+    def nested_factory():
+        return default_factory if n_nesting == 1 else create_defaultdict(n_nesting - 1, default_factory)
+
+    return defaultdict(nested_factory)
+
 def defaultdict_to_dict(
     dct: Union[defaultdict, dict, NestedDict]
 ) -> Union[dict, NestedDict]:

@@ -40,10 +40,11 @@ class SignificanceTesting:
         fis_aggregated_results: Dict,
         significance_results: Dict,
     """
-
+    # TODO: Use Nested
     def __init__(
         self,
-            var_cfg
+        var_cfg,
+        cfg_postprocessing,
     ):
         """
         Constructor method of the SignificanceTesting Class.
@@ -52,6 +53,7 @@ class SignificanceTesting:
             config_path: Path to the .YAML config file.
         """
         self.var_cfg = var_cfg
+        self.cfg_postprocessing = cfg_postprocessing
         self.sig_cfg = self.var_cfg["postprocessing"]["significance_tests"]
         self.base_result_dir = self.var_cfg["postprocessing"]["significance_tests"]["base_result_path"]
         self.result_dct = None
@@ -60,6 +62,9 @@ class SignificanceTesting:
 
         self.compare_model_results = {}
         self.compare_predictor_classes_results = {}
+
+        self.model_name_mapping = self.cfg_postprocessing["general"]["models"]["name_mapping"]
+        self.feature_combo_name_mapping = self.cfg_postprocessing["general"]["feature_combinations"]["name_mapping"]
 
     def significance_testing(self):
         """
@@ -150,7 +155,7 @@ class SignificanceTesting:
         # Set custom order for stats
         custom_order_stats = self.sig_cfg["stat_order_compare_models"]
         df["Stat"] = pd.Categorical(df["Stat"], categories=custom_order_stats, ordered=True)
-        df["Stat"] = df["Stat"].map(self.sig_cfg["stat_mapping"])
+        # df["Stat"] = df["Stat"].map(self.sig_cfg["stat_mapping"])  # TODO
 
         # Set custom order for predictor classes
         custom_order_predictor_classes = self.sig_cfg["model_comparison_data"]["feature_combinations"]
@@ -447,16 +452,20 @@ class SignificanceTesting:
                 cv_results_model1_mean, cv_results_model1_sd = np.mean(cv_results_model1), np.std(cv_results_model1)
                 cv_results_model2_mean, cv_results_model2_sd = np.mean(cv_results_model2), np.std(cv_results_model2)
 
-                t_val, p_val = self.corrected_dependent_ttest(cv_results_model1, cv_results_model2)
+                # Change model order, so that we have a positive t-value if RFR performs better, aligned with the paper
+                t_val, p_val = self.corrected_dependent_ttest(cv_results_model2, cv_results_model1)
+
+                model1_name_mapped = self.model_name_mapping[model1_name]
+                model2_name_mapped = self.model_name_mapping[model2_name]
 
                 sig_results_dct[fc][sti] = {
-                    f"{model1_name} M": np.round(cv_results_model1_mean, 3),
-                    f"{model1_name} SD": np.round(cv_results_model1_sd, 3),
-                    f"{model2_name} M": np.round(cv_results_model2_mean, 3),
-                    f"{model2_name} SD": np.round(cv_results_model2_sd, 3),
-                    f"deltaR2": np.round(cv_results_model1_mean - cv_results_model2_mean, 3),
-                    'p_val': p_val,
-                    't_val': np.round(t_val, 2)
+                    f"M ({model1_name_mapped})": np.round(cv_results_model1_mean, 3),
+                    f"SD ({model1_name_mapped})": np.round(cv_results_model1_sd, 3),
+                    f"M ({model2_name_mapped})": np.round(cv_results_model2_mean, 3),
+                    f"SD ({model2_name_mapped})": np.round(cv_results_model2_sd, 3),
+                    f"delta_R2": np.round(cv_results_model1_mean - cv_results_model2_mean, 3),
+                    't': np.round(t_val, 3),
+                    'p': p_val,
                 }
 
         sig_results_dct = defaultdict_to_dict(sig_results_dct)
@@ -487,19 +496,21 @@ class SignificanceTesting:
                     if pl_data and pl_combo_data:
                         cv_results_pl_m, cv_results_pl_sd = np.mean(pl_data), np.std(pl_data)
                         cv_results_pl_combo_m, cv_results_pl_combo_sd = np.mean(pl_combo_data), np.std(pl_combo_data)
-                        t_val, p_val = self.corrected_dependent_ttest(pl_data, pl_combo_data)
+
+                        # Change order, so that we have a positive t-value if the combo performs better than pl
+                        t_val, p_val = self.corrected_dependent_ttest(pl_combo_data, pl_data)
 
                         # pl_combo_key_formatted = self.var_cfg["postprocessing"]["plots"]["feature_combo_name_mapping"][pl_combo_key]
 
                         # Get results into the result_dct
                         sig_results_dct[model][samples_to_include][pl_combo_key] = {
-                            f"MR2 (Personal)": np.round(cv_results_pl_m, 3),
-                            f"SDR2 (Personal)": np.round(cv_results_pl_sd, 3),
-                            f"MR2 (Personal + Other)": np.round(cv_results_pl_combo_m, 3),
-                            f"SDR2 (Personal + Other)": np.round(cv_results_pl_combo_sd, 3),
+                            f"M (Personal)": np.round(cv_results_pl_m, 3),
+                            f"SD (Personal)": np.round(cv_results_pl_sd, 3),
+                            f"M (Other)": np.round(cv_results_pl_combo_m, 3),
+                            f"SD (Other)": np.round(cv_results_pl_combo_sd, 3),
                             f"deltaR2": np.round(cv_results_pl_combo_m - cv_results_pl_m, 3),
-                            'p_val': p_val,
-                            't_val': np.round(t_val, 2)
+                            'p': p_val,
+                            't': np.round(t_val, 2)
                         }
 
         sig_results_dct = defaultdict_to_dict(sig_results_dct)
@@ -519,7 +530,7 @@ class SignificanceTesting:
                 The outer dict hierarchy depends on the type of comparison (models vs. predictor classes).
 
         Returns:
-            result_dict: Dict, with 'p_val_fdr' values added in the inner Dict.
+            result_dict: Dict, with 'p (FDR corrected)' values added in the inner Dict.
         """
         p_val_fdr_dct = copy.deepcopy(p_val_dct)
         p_values = []
@@ -535,7 +546,7 @@ class SignificanceTesting:
             for key, value in d.items():
                 if isinstance(value, dict):
                     collect_p_values(value)
-                elif key == "p_val":
+                elif key == "p":
                     p_values.append(value)
                     p_val_locations.append(d)
 
@@ -552,8 +563,8 @@ class SignificanceTesting:
                 formatted_p_values = p_values
 
             for loc, adj_p, orig_p in zip(p_val_locations, formatted_p_values_fdr, formatted_p_values):
-                loc["p_val_fdr"] = adj_p
-                loc["p_val"] = orig_p
+                loc["p (FDR-corrected)"] = adj_p
+                loc["p"] = orig_p
 
         return p_val_fdr_dct
 
@@ -578,7 +589,7 @@ class SignificanceTesting:
         divisor = 1 / n * sum(differences)
         denominator = sqrt(1 / n + test_training_ratio) * sd
 
-        t_stat = np.round(divisor / denominator, 2)
+        t_stat = np.round(divisor / denominator, 3)  # TODO: This is stupid, why round here? Should be done as a last step
         df = n - 1  # degrees of freedom
         print(df)
         p = np.round((1.0 - t.cdf(abs(t_stat), df)) * 2.0, 4)  # p value

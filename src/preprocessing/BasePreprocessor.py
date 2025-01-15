@@ -11,8 +11,9 @@ from pandas.api.types import is_numeric_dtype
 from src.utils.ConfigParser import *
 from src.utils.DataLoader import DataLoader
 from src.utils.Logger import *
+from src.utils.SanityChecker import SanityChecker
 from src.utils.Timer import *
-from src.utils.sanitychecker import *
+from src.utils.SanityChecker import *
 from src.utils.utilfuncs import NestedDict
 
 
@@ -71,6 +72,7 @@ class BasePreprocessor(ABC):
         self.sanity_checker = SanityChecker(
             logger=self.logger,
             fix_cfg=self.fix_cfg,
+            var_cfg=self.var_cfg,
             cfg_sanity_checks=self.var_cfg["preprocessing"]["sanity_checking"],
             config_parser_class=ConfigParser(),
             apply_to_full_df=False,
