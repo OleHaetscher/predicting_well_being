@@ -20,7 +20,7 @@ from statsmodels.stats.multitest import fdrcorrection
 
 from collections import deque, defaultdict
 
-from src.utils.utilfuncs import defaultdict_to_dict, format_df
+from src.utils.utilfuncs import defaultdict_to_dict, format_df, NestedDict
 
 
 class SignificanceTesting:
@@ -105,10 +105,14 @@ class SignificanceTesting:
             data_to_compare_models = self.get_model_comparison_data()
             sig_results_models = self.apply_compare_models(data_to_compare_models)
             sig_results_models_fdr = self.fdr_correct_p_values(sig_results_models)
-            sig_results_models_table = self.create_sig_results_table_models(sig_results_models_fdr)
+            sig_results_models_main_table, sig_results_models_control_table = (
+                self.create_sig_results_table_models(sig_results_models_fdr)
+            )
             if self.sig_cfg["store"]:
-                file_name = os.path.join(self.base_result_dir, "sig_table_compare_models.xlsx")
-                sig_results_models_table.to_excel(file_name, index=True)
+                file_name_main = os.path.join(self.base_result_dir, "sig_table_compare_models_main.xlsx")
+                file_name_control = os.path.join(self.base_result_dir, "sig_table_compare_models_control.xlsx")
+                sig_results_models_main_table.to_excel(file_name_main, index=True)
+                sig_results_models_control_table.to_excel(file_name_control, index=True)
 
         # compare predictor classes
         if self.sig_cfg["compare_predictor_classes"]:
@@ -120,7 +124,7 @@ class SignificanceTesting:
                 file_name = os.path.join(self.base_result_dir, "compare_predictor_classes.xlsx")
                 sig_results_predictor_classes_table.to_excel(file_name, index=True)
 
-    def create_sig_results_table_models(self, p_val_dct: dict[str, dict[str, dict[str, float]]]) -> pd.DataFrame:
+    def create_sig_results_table_models(self, p_val_dct: NestedDict) -> tuple[pd.DataFrame, pd.DataFrame]:
         """
         Creates a pandas DataFrame from the nested dictionary structure.
 
@@ -155,7 +159,6 @@ class SignificanceTesting:
         # Set custom order for stats
         custom_order_stats = self.sig_cfg["stat_order_compare_models"]
         df["Stat"] = pd.Categorical(df["Stat"], categories=custom_order_stats, ordered=True)
-        # df["Stat"] = df["Stat"].map(self.sig_cfg["stat_mapping"])  # TODO
 
         # Set custom order for predictor classes
         custom_order_predictor_classes = self.sig_cfg["model_comparison_data"]["feature_combinations"]
@@ -165,8 +168,20 @@ class SignificanceTesting:
         )
 
         # Pivot the DataFrame
-        df_pivoted = df.pivot(index=["Samples to include", "Stat"], columns="Predictor class", values="Stat value")
-        return df_pivoted
+        df_pivoted = df.pivot(
+            index=["Samples to include", "Stat"],
+            columns="Predictor class",
+            values="Stat value")
+
+        # Split main/selected and control
+        # (MultiIndex trick: loc[('control', ), :] selects the first-level key 'control')
+        df_control_pivoted = df_pivoted.loc[('control',), :].copy()
+
+        # Drop those rows from df_pivoted
+        df_pivoted.drop('control', level='Samples to include', inplace=True)
+
+        return df_pivoted, df_control_pivoted
+
 
     def create_sig_results_table_predictor_classes(self, p_val_dct: dict[str, dict[str, dict[str, dict[str, dict[str, float]]]]]) -> pd.DataFrame:
         """
@@ -221,6 +236,7 @@ class SignificanceTesting:
         df_pivoted = df.pivot(index=["Prediction model", "Samples to include", "Stat"], columns="Predictor class", values="Stat value")
 
         df_pivoted = df_pivoted[col_order]
+
         return df_pivoted
 
     def get_model_comparison_data(self):
@@ -510,7 +526,7 @@ class SignificanceTesting:
                             f"SD (Other)": np.round(cv_results_pl_combo_sd, 3),
                             f"deltaR2": np.round(cv_results_pl_combo_m - cv_results_pl_m, 3),
                             'p': p_val,
-                            't': np.round(t_val, 2)
+                            't': np.round(t_val, 3)
                         }
 
         sig_results_dct = defaultdict_to_dict(sig_results_dct)
@@ -571,13 +587,15 @@ class SignificanceTesting:
     @staticmethod
     def corrected_dependent_ttest(data1: list[float], data2: list[float], test_training_ratio: float = 1/9):
         """
-        Python implementation for the corrected paired t-test as described by Nadeau & Bengio (2003).
+        Python implementation for the corrected paired t-test as described by Nadeau & Bengio (2003) and
+        Bouckaert & Frank (2004).
         See also https://gist.github.com/jensdebruijn/13e8eeda85eb8644ac2a4ac4c3b8e732
 
         Args:
             data1: list, containing the prediction results for a certain setting (up to a specific model)
             data2: list, containing the prediction results for a another setting (up to a specific model)
-            test_training_ratio: float, depends on the number of folds in the outer_cv (i.e., 10 in this setting)
+            test_training_ratio: float, depends on the number of folds in the outer_cv (i.e., 10 in this setting).
+                So 1/10 of the data is used for testing, 9/10 for training.
 
         Returns:
             t_stat: float, t statistic of the comparison of data1 and data2
@@ -589,10 +607,9 @@ class SignificanceTesting:
         divisor = 1 / n * sum(differences)
         denominator = sqrt(1 / n + test_training_ratio) * sd
 
-        t_stat = np.round(divisor / denominator, 3)  # TODO: This is stupid, why round here? Should be done as a last step
+        t_stat = divisor / denominator
         df = n - 1  # degrees of freedom
-        print(df)
-        p = np.round((1.0 - t.cdf(abs(t_stat), df)) * 2.0, 4)  # p value
+        p = (1.0 - t.cdf(abs(t_stat), df)) * 2.0
 
         return t_stat, p
 

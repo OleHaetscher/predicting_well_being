@@ -265,7 +265,11 @@ postprocessing:
     #- calculate_lin_models
     #- sanity_check_pred_vs_true
     #- condense_cv_results
-    #- condense_lin_model_coefs
+
+    #- create_lin_model_coefs_supp
+    #- create_shap_values_supp
+    #- create_shap_ia_values_supp
+
     #- create_descriptives
     - conduct_significance_tests
     #- create_cv_results_plots
@@ -374,8 +378,8 @@ postprocessing:
       #"elasticnet M (SD)": "MSD ENR"  # TODO DO I still need this?
       #"randomforestregressor M (SD)": "MSD RFR"
 
-    compare_models: false
-    compare_predictor_classes: true
+    compare_models: true
+    compare_predictor_classes: false
 
     model_comparison_data:
       feature_combinations:

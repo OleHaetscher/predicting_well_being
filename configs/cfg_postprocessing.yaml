@@ -52,11 +52,17 @@ general:
       spearman: "rho"
       neg_mean_squared_error: "MSE"
 
-filenames:
-  cv_results_summarized: "cv_results_summary.json"
-  lin_model_coefs_summarized: "lin_model_coefs_summary.json"
-  shap_values_summarized: "shap_values_summary.pkl"
-  shap_ia_values_summarized: "shap_ia_values_summary.pkl"
+  filenames:
+    cv_results_summarized: "cv_results_summary.json"
+    lin_model_coefs_summarized: "lin_model_coefs_summary.json"
+    shap_values_summarized: "shap_values_summary.pkl"
+    shap_ia_values_summarized: "shap_ia_values_summary.pkl"
+
+  data_paths:
+    base_output_path: "../results/"
+    main_results_output_path: "run_2012"
+    ia_values_output_path: "ia_values_0912"
+    sig_test_output_path: "sig_tests_1312"
 
 # More specific configurations (should be named as the postprocessing steps)
 
@@ -68,6 +74,16 @@ condense_cv_results:
     - neg_mean_squared_error
 
 
+create_descriptives:
+
+conduct_significance_tests:
+  split_compare_models_table: true
+
+create_cv_results_plots:
+
+create_shap_plots:
+
+calculate_exp_lin_models:
 
 
 
@@ -78,6 +94,7 @@ condense_cv_results:
 
 
 
+# old
 methods:
   - calculate_lin_models
   #- sanity_check_pred_vs_true

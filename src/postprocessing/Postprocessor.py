@@ -1,5 +1,6 @@
 import json
 import os
+import pickle
 from collections import defaultdict
 
 import numpy as np
@@ -111,32 +112,6 @@ class Postprocessor:
                     SHAP beeswarm plots representing the most imortant features for all feature combinations
                     SHAP importance plots TBA
         """
-        if "calculate_lin_models" in self.methods_to_apply:
-            df = pd.read_pickle(os.path.join(self.var_cfg["preprocessing"]["path_to_preprocessed_data"], "full_data"))
-
-            for feature_combination in self.var_cfg["postprocessing"]["linear_regressor"]["feature_combinations"]:
-                for samples_to_include in self.var_cfg["postprocessing"]["linear_regressor"]["samples_to_include"]:
-                    for crit in self.var_cfg["postprocessing"]["linear_regressor"]["crits"]:
-                        for model_for_features in self.var_cfg["postprocessing"]["linear_regressor"]["models"]:
-                            linearregressor = LinearRegressor(
-                                var_cfg=self.var_cfg,
-                                processed_output_path=self.processed_output_path,
-                                df=df,
-                                feature_combination=feature_combination,
-                                crit=crit,
-                                samples_to_include=samples_to_include,
-                                model_for_features=model_for_features,
-                                meta_vars=self.meta_vars
-                            )
-
-                            linearregressor.get_regression_data()
-                            lin_model = linearregressor.compute_regression_models()
-
-                            self.result_table_creator.create_coefficients_table(
-                                model=lin_model,
-                                feature_combination=feature_combination,
-                                output_dir=os.path.join(self.processed_output_path, "tables")
-                            )
 
         if "sanity_check_pred_vs_true" in self.methods_to_apply:
             self.sanity_checker.sanity_check_pred_vs_true()
@@ -162,14 +137,6 @@ class Postprocessor:
                             output_dir=self.processed_output_path,
                             nnse_analysis=bool_val  # nnse or not
                         )
-
-        if "condense_lin_model_coefs" in self.methods_to_apply:
-            # store coefficients in a separate directory -> as file to supplement # TODO move filenames to cfg_postprocessing
-            self.create_lin_model_coefs_dir(
-                base_dir="../results/run_2012",
-                file_name="lin_model_coefs_summary.json",
-                output_base_dir="../results/run_2012_lin_model_coefs"
-            )
 
         if "create_descriptives" in self.methods_to_apply:
             self.descriptives_creator.create_m_sd_feature_table()
@@ -213,6 +180,57 @@ class Postprocessor:
                 prepare_shap_data_func=self.shap_processor.prepare_shap_data,
                 prepare_shap_ia_data_func=self.shap_processor.prepare_shap_ia_data,
                 # n_samples_dct=self.n_samples_dct,
+            )
+
+        if "calculate_exp_lin_models" in self.methods_to_apply:
+            df = pd.read_pickle(os.path.join(self.var_cfg["preprocessing"]["path_to_preprocessed_data"], "full_data"))
+
+            for feature_combination in self.var_cfg["postprocessing"]["linear_regressor"]["feature_combinations"]:
+                for samples_to_include in self.var_cfg["postprocessing"]["linear_regressor"]["samples_to_include"]:
+                    for crit in self.var_cfg["postprocessing"]["linear_regressor"]["crits"]:
+                        for model_for_features in self.var_cfg["postprocessing"]["linear_regressor"]["models"]:
+                            linearregressor = LinearRegressor(
+                                var_cfg=self.var_cfg,
+                                processed_output_path=self.processed_output_path,
+                                df=df,
+                                feature_combination=feature_combination,
+                                crit=crit,
+                                samples_to_include=samples_to_include,
+                                model_for_features=model_for_features,
+                                meta_vars=self.meta_vars
+                            )
+
+                            linearregressor.get_regression_data()
+                            lin_model = linearregressor.compute_regression_models()
+
+                            self.result_table_creator.create_coefficients_table(
+                                model=lin_model,
+                                feature_combination=feature_combination,
+                                output_dir=os.path.join(self.processed_output_path, "tables")
+                            )
+
+        if "create_lin_model_coefs_supp" in self.methods_to_apply:
+            # store coefficients in a separate directory -> as file to supplement # TODO move filenames to cfg_postprocessing
+            self.create_mirrored_dir_with_files(
+                base_dir="../results/run_2012",
+                file_name="lin_model_coefs_summary.json",
+                output_base_dir="../results/run_2012_lin_model_coefs",
+            )
+
+        if "create_shap_values_supp" in self.methods_to_apply:
+            # store coefficients in a separate directory -> as file to supplement # TODO move filenames to cfg_postprocessing
+            self.create_mirrored_dir_with_files(
+                base_dir="../results/run_2012",
+                file_name="shap_values_summary.pkl",
+                output_base_dir="../results/run_2012_shap_values"
+            )
+
+        if "create_shap_ia_values_supp" in self.methods_to_apply:
+            # store coefficients in a separate directory -> as file to supplement # TODO move filenames to cfg_postprocessing
+            self.create_mirrored_dir_with_files(
+                base_dir="../results/ia_values_0912",
+                file_name="shap_ia_values_summary.pkl",
+                output_base_dir="../results/run_2012_shap_ia_values"
             )
 
     def get_n_samples_per_analysis(self) -> None:
@@ -349,7 +367,7 @@ class Postprocessor:
         output_path = os.path.join(output_dir, f'cv_results_{metric}.xlsx')
         combined_df.to_excel(output_path, merge_cells=True)
 
-    def create_lin_model_coefs_dir(
+    def create_mirrored_dir_with_files(
             self,
             base_dir: str,
             file_name: str,
@@ -366,25 +384,114 @@ class Postprocessor:
                 input_file_path = os.path.join(root, file_name)
                 output_file_path = os.path.join(target_dir, file_name)
 
-                # Load JSON content
-                with open(input_file_path, 'r') as infile:
-                    lin_model_coefs = json.load(infile)
+                if file_name.startswith("lin_model_coefs"):
+                    self.process_lin_model_coefs_for_supp(input_file_path, output_file_path)
+                elif file_name.startswith("shap_values"):
+                    self.process_shap_values_for_supp(input_file_path, output_file_path)
+                elif file_name.startswith("shap_ia_values"):
+                    self.process_shap_ia_values_for_supp(input_file_path, output_file_path)
+                else:
+                    raise ValueError(f"Input file {file_name} not supported yet")
 
-                for stat, vals in lin_model_coefs.items():
-                    new_feature_names = apply_name_mapping(
-                        features=list(vals.keys()),
-                        name_mapping=self.name_mapping,
-                        prefix=True
-                    )
-                    # Replace old names with new_feature_names while maintaining the values
-                    updated_vals = {new_name: vals[old_name] for old_name, new_name in zip(vals.keys(), new_feature_names)}
+    def process_lin_model_coefs_for_supp(self, input_file_path: str, output_file_path: str):
+        """
+        Updates the feature names in the linear model coefficients with the names used in the paper.
+        """
+        lin_model_coefs = self.data_loader.read_json(input_file_path)
 
-                    lin_model_coefs[stat] = updated_vals
+        for stat, vals in lin_model_coefs.items():
+            new_feature_names = apply_name_mapping(
+                features=list(vals.keys()),
+                name_mapping=self.name_mapping,
+                prefix=True
+            )
+            # Replace old names with new_feature_names while maintaining the values
+            updated_vals = {new_name: vals[old_name] for old_name, new_name in zip(vals.keys(), new_feature_names)}
 
-                # Save the transformed content back to a file
-                with open(output_file_path, 'w') as outfile:
-                    json.dump(lin_model_coefs, outfile, indent=4)
+            lin_model_coefs[stat] = updated_vals
 
+        # Save the transformed content back to a file
+        with open(output_file_path, 'w') as outfile:
+            json.dump(lin_model_coefs, outfile, indent=4)
+
+    def process_shap_values_for_supp(self, input_file_path: str, output_file_path: str):
+        """
+
+        Args:
+            input_file_path:
+            output_file_path:
+
+        Returns:
+
+        """
+        shap_values = self.data_loader.read_pkl(input_file_path)
+        feature_names_copy = shap_values["feature_names"].copy()
+        feature_names_copy = [feature for feature in feature_names_copy if feature not in self.meta_vars]
+        formatted_feature_names = apply_name_mapping(
+                features=feature_names_copy,
+                name_mapping=self.name_mapping,
+                prefix=True,
+            )
+        shap_values["feature_names"] = formatted_feature_names
+
+        with open(output_file_path, "wb") as f:
+            pickle.dump(shap_values, f)
+
+    def process_shap_ia_values_for_supp(self, input_file_path: str, output_file_path: str):
+        """
+
+        Args:
+            input_file_path:
+            output_file_path:
+
+        Returns:
+
+        """
+        shap_ia_values = self.data_loader.read_pkl(input_file_path)
+        srmc_name_mapping = {f"srmc_{feature}": feature_formatted for feature, feature_formatted
+                             in self.name_mapping["srmc"].items()}
+        renamed_ia_values = self.rename_srmc_keys(shap_ia_values, srmc_name_mapping)
+
+        with open(output_file_path, "wb") as f:
+            pickle.dump(renamed_ia_values, f)
+
+    def rename_srmc_keys(self, data, srmc_name_mapping):
+        """
+        Recursively traverse a nested dictionary and rename:
+          - single string keys that start with 'srmc'
+          - tuple-of-string keys if any string within starts with 'srmc'
+        using the given srmc_name_mapping.
+        """
+        if isinstance(data, dict):
+            new_dict = {}
+            for key, value in data.items():
+
+                # --- Determine the "new_key" based on whether key is string or tuple ---
+                if isinstance(key, str) and key.startswith("srmc"):
+                    # Single string key
+                    new_key = srmc_name_mapping.get(key, key)
+
+                elif isinstance(key, tuple):
+                    # Tuple of keys
+                    replaced_tuple = []
+                    for part in key:
+                        if isinstance(part, str) and part.startswith("srmc"):
+                            replaced_tuple.append(srmc_name_mapping.get(part, part))
+                        else:
+                            replaced_tuple.append(part)
+                    new_key = tuple(replaced_tuple)
+
+                else:
+                    # For any other kind of key, or non-srmc string
+                    new_key = key
+
+                # Recursively process the value
+                new_dict[new_key] = self.rename_srmc_keys(value, srmc_name_mapping)
+
+            return new_dict
+
+        # If `data` is not a dict, just return it as-is (e.g., int, str, list, etc.)
+        return data
 
 
 
