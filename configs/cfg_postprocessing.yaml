@@ -1,29 +1,42 @@
 # TODO: Refactor this, remove redundancies
+methods_to_apply:
+  - condense_cv_results
+  #- sanity_check_pred_vs_true
+  #- create_descriptives
+  #- conduct_significance_tests
+  #- create_cv_results_plots
+  #- create_shap_plots
+  #- calculate_exp_lin_models
+  #- create_lin_model_coefs_supp
+  #- create_shap_values_supp
+  #- create_shap_ia_values_supp
+
 general:
   feature_combinations:
     name_mapping:
-
       # Main analyses
-      pl: "Personal"
-      srmc: "Situational (ESM)"  # self-reported
-      sens: "Situational (Sensing)"
-      mac: "Societal" # "Macro-level"
-      pl_srmc: "Personal + Situational (ESM)"
-      pl_sens: "Personal + Situational (Sensing)"
-      pl_srmc_sens: "Personal + Situational (ESM) + Situational (Sensing)"
-      pl_mac: "Personal + Societal"
-      pl_srmc_mac: "Personal + Situational (ESM) + Societal"
-      all_in: "Personal + Situational (ESM) + Situational (Sensing) + Societal"
-      # srmc_ia_values: "Situational (ESM): Interaction Values"  # TODO Does this make sense here?
+      main:
+        pl: "Personal"
+        srmc: "Situational (ESM)"  # self-reported
+        sens: "Situational (Sensing)"
+        mac: "Societal" # "Macro-level"
+        pl_srmc: "Personal + Situational (ESM)"
+        pl_sens: "Personal + Situational (Sensing)"
+        pl_srmc_sens: "Personal + Situational (ESM) + Situational (Sensing)"
+        pl_mac: "Personal + Societal"
+        pl_srmc_mac: "Personal + Situational (ESM) + Societal"
+        all_in: "Personal + Situational (ESM) + Situational (Sensing) + Societal"
+        # srmc_ia_values: "Situational (ESM): Interaction Values"  # TODO Does this make sense here?
 
-      # Additional analyses
-      pl_nnse: "Personal without neuroticism facets and self-esteem"
-      pl_srmc_nnse: "Personal + Situational (ESM) without neuroticism facets and self-esteem"
-      pl_sens_nnse: "Personal + Situational (Sensing) without neuroticism facets and self-esteem"
-      pl_mac_nnse: "Personal + Societal without neuroticism facets and self-esteem"
-      pl_srmc_mac_nnse: "Personal + Situational (ESM) + Societal without neuroticism facets and self-esteem"
-      pl_srmc_sens_nnse: "Personal + Situational (ESM) + Situational (Sensing) without neuroticism facets and self-esteem"
-      all_in_nnse: "Personal + Situational (ESM) + Situational (Sensing) + Societal without neuroticism facets and self-esteem"
+      # Supplementary analyses
+      supp:
+        pl_nnse: "Personal without neuroticism facets and self-esteem"
+        pl_srmc_nnse: "Personal + Situational (ESM) without neuroticism facets and self-esteem"
+        pl_sens_nnse: "Personal + Situational (Sensing) without neuroticism facets and self-esteem"
+        pl_srmc_sens_nnse: "Personal + Situational (ESM) + Situational (Sensing) without neuroticism facets and self-esteem"
+        pl_mac_nnse: "Personal + Societal without neuroticism facets and self-esteem"
+        pl_srmc_mac_nnse: "Personal + Situational (ESM) + Societal without neuroticism facets and self-esteem"
+        all_in_nnse: "Personal + Situational (ESM) + Situational (Sensing) + Societal without neuroticism facets and self-esteem"
 
       # Currently these are not integrated
       # pl_srmc_control: "Personal + ESM only for CoCoMS samples that contain Sensing data"
@@ -58,26 +71,160 @@ general:
     shap_values_summarized: "shap_values_summary.pkl"
     shap_ia_values_summarized: "shap_ia_values_summary.pkl"
 
-  data_paths:
-    base_output_path: "../results/"
+    state_files_base_name: "wb_items"
+    trait_files_base_name: "trait_wb_items"
+
+  data_paths:  # TODO implement
+    base_path: "../results/"
     main_results_output_path: "run_2012"
     ia_values_output_path: "ia_values_0912"
+
     sig_test_output_path: "sig_tests_1312"
+    pred_vs_true_path: "mac_pred_true"
+    descriptives_path: "descriptives"
 
-# More specific configurations (should be named as the postprocessing steps)
+  global_plot_params:
+    custom_cmap_colors:
+      - "#5E9ACC"  # Blue
+      - "#4F84B1"  # Deep blue
+      - "#9DB9BF"  # Soft gray-blue
+      - "#7DA5A9"  # Muted teal
+      - "#B9D1B9"  # Light green
+      - "#A3C7A1"  # Green
+      - "#E3EEE5"  # Very pale green
+      - "#CEE7CF"  # Light mint
 
+
+# Method-specific configurations (names as the methods in 'methods_to_apply')
 condense_cv_results:
   metrics:
     - pearson
     - r2
     - spearman
     - neg_mean_squared_error
+  all_results:
+    store: true # Store all cv results in a single file
+    filename: "all_cv_results.json"
+  result_table:
+    decimals: 3
+    store: true
+    file_base_name: "cv_results"
+    result_strs:
+      main: "main"
+      nnse: "nnse"
+
+sanity_check_pred_vs_true:
+  reps_to_check: [0, 1]
+  plot:
+    store: false
+    filename: "pred_true_parity_plot.png"
+    figure:
+      width: 8
+      height: 8
+    xlabel: 'True value'
+    ylabel: 'Predicted value'
+    base_title: 'Pred vs True'
+
+  summary_stats:
+    store: false
+    filename: "pred_true_parity_summary.json"
+    decimals: 4
+
 
 
 create_descriptives:
+  states_base_filename: "wb_items"
+  traits_base_filename: "trait_wb_items"
+
+  m_sd_table:
+    store: false
+    filename: "vars_m_sd_table.xlsx"
+    decimals: 2
+    store_index: false
+    cont_agg_dct: { mean: M, std: SD }
+    bin_agg_lst: [ "%" ]
+    vars_to_include:
+      - pl
+      - srmc
+      - sens
+      - mac
+      - crit
+  wb_items:  # to ensure consistent tables
+    store: true
+    filename: "wb_items_descriptive_table.xlsx"
+    decimals: 2
+    state_order:
+      - Enthusiastic
+      - Excited
+      - Happy
+      - Relaxed
+      - Valence
+      - Angry
+      - Anxious
+      - Sad
+      - Worried
+    trait_order:
+      - Enthusiastic
+      - Excited
+      - Happy
+      - Relaxed
+      - Valence
+      - Angry
+      - Anxious
+      - Sad
+      - Worried
+  rel:
+    store: true
+    filename: "crit_rel_per_sample.json"
+    decimals: 2
+    state:
+      n_per_person_col_name: "measures_per_person"
+      id_name: "joint_user_id"
+      crits:
+          - wb_state
+          - pa_state
+          - na_state
 
 conduct_significance_tests:
-  split_compare_models_table: true
+  cv_results_matching_pattern: "cv_results_rep_\\d+\\.json"
+  metric: "r2"
+  crit: "wb_state"
+  decimals: 3
+
+  compare_models:
+    store: true
+    filename_compare_models_main: "sig_tests_compare_models_main.xlsx"
+    filename_compare_models_control: "sig_tests_compare_models_control.xlsx"
+
+    stat_order:
+      - "M (SD) ENR"
+      - "M (SD) RFR"
+      - "delta_R2"
+      - "t"
+      - "p"
+      - "p (FDR-corrected)"
+
+  compare_predictor_classes:
+    store: true
+    filename_compare_predictor_classes: "sig_tests_compare_predictor_classes.xlsx"
+    ref_predictor_class: "pl"
+
+    stat_order:
+      - "M (SD) Personal"
+      - "M (SD) Other"
+      - "delta_R2"
+      - "t"
+      - "p"
+      - "p (FDR-corrected)"
+
+
+    feature_combinations_included:
+      - pl
+      - pl_srmc
+      - pl_sens
+      - pl_srmc_sens
+      - pl_mac
+      - pl_srmc_mac
 
 create_cv_results_plots:
 
@@ -96,9 +243,9 @@ calculate_exp_lin_models:
 
 # old
 methods:
-  - calculate_lin_models
+  #- calculate_lin_models
   #- sanity_check_pred_vs_true
-  #- condense_cv_results
+  - condense_cv_results
   #- condense_lin_model_coefs
   #- create_descriptives
   #- conduct_significance_tests
@@ -224,19 +371,21 @@ significance_tests:
       - selected
       - control
 linear_regressor:  # TODO To excel
+  store: true
+  base_filename: "reg_table"
   feature_combinations:
-    #- pl
-    #- srmc
-    #- sens
-    #- mac
-    #- pl_srmc
-    #- pl_sens
-    #- pl_srmc_sens
-    #- pl_mac
-    #- pl_srmc_mac
-    - all_in
+    - pl
+    - srmc
+    - sens
+    - mac
+    - pl_srmc
+    - pl_sens
+    - pl_srmc_sens
+    - pl_mac
+    - pl_srmc_mac
+    # - all_in
   samples_to_include:
-    - all  # selected
+    - selected  # all for all_in, selected for other
   crits:
     - wb_state
   models:

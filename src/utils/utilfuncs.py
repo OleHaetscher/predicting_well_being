@@ -70,7 +70,7 @@ def format_df(
 
     for column in columns:
         if column in df:
-            df[column] = df[column].apply(lambda x: custom_round(x, decimals))
+            df[column] = df[column].apply(lambda x: custom_round(x, decimals))  # TODO: use normal round?
 
     if capitalize:
         df.columns = df.columns.str.capitalize()
@@ -130,6 +130,7 @@ def create_defaultdict(n_nesting: int, default_factory: Any = int) -> defaultdic
 
     return defaultdict(nested_factory)
 
+
 def defaultdict_to_dict(
     dct: Union[defaultdict, dict, NestedDict]
 ) -> Union[dict, NestedDict]:
@@ -145,3 +146,124 @@ def defaultdict_to_dict(
     if isinstance(dct, defaultdict):
         dct = {k: defaultdict_to_dict(v) for k, v in dct.items()}
     return dct
+
+
+def separate_binary_continuous_cols(df: pd.DataFrame) -> tuple[list[str], list[str]]:
+    """
+    Separates the columns of a DataFrame into binary and continuous categories.
+
+    Binary columns are defined as those containing only the values 0, 1, or NaN across all rows.
+    Continuous columns include all other columns that do not meet the binary criteria.
+
+    Args:
+        df: A pandas DataFrame whose columns are to be categorized.
+
+    Returns:
+        tuple:
+            - A list of binary column names.
+            - A list of continuous column names, preserving their order in the DataFrame.
+    """
+    # Identify binary columns
+    binary_cols = list(df.columns[(df.isin([0, 1]) | df.isna()).all(axis=0)])
+
+    # Move columns with specific suffixes to continuous
+    suffixes = ('_mean', '_sd', '_min', '_max')
+    reclassified_cols = [col for col in binary_cols if col.endswith(suffixes)]
+    binary_cols = [col for col in binary_cols if col not in reclassified_cols]
+
+    # Define continuous columns
+    continuous_cols = [col for col in df.columns if col not in binary_cols]
+
+    return binary_cols, continuous_cols
+
+
+def remove_leading_zero(value: Union[str, int, float]) -> str:
+    """
+    Removes the leading zero from a numeric value formatted as a string.
+
+    Args:
+        value: The input value, which can be a numeric or string type, or a pandas cell value.
+
+    Returns:
+        str: The input value as a string without a leading zero. If the input is not numeric, it is returned as-is.
+    """
+    try:
+        # Convert value to string, remove leading zero if present
+        value_str = str(value)
+
+        if value_str.startswith("0") and len(value_str) > 1:
+            return value_str.lstrip("0")
+
+        if value_str.startswith("-0") and len(value_str) > 1:
+            return value_str.lstrip("-0")
+
+        return value_str
+
+    except Exception as e:
+        raise ValueError(f"Error processing value: {value}") from e
+
+
+def merge_M_SD_into_cell(mean_series: pd.Series, sd_series: pd.Series) -> pd.Series:
+    """
+    Merges two pandas Series (Mean and Standard Deviation) into a single Series
+    formatted as "M (SD)".
+
+    Args:
+        mean_series: A pandas Series containing the mean (M) values.
+        sd_series: A pandas Series containing the standard deviation (SD) values.
+
+    Returns:
+        pd.Series: A Series where each element is formatted as "M (SD)".
+    """
+    return mean_series.astype(str) + " (" + sd_series.astype(str) + ")"
+
+
+def merge_M_SD_in_dct(dct: Union[dict, NestedDict]) -> Union[dict, NestedDict]:
+    """
+    Recursively traverses a dictionary and merges "M" and "SD" keys at any level
+    into a single key "M (SD)" with the format "xxx (yyy)".
+
+    Args:
+        dct: The dictionary to process.
+
+    Returns:
+        dict: The updated dictionary with "M" and "SD" merged into "M (SD)".
+    """
+    updated_dct = {}
+    for key, value in dct.items():
+        if isinstance(value, dict):
+            # Recursively process nested dictionaries
+            updated_dct[key] = merge_M_SD_in_dct(value)
+        else:
+            updated_dct[key] = value
+
+    # Check if both "M" and "SD" keys exist in the current dictionary level
+    if "M" in updated_dct and "SD" in updated_dct:
+        mean = str(updated_dct.pop("M"))  # Get and remove "M"
+        sd = str(updated_dct.pop("SD"))  # Get and remove "SD"
+        updated_dct["M (SD)"] = f"{mean} ({sd})"
+
+    return updated_dct
+
+
+def format_p_values(lst_of_p_vals: list[float]) -> list[str]:
+    """
+    This function formats the p_values according to APA standards (3 decimals, <.001 otherwise)
+
+    Args:
+        lst_of_p_vals: list, containing the p_values for a given analysis setting.
+
+    Returns:
+        formatted_p_vals: list, contains p_values formatted according to APA style.
+    """
+    formatted_p_vals = []
+
+    for p_val in lst_of_p_vals:
+        if p_val < 0.001:
+            formatted_p_vals.append("<.001")
+        else:
+            formatted = "{:.3f}".format(p_val).lstrip("0")
+            formatted_p_vals.append(formatted)
+
+    return formatted_p_vals
+

@@ -1,7 +1,7 @@
 import os
 import re
 from itertools import product
-from typing import Callable, Union, Collection
+from typing import Callable, Union, Collection, Optional
 
 import matplotlib.lines as mlines
 import matplotlib.patches as mpatches
@@ -1094,51 +1094,60 @@ class ResultPlotter:
 
         return shap_values_to_plot, data_to_plot, feature_names_formatted
 
-    def plot_pred_true_parity(self,
-                              sample_data: dict[str, dict[str, float]],
-                              samples_to_include: str,
-                              crit: str,
-                              model: str) -> None:
+    def plot_pred_true_parity(
+            self,
+            sample_data: NestedDict,
+            samples_to_include: str,
+            crit: str,
+            model: str,
+            store_plot: bool,
+            filename: Optional[str] = None,
+    ) -> None:
         """
-        This function creates a parity plot of predicted vs. true values for all samples. This can
-        be used to analyze unexpected patterns in the prediction results.
+        Creates a parity plot of predicted vs. true values for all samples.
+
+        This plot helps analyze unexpected patterns in prediction results by comparing predicted
+        and true values for various sample subsets. The plot includes:
+            - A scatter plot for each sample.
+            - A reference line (y = x) indicating perfect parity.
 
         Args:
-            sample_data (dict): Nested dictionary that contain predicted and true values for each sample
-            samples_to_include: e.g., "all"
-            crit: e.g., "wb_state"
-            model: e.g., "randomforestregressor"
+            sample_data: Nested dictionary containing predicted and true values for each sample, e.g.:
+                         {sample_name: {"pred": [list of predicted values], "true": [list of true values]}}.
+            samples_to_include: Label for the subset of samples included in the analysis (e.g., "all").
+            crit: Criterion used for analysis (e.g., "wb_state").
+            model: Model used for predictions (e.g., "randomforestregressor").
+            store_plot: Whether to save the plot to a file.
+            filename: Filename for saving the plot, if `store_plot` is True. Defaults to None.
         """
-        # Create figure
-        width = self.plot_cfg["pred_true_parity_plot"]["figure"]["width"]
-        height = self.plot_cfg["pred_true_parity_plot"]["figure"]["height"]
-        fig, ax = plt.subplots(figsize=(width, height))
+        colors_raw = self.cfg_postprocessing["general"]["global_plot_params"]["custom_cmap_colors"]
+        cfg_pred_true_plot = self.cfg_postprocessing["sanity_check_pred_vs_true"]["plot"]
 
-        # Assign colors to samples
+        width = cfg_pred_true_plot["figure"]["width"]
+        height = cfg_pred_true_plot["figure"]["height"]
+        fig, ax = plt.subplots(figsize=(width, height))
         samples = list(sample_data.keys())
         num_samples = len(samples)
-        colors = self.plot_cfg["custom_cmap_colors"]
-        colors = [colors[i % len(colors)] for i in range(num_samples)]
+        colors = [colors_raw[i % len(colors_raw)] for i in range(num_samples)]
 
-        # Plot scatter plot
         for i, sample_name in enumerate(samples):
             color = colors[i % 10]
             pred_values = sample_data[sample_name]['pred']
             true_values = sample_data[sample_name]['true']
             ax.scatter(true_values, pred_values, color=color, label=sample_name)
 
-        # Plot y = x line for reference
         min_val = min([min(sample_data[s]['true'] + sample_data[s]['pred']) for s in samples])
         max_val = max([max(sample_data[s]['true'] + sample_data[s]['pred']) for s in samples])
-        ax.plot([min_val, max_val], [min_val, max_val], 'k--', label='Ideal')
+        ax.plot([min_val, max_val], [min_val, max_val], 'k--', label='r = 1')
 
-        # Set label, axes, title
-        ax.set_xlabel('True Value')
-        ax.set_ylabel('Predicted Value')
-        ax.set_title(f'Pred vs True - {samples_to_include} - {crit} - {model}')
+        ax.set_xlabel(cfg_pred_true_plot["xlabel"])
+        ax.set_ylabel(cfg_pred_true_plot["ylabel"])
+        ax.set_title(f'{cfg_pred_true_plot["base_title"]} - {samples_to_include} - {crit} - {model}')
         ax.legend()
-        if self.store_plots:
-            self.store_plot(plot_name="pred_vs_true_scatter", crit=crit, samples_to_include=samples_to_include, model=model)
+
+        if store_plot:
+            self.store_plot(plot_name=filename, crit=crit, samples_to_include=samples_to_include, model=model)
+
         else:
             plt.show()
 

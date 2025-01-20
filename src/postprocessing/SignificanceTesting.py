@@ -1,151 +1,244 @@
 import copy
-import re
-from typing import Any
-
-from statsmodels.stats.multitest import fdrcorrection
-
-from src.utils.DataLoader import DataLoader
-
-import json
 import os
-from itertools import combinations
+import re
+from collections import defaultdict
 from math import sqrt
 from statistics import stdev
+from typing import Any
 
 import numpy as np
 import pandas as pd
-import yaml
 from scipy.stats import t
 from statsmodels.stats.multitest import fdrcorrection
 
-from collections import deque, defaultdict
-
-from src.utils.utilfuncs import defaultdict_to_dict, format_df, NestedDict
+from src.utils.DataLoader import DataLoader
+from src.utils.DataSaver import DataSaver
+from src.utils.utilfuncs import defaultdict_to_dict, NestedDict, create_defaultdict, format_p_values
 
 
 class SignificanceTesting:
     """
-    This class computes test of significance to compare the prediction results for different models
-    across different analysis settings. Results for different feature selection strategies were pooled.
-        Thus, in Study 1 (ssc / main analysis), 6 comparisons (pairwise comparisons of models) are computed
-        for each ESM sample - soc_int_var combination, resulting in 42 statistical tests.
-        In Study 2, 6 comparisons are computed for each event, resulting in 18 statistical tests.
-    Due to multiple testing, tests of significance are False-Discovery-Rate corrected.
-    Results are stored as a table for the supplementary results and as a JSON that is used by the CVResultPlotter
-    to include the results of the significance tests as annotations in the CV result plots.
+    Computes tests of significance to compare prediction results for different models
+    across various analysis settings.
+
+    This class performs the following:
+    - Computes pairwise comparisons of models (corrected_paired_t_test), pooled across feature selection strategies.
+    - Applies False Discovery Rate (FDR) correction to account for multiple testing.
+    - Stores results in JSON format for annotations in CV result plots and as a table for supplementary results.
 
     Attributes:
-        config: YAML config determining certain specifications of the analysis.
-        result_dct: Dict, the predictions results are loaded from its folders and stored in this Dict.
-        fis_aggregated_results: Dict,
-        significance_results: Dict,
+        cfg_postprocessing (NestedDict): Configuration settings for postprocessing (parsed from a YAML file).
+        cfg_sig (NestedDict): Configuration for conducting significance tests, extracted from `cfg_postprocessing`.
+        sig_result_dir (str): Directory where the significance test results are stored.
+        data_loader (DataLoader): Utility for loading data from files.
+        data_saver (DataSaver): Utility for saving results in various formats.
+        cv_file_matching_pattern (re.Pattern): Compiled regex pattern to match CV result file names.
+        model_name_mapping (dict): Mapping of model names (e.g., `elasticnet` -> `ENR`).
+        feature_combo_name_mapping_main (dict): Feature combination mappings for main analysis.
+        crit (str): Criterion used for the significance tests (e.g., `wb_state`).
+        metric (str): Metric used for comparisons (e.g., `r2`).
+        models (list[str]): List of models to compare (e.g., `elasticnet`, `randomforestregressor`).
+        samples_to_include (list[str]): List of sample subsets (e.g., `selected`, `control`).
+        decimals (int): Number of decimal places for rounding results.
+        t_strng (str): String representation for the t-value.
+        p_strng (str): String representation for the p-value.
+        p_fdr_strng (str): String representation for the FDR-corrected p-value.
     """
-    # TODO: Use Nested
+
     def __init__(
         self,
-        var_cfg,
-        cfg_postprocessing,
-    ):
+        base_result_dir: str,
+        cfg_postprocessing: NestedDict,
+    ) -> None:
         """
-        Constructor method of the SignificanceTesting Class.
+        Initializes the SignificanceTesting class.
 
         Args:
-            config_path: Path to the .YAML config file.
-        """
-        self.var_cfg = var_cfg
-        self.cfg_postprocessing = cfg_postprocessing
-        self.sig_cfg = self.var_cfg["postprocessing"]["significance_tests"]
-        self.base_result_dir = self.var_cfg["postprocessing"]["significance_tests"]["base_result_path"]
-        self.result_dct = None
-        self.metric = self.sig_cfg["metric"]
-        self.data_loader = DataLoader()
+            base_result_dir: Path to the directory containing CV results.
+            cfg_postprocessing: Configuration dictionary for postprocessing.
 
-        self.compare_model_results = {}
-        self.compare_predictor_classes_results = {}
+        Attributes Initialized:
+            - Extracts key configuration values from `cfg_postprocessing`.
+            - Compiles the regex pattern for matching CV result files.
+            - Sets default mappings for models, feature combinations, and sample subsets.
+        """
+        self.cfg_postprocessing = cfg_postprocessing
+        self.cfg_sig = self.cfg_postprocessing["conduct_significance_tests"]
+
+        self.sig_result_dir = os.path.join(  # TODO Do in other functions, too
+            base_result_dir,
+            self.cfg_postprocessing["general"]["data_paths"]["sig_test_output_path"]
+        )
+
+        self.data_loader = DataLoader()
+        self.data_saver = DataSaver()
+        
+        self.cv_file_matching_pattern = re.compile(
+            self.cfg_sig["cv_results_matching_pattern"]
+        )
 
         self.model_name_mapping = self.cfg_postprocessing["general"]["models"]["name_mapping"]
-        self.feature_combo_name_mapping = self.cfg_postprocessing["general"]["feature_combinations"]["name_mapping"]
+        self.feature_combo_name_mapping_main = self.cfg_postprocessing["general"]["feature_combinations"]["name_mapping"]["main"]
+
+        self.crit = self.cfg_sig["crit"]
+        self.metric = self.cfg_sig["metric"]
+        self.models = list(self.cfg_postprocessing["general"]["models"]["name_mapping"].keys())
+        self.samples_to_include = list(self.cfg_postprocessing["general"]["samples_to_include"]["name_mapping"].keys())
+        self.decimals = self.cfg_sig["decimals"]
+        self.t_strng = "t"
+        self.p_strng = "p"
+        self.p_fdr_strng = "p (FDR-corrected)"
 
     def significance_testing(self):
         """
-        Wrapper function that
-            - compares models
-            - compares predictor classes
-            - applies fdr correction based on both results
-            - returns final t and p values
+        Conducts significance testing for predictive models and predictor classes.
 
-        compare_models
-            This method compares the predictive performance of ENR and RFR across all analysis
+        This function serves as a wrapper for two key comparisons:
+            1. **Model Comparison**:
+                - Compares the predictive performance of Elastic Net Regression (ENR) and Random Forest Regression (RFR)
+                  across all analyses.
+            2. **Predictor Class Comparison**:
+                - Evaluates whether adding specific predictor classes to person-level predictors leads to a
+                  significant performance increase.
 
-        compare_predictor_classes
-            This method evaluates of adding other predictor classes to person-level predictors leads to
-            a significant performance increase.
-            Specifically, we compare the addition of
-                - srmc
-                - sens
-                - srmc + sens
-                - mac
-                - srmc + mac
-            using
-                - all samples that includes a lot of missings (i.e., all vs. all)
-                - selected samples to avoid missings (i.e., selected vs. control)
-            seperately for both prediction models
-                - ENR
-                - RFR
-            which results in 20 statistical tests
+        The function also applies false discovery rate (FDR) correction to control for multiple comparisons
+        and generates the final statistical results in terms of t-values and (raw and corrected) p-values.
 
-        Args:
-            dct:
+        ### Model Comparison
+            This step compares the predictive performance of the two models, ENR and RFR, across all analyses
+            (all, selected, control)
+            This results in a total of 24 statistical tests.
 
-        Returns:
+        ### Predictor Class Comparison
+            This step evaluates the impact of adding various predictor classes on performance. The specific
+            comparisons include (always added to pl):
+                - Adding `srmc`
+                - Adding `sens`
+                - Adding `srmc + sens`
+                - Adding `mac`
+                - Adding `srmc + mac`
 
+            Each comparison is performed under two conditions:
+                1. **All Samples**:
+                    - Includes all samples
+                2. **Selected Samples**:
+                    - The reduced datasets to avoid missing data
+
+            These comparisons are carried out separately for both prediction models (ENR and RFR), resulting in
+            a total of 20 statistical tests.
+
+        ### Workflow
+        1. Model Comparison:
+            - Calls `get_model_comparison_data` to retrieve the data.
+            - Applies the `apply_compare_models` method for statistical testing.
+            - Corrects p-values using FDR correction via `fdr_correct_p_values`.
+            - Generates result tables for main and control comparisons using
+              `create_sig_results_table_models`.
+            - Stores the resulting tables in Excel format if configured.
+
+        2. Predictor Class Comparison:
+            - Calls `get_predictor_class_comparison_data` to retrieve the data.
+            - Applies the `apply_compare_predictor_classes` method for statistical testing.
+            - Corrects p-values using FDR correction via `fdr_correct_p_values`.
+            - Generates the result table using `create_sig_results_table_predictor_classes`.
+            - Stores the resulting table in Excel format if configured.
+
+        ### File Outputs
+        The results are saved as Excel files:
+            - Model comparison (main results)
+            - Model comparison (control results)
+            - Predictor class comparison
         """
+        cfg_sig = self.cfg_postprocessing["conduct_significance_tests"]
+
+        file_path_comp_models_main = os.path.join(
+            self.sig_result_dir,
+            cfg_sig["compare_models"]["filename_compare_models_main"]
+        )
+        file_path_comp_models_control = os.path.join(
+            self.sig_result_dir,
+            cfg_sig["compare_models"]["filename_compare_models_control"]
+        )
+        file_path_comp_predictors = os.path.join(
+            self.sig_result_dir,
+            cfg_sig["compare_predictor_classes"]["filename_compare_predictor_classes"]
+        )
+
         # compare models
-        if self.sig_cfg["compare_models"]:
-            data_to_compare_models = self.get_model_comparison_data()
-            sig_results_models = self.apply_compare_models(data_to_compare_models)
-            sig_results_models_fdr = self.fdr_correct_p_values(sig_results_models)
-            sig_results_models_main_table, sig_results_models_control_table = (
-                self.create_sig_results_table_models(sig_results_models_fdr)
-            )
-            if self.sig_cfg["store"]:
-                file_name_main = os.path.join(self.base_result_dir, "sig_table_compare_models_main.xlsx")
-                file_name_control = os.path.join(self.base_result_dir, "sig_table_compare_models_control.xlsx")
-                sig_results_models_main_table.to_excel(file_name_main, index=True)
-                sig_results_models_control_table.to_excel(file_name_control, index=True)
+        data_to_compare_models = self.get_model_comparison_data()
+        sig_results_models = self.apply_compare_models(data_to_compare_models)
+        sig_results_models_fdr = self.fdr_correct_p_values(sig_results_models)
+        sig_results_models_main_table, sig_results_models_control_table = (
+            self.create_sig_results_table_models(sig_results_models_fdr)
+        )
+        if self.cfg_sig["compare_models"]["store"]:
+            self.data_saver.save_excel(sig_results_models_main_table, file_path_comp_models_main)
+            self.data_saver.save_excel(sig_results_models_control_table, file_path_comp_models_control)
 
         # compare predictor classes
-        if self.sig_cfg["compare_predictor_classes"]:
-            data_to_compare_predictor_classes = self.get_predictor_class_comparison_data()
-            sig_results_predictor_classes = self.apply_compare_predictor_classes(data_to_compare_predictor_classes)
-            sig_results_predictor_classes_fdr = self.fdr_correct_p_values(sig_results_predictor_classes)
-            sig_results_predictor_classes_table = self.create_sig_results_table_predictor_classes(sig_results_predictor_classes_fdr)
-            if self.sig_cfg["store"]:
-                file_name = os.path.join(self.base_result_dir, "compare_predictor_classes.xlsx")
-                sig_results_predictor_classes_table.to_excel(file_name, index=True)
+        data_to_compare_predictor_classes = self.get_predictor_class_comparison_data()
+        sig_results_predictor_classes = self.apply_compare_predictor_classes(data_to_compare_predictor_classes)
+        sig_results_predictor_classes_fdr = self.fdr_correct_p_values(sig_results_predictor_classes)
+        sig_results_predictor_classes_table = self.create_sig_results_table_predictor_classes(
+            sig_results_predictor_classes_fdr)
+
+        if self.cfg_sig["compare_predictor_classes"]["store"]:
+            self.data_saver.save_excel(sig_results_predictor_classes_table, file_path_comp_predictors)
 
     def create_sig_results_table_models(self, p_val_dct: NestedDict) -> tuple[pd.DataFrame, pd.DataFrame]:
         """
-        Creates a pandas DataFrame from the nested dictionary structure.
+        Creates formatted pandas DataFrames from a nested dictionary of statistical results.
+
+        This method processes a nested dictionary structure, extracting statistical results and organizing
+        them into two separate DataFrames:
+        - A main table (`df_pivoted`) containing results for all predictor classes, except for "control".
+        - A separate table (`df_control_pivoted`) specifically for "control" results.
+
+        ### Input Format (`p_val_dct`)
+        ```
+        {
+            "feature_combo": {
+                "samples_to_include": {
+                    "stat_name": stat_value
+                }
+            }
+        }
+        ```
+
+        ### Output
+        Two pivoted DataFrames with:
+        - **Rows**:
+          - Level 1: Sample subsets (e.g., "all", "selected").
+          - Level 2: Statistical measures (e.g., `p_val`, `t_val`, `p_val_corrected`).
+        - **Columns**: Predictor classes (mapped names based on a configuration).
+        - **Values**: Corresponding statistical values for each combination.
+
+        ### Steps
+        1. **Flatten the Nested Dictionary**:
+           - Iterates through `p_val_dct` and converts its hierarchical structure into a flat list of dictionaries.
+        2. **DataFrame Creation**:
+           - Creates a DataFrame from the flattened data.
+           - Adds custom ordering for predictor classes and statistics based on configuration files.
+        3. **Pivot the DataFrame**:
+           - Pivots the flat DataFrame to structure the results for easy interpretation.
+        4. **Split Tables**:
+           - Separates rows related to "control" samples into a separate DataFrame.
+           - Drops "control" rows from the main DataFrame.
 
         Args:
-            p_val_dct:
+            p_val_dct: A nested dictionary containing statistical results for each feature combination,
+                       sample subset, and statistical measure.
 
         Returns:
-            pd.DataFrame: A DataFrame with:
-                          - Columns based on the first dictionary hierarchy (`outer_key`).
-                          - Multi-index rows:
-                              - Level 1: Inner dictionary keys (`second_key`).
-                              - Level 2: Metrics (`p_val`, `t_val`, `p_val_corrected`).
+            tuple:
+                - pd.DataFrame: Main table of results for predictor classes (excluding "control").
+                - pd.DataFrame: Separate table of results specifically for "control" samples.
         """
-        # Flatten the dictionary into rows for easier DataFrame creation
         flattened_data = []
 
-        # Iterate through the nested dictionary structure
         for feature_combo, inner_dict in p_val_dct.items():
             for samples_to_include, metrics in inner_dict.items():
                 for stat, stat_value in metrics.items():
-                    # Add each metric as a separate row
                     flattened_data.append({
                         "Predictor class": feature_combo,
                         "Samples to include": samples_to_include,
@@ -153,60 +246,79 @@ class SignificanceTesting:
                         "Stat value": stat_value
                     })
 
-        # Create a flat DataFrame
         df = pd.DataFrame(flattened_data)
 
-        # Set custom order for stats
-        custom_order_stats = self.sig_cfg["stat_order_compare_models"]
+        custom_order_stats = self.cfg_sig["compare_models"]["stat_order"]
         df["Stat"] = pd.Categorical(df["Stat"], categories=custom_order_stats, ordered=True)
 
-        # Set custom order for predictor classes
-        custom_order_predictor_classes = self.sig_cfg["model_comparison_data"]["feature_combinations"]
+        custom_order_predictor_classes = list(self.feature_combo_name_mapping_main.keys())
         df["Predictor class"] = pd.Categorical(df["Predictor class"], categories=custom_order_predictor_classes, ordered=True)
-        df["Predictor class"] = df["Predictor class"].map(
-            self.var_cfg["postprocessing"]["plots"]["feature_combo_name_mapping"]
-        )
+        df["Predictor class"] = df["Predictor class"].map(self.feature_combo_name_mapping_main)
 
-        # Pivot the DataFrame
         df_pivoted = df.pivot(
             index=["Samples to include", "Stat"],
             columns="Predictor class",
             values="Stat value")
 
-        # Split main/selected and control
-        # (MultiIndex trick: loc[('control', ), :] selects the first-level key 'control')
         df_control_pivoted = df_pivoted.loc[('control',), :].copy()
-
-        # Drop those rows from df_pivoted
         df_pivoted.drop('control', level='Samples to include', inplace=True)
 
         return df_pivoted, df_control_pivoted
 
-
-    def create_sig_results_table_predictor_classes(self, p_val_dct: dict[str, dict[str, dict[str, dict[str, dict[str, float]]]]]) -> pd.DataFrame:
+    def create_sig_results_table_predictor_classes(self, p_val_dct: NestedDict) -> pd.DataFrame:
         """
-        Creates a pandas DataFrame from the nested dictionary structure for predictor classes.
+        Creates a pandas DataFrame for predictor classes from a nested dictionary structure.
+
+        This method processes a nested dictionary of statistical results to create a pivoted DataFrame.
+        The resulting table organizes results by prediction models, sample subsets, and statistical metrics,
+        with columns representing predictor classes.
+
+        ### Input Format (`p_val_dct`)
+        ```
+        {
+            "model_name": {  # e.g., "elasticnet", "randomforestregressor"
+                "sample_subset": {  # e.g., "selected", "all"
+                    "predictor_class": {  # e.g., "pl", "pl_mac"
+                        "stat_name": stat_value
+                    }
+                }
+            }
+        }
+        ```
+
+        ### Output Format
+        A pivoted DataFrame with:
+        - **Rows**:
+          - Level 1: Prediction model (e.g., `elasticnet`, `randomforestregressor`).
+          - Level 2: Sample subset (e.g., `selected`, `all`).
+          - Level 3: Statistics (e.g., `p_val`, `t_val`, `p_val_corrected`).
+        - **Columns**:
+          - Predictor classes, ordered based on a custom mapping.
+
+        ### Steps
+        1. **Flatten the Nested Dictionary**:
+           - Converts the hierarchical dictionary into a flat list of dictionaries for easier DataFrame creation.
+        2. **Create the DataFrame**:
+           - Constructs a flat DataFrame from the flattened dictionary.
+           - Maps predictor classes and statistics to readable formats using configuration mappings.
+           - Orders the columns and rows based on predefined mappings for predictor classes and statistics.
+        3. **Pivot the DataFrame**:
+           - Organizes the DataFrame into a pivot table with rows and columns matching the desired structure.
 
         Args:
-            data_dct: The nested dictionary structure.
+            p_val_dct: A nested dictionary containing statistical results for each model,
+                       sample subset, and predictor class.
 
         Returns:
-            pd.DataFrame: A DataFrame with:
-                          - Columns based on the last dictionary keys before the statistics (e.g., `pl_mac`).
-                          - Multi-index rows:
-                              - Level 1: Model (e.g., `elasticnet`).
-                              - Level 2: Samples to include (e.g., `selected`).
-                              - Level 3: Statistics (e.g., `p_val`, `t_val`, `p_val_corrected`).
+            pd.DataFrame: A pivoted DataFrame with multi-index rows (model, sample subset, stat)
+                          and columns for predictor classes.
         """
-        # Flatten the dictionary into rows for easier DataFrame creation
         flattened_data = []
 
-        # Iterate through the nested dictionary structure
         for model, sample_dict in p_val_dct.items():
             for sample, feature_dict in sample_dict.items():
                 for feature, metrics in feature_dict.items():
                     for metric_key, metric_value in metrics.items():
-                        # Add each metric as a separate row
                         flattened_data.append({
                             "Prediction model": model,
                             "Samples to include": sample,
@@ -215,36 +327,75 @@ class SignificanceTesting:
                             "Stat value": metric_value
                         })
 
-        # Create a flat DataFrame
         df = pd.DataFrame(flattened_data)
 
-        # Right column order (set later)
-        col_order = [val for key, val in self.var_cfg["postprocessing"]["plots"]["feature_combo_name_mapping"].items()
+        col_order = [val for key, val in self.cfg_postprocessing["general"]["feature_combinations"]["name_mapping"]["main"].items()
                      if key in df["Predictor class"].unique()]
 
-        # Format the table
-        df["Predictor class"] = df["Predictor class"].map(
-            self.var_cfg["postprocessing"]["plots"]["feature_combo_name_mapping"]
-        )
-
-        # Set 'Stat' column as a categorical with the ordered categories
-        custom_order = self.sig_cfg["stat_order_compare_predictor_classes"]
+        df["Predictor class"] = df["Predictor class"].map(self.feature_combo_name_mapping_main)
+        custom_order = self.cfg_sig["compare_predictor_classes"]["stat_order"]
         df["Stat"] = pd.Categorical(df["Stat"], categories=custom_order, ordered=True)
-        df["Stat"] = df["Stat"].apply(lambda x: self.sig_cfg["stat_mapping"].get(x, x))
 
-        # Pivot the DataFrame to create the desired structure
-        df_pivoted = df.pivot(index=["Prediction model", "Samples to include", "Stat"], columns="Predictor class", values="Stat value")
-
+        df_pivoted = df.pivot(index=["Prediction model", "Samples to include", "Stat"],
+                              columns="Predictor class",
+                              values="Stat value")
         df_pivoted = df_pivoted[col_order]
 
         return df_pivoted
 
-    def get_model_comparison_data(self):
+    def get_model_comparison_data(self) -> NestedDict:
         """
-        This method loads the JSON files containing the CV results data necessary to compare the models.
+        Loads and organizes CV results data to prepare for model comparison.
+
+        This method recursively traverses the base results directory to locate JSON files
+        containing CV results. It extracts metric values (e.g., "r2") for specific feature
+        combinations, sample subsets, and models. The results are structured in a nested
+        dictionary for downstream analysis.
+
+        ### Workflow:
+        - Traverses directories under `self.sig_result_dir` using `os.walk`.
+        - Filters directories based on:
+            - The presence of a target feature combination (e.g., "pl", "sens").
+            - The sample subset (e.g., "all", "selected").
+            - The model name (e.g., "elasticnet", "randomforestregressor").
+        - Matches JSON files with the pattern `cv_results_rep_<rep_number>.json`.
+        - Reads each matching JSON file and extracts the metric values for the specified feature
+          combination, sample subset, and model.
+        - The data is stored in a nested `defaultdict` to avoid repeated `setdefault` calls.
+
+        ### Nested Dictionary Structure:
+        The method returns a dictionary organized as follows:
+        ```
+        {
+            "feature_combination": {            # e.g., "pl", "sens"
+                "sample_subset": {              # e.g., "all", "selected"
+                    "model_name": [list of metric values]  # e.g., "elasticnet", "randomforestregressor"
+                },
+                ...
+            },
+            ...
+        }
+        ```
+
+        ### Example:
+        ```
+        {
+            "pl": {
+                "all": {
+                    "randomforestregressor": [0.8, 0.82, 0.79, ...],  # 500 values
+                    "elasticnet": [0.76, 0.78, 0.75, ...]
+                },
+                "selected": {
+                    ...
+                },
+            },
+            ...
+        }
+        ```
 
         Returns:
-            A Dict containing the relevant data for testing in the following format:
+            dict: A dictionary containing CV results for model comparison in the format:
+            ```
             {
                 "pl": {
                     "all": {
@@ -257,58 +408,46 @@ class SignificanceTesting:
                 },
                 ...
             }
+            ```
         """
 
-        # Extract configuration
-        feature_combos = self.sig_cfg["model_comparison_data"]["feature_combinations"]
-        samples_to_include = self.sig_cfg["model_comparison_data"]["samples_to_include"]
-        metric = self.sig_cfg["metric"]  # e.g. "r2"
-        models = ["elasticnet", "randomforestregressor"]
-
-        # Precompile pattern
-        file_pattern = re.compile(r"cv_results_rep_\d+\.json")
-
-        # Using a nested defaultdict to avoid repeated setdefault calls
-        # Structure: results[feature_combo][sample][model] = list of metrics
+        feature_combos = list(self.cfg_postprocessing["general"]["feature_combinations"]["name_mapping"]["main"].keys())
         results = defaultdict(lambda: defaultdict(lambda: defaultdict(list)))
 
-        for dirpath, dirnames, filenames in os.walk(self.base_result_dir):
-            # Normalize and split directory path for checks
+        for dirpath, dirnames, filenames in os.walk(self.sig_result_dir):
             dir_components = os.path.normpath(dirpath).split(os.sep)
 
-            if "wb_state" not in dir_components:
+            if self.crit not in dir_components:
                 continue
 
             # Check if this directory contains one of the desired feature combos and samples
             feature_combo = next((fc for fc in feature_combos if fc in dir_components), None)
-            sample = next((s for s in samples_to_include if s in dir_components), None)
+            sample = next((s for s in self.samples_to_include if s in dir_components), None)
             if not feature_combo or not sample:
                 continue
 
             # Identify the model from the directory path if present
-            model = next((m for m in models if m in dir_components), None)
+            model = next((m for m in self.models if m in dir_components), None)
             if not model:
                 continue
 
-            # Process JSON files that match the pattern
             for filename in filenames:
-                if not file_pattern.match(filename):
+                if not self.cv_file_matching_pattern.match(filename):
                     continue
 
                 filepath = os.path.join(dirpath, filename)
-                with open(filepath, "r") as f:
-                    data = json.load(f)
+                data = self.data_loader.read_json(filepath)
 
-                # Extract the metric values
                 for outer_fold_data in data.values():
                     for metrics in outer_fold_data.values():
-                        if metric in metrics:
-                            results[feature_combo][sample][model].append(metrics[metric])
+                        if self.metric in metrics:
+                            results[feature_combo][sample][model].append(metrics[self.metric])
 
         results_dct = defaultdict_to_dict(results)
+
         return results_dct
 
-    def get_predictor_class_comparison_data(self):
+    def get_predictor_class_comparison_data(self) -> NestedDict:
         """
         Loads and processes cross-validation (CV) results data from JSON files to generate a structured comparison
         of performance metrics across predictor classes (models) and feature combinations.
@@ -346,7 +485,7 @@ class SignificanceTesting:
         - For the "selected" scenario:
           * Metrics for "pl" are derived from the "control" data for each feature combination.
           * Metrics for other feature combinations are taken from the "selected" data.
-        - The method processes all CV result files matching the `cv_results_rep_\d+\.json` pattern within
+        - The method processes all CV result files matching the  given regex pattern from the config  within
           directories that include a known feature combination and sample type.
         - Performance metrics are aggregated based on the specified `metric_to_use` from the configuration.
 
@@ -361,70 +500,55 @@ class SignificanceTesting:
             dict: A structured dictionary containing comparison data for each model, with results categorized
                   under "all" and "selected" scenarios.
         """
-        feature_combos = self.sig_cfg["predictor_class_comparison_data"]["feature_combinations"]
-        samples_to_include = self.sig_cfg["predictor_class_comparison_data"]["samples_to_include"]
-        metric_to_use = self.sig_cfg["metric"]
-        file_pattern = re.compile(r"cv_results_rep_\d+\.json")
+        feature_combos = self.cfg_sig["compare_predictor_classes"]["feature_combinations_included"]
+        predictor_class_ref = self.cfg_sig["compare_predictor_classes"]["ref_predictor_class"]
+
         raw_data = defaultdict(lambda: {
             "all": defaultdict(list),
             "selected": defaultdict(list),
             "control": defaultdict(list)
         })
 
-        for dirpath, _, filenames in os.walk(self.base_result_dir):
+        for dirpath, _, filenames in os.walk(self.sig_result_dir):
             dir_components = os.path.normpath(dirpath).split(os.sep)
-            if "wb_state" not in dir_components:
+            if self.crit not in dir_components:
                 continue
 
             feature_combo = next((fc for fc in feature_combos if fc in dir_components), None)
-            sample = next((s for s in samples_to_include if s in dir_components), None)
-            if feature_combo is None or sample is None:
-                continue
-            possible_models = [c for c in dir_components if c not in samples_to_include and c not in feature_combos]
-            if not possible_models:
-                continue
-            model = possible_models[-1]
-
-            if sample == "all":
-                target_key = "all"
-            elif sample == "control":
-                target_key = "control"
-            elif sample == "selected":
-                target_key = "selected"
-            else:
-                continue
+            sample_to_include = next((s for s in self.samples_to_include if s in dir_components), None)
+            model = next((m for m in self.models if m in dir_components), None)
 
             for filename in filenames:
-                if not file_pattern.match(filename):
+                if not self.cv_file_matching_pattern.match(filename):
                     continue
                 filepath = os.path.join(dirpath, filename)
-                with open(filepath, "r") as f:
-                    data = json.load(f)
+                data = self.data_loader.read_json(filepath)
+
                 for _, outer_fold_data in data.items():
                     for imp_data in outer_fold_data.values():
-                        if metric_to_use in imp_data:
-                            raw_data[model][target_key][feature_combo].append(imp_data[metric_to_use])
+                        if self.metric in imp_data:
+                            raw_data[model][sample_to_include][feature_combo].append(imp_data[self.metric])
 
         final_results = {}
         for model, model_data in raw_data.items():
             all_pairs = []
             selected_pairs = []
-            all_pl = model_data["all"]["pl"]
+            all_ref = model_data["all"][predictor_class_ref]
 
-            for c in feature_combos:
-                if c == "pl":
+            for other in feature_combos:
+                if other == predictor_class_ref:
                     continue
 
-                c_all_data = model_data["all"][c]
+                other_all_data = model_data["all"][other]
                 all_pairs.append({
-                    "pl": all_pl,
-                    c: c_all_data
+                    predictor_class_ref: all_ref,
+                    other: other_all_data
                 })
-                pl_selected_data = model_data["control"][c]
-                c_selected_data = model_data["selected"][c]
+                ref_selected_data = model_data["control"][other]
+                other_selected_data = model_data["selected"][other]
                 selected_pairs.append({
-                    "pl": pl_selected_data,
-                    c: c_selected_data
+                    predictor_class_ref: ref_selected_data,
+                    other: other_selected_data
                 })
 
             final_results[model] = {
@@ -434,106 +558,159 @@ class SignificanceTesting:
 
         return final_results
 
-    def apply_compare_models(self, cv_results_dct: dict[str, dict[str, dict[str, list[float]]]]) -> dict[str, dict[str, dict[str, float]]]:
+    def apply_compare_models(self, cv_results_dct: NestedDict) -> NestedDict:
         """
-        This function applies the corrected dependent t-test to compare models in the given processed data. It
-            - iterates through the nested Dictionary
-            - extracts the values obtained from 10x10x10 CV for self.metric
-            - conducts the corrected dependent t-test between the two models
-            - stores the results in a dict that mirrors the original structure
+        Applies the corrected dependent t-test to compare the performance of two models
+        across feature combinations and sample subsets.
+
+        This method:
+        - Iterates through a nested dictionary containing CV results for each model.
+        - Extracts metric values (e.g., R²) from the inner dictionary structure.
+        - Conducts the corrected dependent t-test between two models (e.g., ElasticNet and RandomForest).
+        - Stores the results, including means, standard deviations, t-values, p-values, and delta R², in a dictionary
+          that mirrors the original structure.
+
+        ### Dictionary Structure
+        Input (`cv_results_dct`):
+        ```
+        {
+            feature_combination: {
+                sample_subset: {
+                    model_name: [list of CV results for self.metric]
+                }
+            }
+        }
+        ```
+
+        Output (`sig_results_dct`):
+        ```
+        {
+            feature_combination: {
+                sample_subset: {
+                    "M (Model1)": mean_value,
+                    "SD (Model1)": sd_value,
+                    "M (Model2)": mean_value,
+                    "SD (Model2)": sd_value,
+                    "delta_R2": difference_between_means,
+                    "t": t_value,
+                    "p": p_value
+                }
+            }
+        }
+        ```
 
         Args:
-            cv_results_dct: Nested dict that contains the CV results for self.metric as a list in the inner dict structure
-                and the outer dict hierarchy contains the feature combinations to include, the samples to include (all/selected),
-                and the model to include (elasticnet/randomforestregressor).
+            cv_results_dct: A nested dictionary containing CV results for the selected metric (`self.metric`) as a list
+                of values. The outer levels represent feature combinations and sample subsets, and the inner level
+                contains results for specific models.
 
         Returns:
-            dict: The same processed_data dictionary, but with test results (p_val, t_val, etc.) replacing the original lists.
+            NestedDict: A dictionary with statistical test results replacing the original CV results.
         """
-        sig_results_dct = defaultdict(lambda: defaultdict(dict))
+        # sig_results_dct = defaultdict(lambda: defaultdict(dict))
+        sig_results_dct = create_defaultdict(n_nesting=2, default_factory=dict)
+
         for fc, fc_vals in cv_results_dct.items():
             for sti, model_data in fc_vals.items():
                 if len(model_data) < 2:
                     print(f"WARNING: Not enough models to compare in {fc}/{sti}, SKIP")
                     continue
 
-                model_names = list(model_data.keys())
+                model1_name, model2_name = list(model_data.keys())
+                cv_results_model1, cv_results_model2 = model_data[model1_name], model_data[model2_name]
 
-                model1_name = model_names[0]
-                model2_name = model_names[1]
+                mean1, sd1 = np.mean(cv_results_model1), np.std(cv_results_model1)
+                mean2, sd2 = np.mean(cv_results_model2), np.std(cv_results_model2)
 
-                cv_results_model1 = model_data[model1_name]
-                cv_results_model2 = model_data[model2_name]
-
-                cv_results_model1_mean, cv_results_model1_sd = np.mean(cv_results_model1), np.std(cv_results_model1)
-                cv_results_model2_mean, cv_results_model2_sd = np.mean(cv_results_model2), np.std(cv_results_model2)
-
-                # Change model order, so that we have a positive t-value if RFR performs better, aligned with the paper
                 t_val, p_val = self.corrected_dependent_ttest(cv_results_model2, cv_results_model1)
-
-                model1_name_mapped = self.model_name_mapping[model1_name]
-                model2_name_mapped = self.model_name_mapping[model2_name]
+                delta_R2 = np.round(np.round(mean2, self.decimals) - np.round(mean1, self.decimals), self.decimals)
 
                 sig_results_dct[fc][sti] = {
-                    f"M ({model1_name_mapped})": np.round(cv_results_model1_mean, 3),
-                    f"SD ({model1_name_mapped})": np.round(cv_results_model1_sd, 3),
-                    f"M ({model2_name_mapped})": np.round(cv_results_model2_mean, 3),
-                    f"SD ({model2_name_mapped})": np.round(cv_results_model2_sd, 3),
-                    f"delta_R2": np.round(cv_results_model1_mean - cv_results_model2_mean, 3),
-                    't': np.round(t_val, 3),
-                    'p': p_val,
+                    f"M (SD) {self.model_name_mapping[model1_name]}": f"{mean1:.{self.decimals}f} ({sd1:.{self.decimals}f})",
+                    f"M (SD) {self.model_name_mapping[model2_name]}": f"{mean2:.{self.decimals}f} ({sd2:.{self.decimals}f})",
+                    "delta_R2": f"{delta_R2:.{self.decimals}f}",
+                    self.t_strng: f"{t_val:.{self.decimals}f}",
+                    self.p_strng: p_val,  # Kept as is, assuming p-value formatting is handled elsewhere
                 }
 
-        sig_results_dct = defaultdict_to_dict(sig_results_dct)
+        return defaultdict_to_dict(sig_results_dct)
 
-        return sig_results_dct
-
-    def apply_compare_predictor_classes(self, cv_results_dct: dict[
-        str, dict[str, list[dict[str, list[float]]]]]) -> dict[str, dict[str, dict[str, dict[str, dict[str, float]]]]]:
+    def apply_compare_predictor_classes(self, cv_results_dct: NestedDict) -> NestedDict:
         """
+        Compares the performance of predictor classes using the corrected dependent t-test.
+
+        This method:
+        - Iterates through cross-validation (CV) results for each model and sample subset.
+        - Performs a corrected dependent t-test to compare performance between:
+            - The person-level predictors (`pl`).
+            - A combination of person-level predictors with another predictor class (e.g., `pl+srmc`).
+        - Computes descriptive statistics (mean and standard deviation) for both groups.
+        - Stores results (e.g., mean, SD, t-value, p-value, delta R²) in a nested dictionary
+          that mirrors the structure of the input dictionary.
+
+        ### Input Format (`cv_results_dct`)
+        ```
+        {
+            "model_name": {  # e.g., "elasticnet", "randomforestregressor"
+                "sample_subset": {  # e.g., "all", "selected"
+                    "comparison_key": {  # e.g., {"pl": [...], "pl+class": [...]}
+                        ...
+                    }
+                }
+            }
+        }
+        ```
+
+        ### Output Format
+        ```
+        {
+            "model_name": {
+                "sample_subset": {
+                    "comparison_key": {
+                        "M (SD) Personal": "mean (SD) of pl values",
+                        "M (SD) Other": "mean (SD) of pl+class values",
+                        "deltaR2": "difference between means",
+                        "p": "p-value from t-test",
+                        "t": "t-value from t-test"
+                    }
+                }
+            }
+        }
+        ```
 
         Args:
-            processed_data:
+            cv_results_dct: Nested dictionary containing CV results for person-level predictors (`pl`)
+                            and their combinations with other predictor classes.
 
         Returns:
-
+            NestedDict: A nested dictionary containing statistical test results,
+                        including means, SDs, t-values, p-values, and delta R².
         """
-        # Iterate over models
         sig_results_dct = defaultdict(lambda: defaultdict(dict))
-        for model, model_vals in cv_results_dct.items():  # enr / rfr
-            for samples_to_include, samples_to_include_vals in model_vals.items():  # all / selected
-                for comparison in samples_to_include_vals:
-                    dct_values = list(comparison.values())
-                    pl_combo_key = list(comparison.keys())[1]
-                    pl_data = dct_values[0]
-                    pl_combo_data = dct_values[1]
 
-                    # Perform the corrected dependent t-test between 'pl' and the current feature class
+        for model, model_vals in cv_results_dct.items():
+            for samples_to_include, comparisons in model_vals.items():
+                for comparison in comparisons:
+                    pl_data, pl_combo_data = comparison.get("pl"), list(comparison.values())[1]
+
                     if pl_data and pl_combo_data:
-                        cv_results_pl_m, cv_results_pl_sd = np.mean(pl_data), np.std(pl_data)
-                        cv_results_pl_combo_m, cv_results_pl_combo_sd = np.mean(pl_combo_data), np.std(pl_combo_data)
-
-                        # Change order, so that we have a positive t-value if the combo performs better than pl
+                        mean_pl, sd_pl = np.mean(pl_data), np.std(pl_data)
+                        mean_combo, sd_combo = np.mean(pl_combo_data), np.std(pl_combo_data)
                         t_val, p_val = self.corrected_dependent_ttest(pl_combo_data, pl_data)
+                        delta_R2 = np.round(np.round(mean_combo, self.decimals) - np.round(mean_pl, self.decimals), self.decimals)
 
-                        # pl_combo_key_formatted = self.var_cfg["postprocessing"]["plots"]["feature_combo_name_mapping"][pl_combo_key]
-
-                        # Get results into the result_dct
-                        sig_results_dct[model][samples_to_include][pl_combo_key] = {
-                            f"M (Personal)": np.round(cv_results_pl_m, 3),
-                            f"SD (Personal)": np.round(cv_results_pl_sd, 3),
-                            f"M (Other)": np.round(cv_results_pl_combo_m, 3),
-                            f"SD (Other)": np.round(cv_results_pl_combo_sd, 3),
-                            f"deltaR2": np.round(cv_results_pl_combo_m - cv_results_pl_m, 3),
-                            'p': p_val,
-                            't': np.round(t_val, 3)
+                        sig_results_dct[model][samples_to_include][list(comparison.keys())[1]] = {
+                            f"M (SD) Personal": f"{mean_pl:.{self.decimals}f} ({sd_pl:.{self.decimals}f})",
+                            f"M (SD) Other": f"{mean_combo:.{self.decimals}f} ({sd_combo:.{self.decimals}f})",
+                            f"delta_R2": f"{delta_R2:.{self.decimals}f}",
+                            self.p_strng: p_val,  # Kept as is, assuming p-value formatting is handled elsewhere
+                            self.t_strng: f"{t_val:.{self.decimals}f}"
                         }
 
-        sig_results_dct = defaultdict_to_dict(sig_results_dct)
-        return sig_results_dct
+        return defaultdict_to_dict(sig_results_dct)
 
-    def fdr_correct_p_values(self, p_val_dct: dict[str, dict[str, dict[str, float]]]) -> dict[str, dict[str, dict[str, float]]]:
-        """ # TODO: Does the signature apply to both comparisons?
+    def fdr_correct_p_values(self, p_val_dct: NestedDict) -> NestedDict:
+        """
         Correct p-values using False Discovery Rate (FDR) as described by Benjamini & Hochberg (1995).
         This function
             - recursively finds all instances of 'p_val' in a nested dictionary structure
@@ -552,7 +729,7 @@ class SignificanceTesting:
         p_values = []
         p_val_locations = []
 
-        def collect_p_values(d: dict[str, Any]) -> None:
+        def collect_p_values(d: dict[str, Any], p_strng: str) -> None:
             """
             Recursively collect all 'p_val' values and their containing dictionaries.
 
@@ -561,26 +738,22 @@ class SignificanceTesting:
             """
             for key, value in d.items():
                 if isinstance(value, dict):
-                    collect_p_values(value)
-                elif key == "p":
+                    collect_p_values(value, p_strng)
+                elif key == p_strng:
                     p_values.append(value)
                     p_val_locations.append(d)
 
-        collect_p_values(p_val_fdr_dct)
+        collect_p_values(p_val_fdr_dct, self.p_strng)
 
         if p_values:
             _, adjusted_p_values = fdrcorrection(p_values)
 
-            if hasattr(self, 'format_p_values') and callable(getattr(self, 'format_p_values')):
-                formatted_p_values_fdr = self.format_p_values(adjusted_p_values)
-                formatted_p_values = self.format_p_values(p_values)
-            else:
-                formatted_p_values_fdr = adjusted_p_values
-                formatted_p_values = p_values
+            formatted_p_values_fdr = format_p_values(adjusted_p_values)
+            formatted_p_values = format_p_values(p_values)
 
             for loc, adj_p, orig_p in zip(p_val_locations, formatted_p_values_fdr, formatted_p_values):
-                loc["p (FDR-corrected)"] = adj_p
-                loc["p"] = orig_p
+                loc[self.p_fdr_strng] = adj_p
+                loc[self.p_strng] = orig_p
 
         return p_val_fdr_dct
 
@@ -612,28 +785,6 @@ class SignificanceTesting:
         p = (1.0 - t.cdf(abs(t_stat), df)) * 2.0
 
         return t_stat, p
-
-    @staticmethod
-    def format_p_values(lst_of_p_vals: list[float]) -> list[str]:
-        """
-        This function formats the p_values according to APA standards (3 decimals, <.001 otherwise)
-
-        Args:
-            lst_of_p_vals: list, containing the p_values for a given analysis setting.
-
-        Returns:
-            formatted_p_vals: list, contains p_values formatted according to APA style.
-        """
-        formatted_p_vals = []
-
-        for p_val in lst_of_p_vals:
-            if p_val < 0.001:
-                formatted_p_vals.append("<.001")
-            else:
-                formatted = "{:.3f}".format(p_val).lstrip("0")
-                formatted_p_vals.append(formatted)
-
-        return formatted_p_vals
 
 
 

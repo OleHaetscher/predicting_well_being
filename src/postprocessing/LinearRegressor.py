@@ -78,7 +78,7 @@ class LinearRegressor:
             logger=self.logger,
             model="elasticnet",  # TODO does this work?
             fix_rs=self.var_cfg["analysis"]["random_state"],
-            max_iter=40,  # test, otherwise 40   # self.var_cfg["analysis"]["imputation"]["max_iter"],
+            max_iter=40,  # 40,  # test, otherwise 40   # self.var_cfg["analysis"]["imputation"]["max_iter"],
             num_imputations=1,
             conv_thresh=1,  # not relevant, only RFR
             tree_max_depth=1,  # not relevant, only RFR

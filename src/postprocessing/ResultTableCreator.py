@@ -4,7 +4,8 @@ import numpy as np
 import pandas as pd
 import statsmodels
 
-from src.utils.utilfuncs import custom_round, NestedDict
+from src.utils.DataSaver import DataSaver
+from src.utils.utilfuncs import custom_round, NestedDict, apply_name_mapping, format_p_values
 
 
 class ResultTableCreator:
@@ -18,9 +19,12 @@ class ResultTableCreator:
         self.cfg_postprocessing = cfg_postprocessing
 
         self.name_mapping = name_mapping
+        self.data_saver = DataSaver()
 
         # Mappings for correct display in the result tables
-        self.feature_combo_name_mapping = self.cfg_postprocessing["general"]["feature_combinations"]["name_mapping"]
+        self.feature_combo_name_mapping_main = self.cfg_postprocessing["general"]["feature_combinations"]["name_mapping"]["main"]
+        self.feature_combo_name_mapping_supp = self.cfg_postprocessing["general"]["feature_combinations"]["name_mapping"]["supp"]
+
         self.samples_to_include_name_mapping = self.cfg_postprocessing["general"]["samples_to_include"]["name_mapping"]
         self.crit_name_mapping = self.cfg_postprocessing["general"]["crits"]["name_mapping"]
         self.model_name_mapping = self.cfg_postprocessing["general"]["models"]["name_mapping"]
@@ -35,82 +39,95 @@ class ResultTableCreator:
             nnse_analysis: bool = False
     ) -> None:
         """
-        Creates a DataFrame containing cross-validation (CV) results for a given criterion and sample subset.
+        Generates and saves a cross-validation (CV) results table as an Excel file.
 
-        This method processes the provided data and generates a table where:
-            - Rows represent feature combinations.
-            - Columns are a MultiIndex with:
-                - Level 1: Models (i.e., ENR, RFR).
-                - Level 2: Metrics (i.e., Pearson's r, R², Spearman's rho, MSE).
-                - Level 3: Statistics (i.e., M, SD).
+        The table organizes results by:
+            - Rows: Feature combinations.
+            - Columns: A MultiIndex with:
+                - Level 1: Models (e.g., ENR, RFR).
+                - Level 2: Metrics (e.g., Pearson's r, R², Spearman's rho, MSE).
+                - Level 3: Statistics (e.g., Mean (M), Standard Deviation (SD)).
 
-        The resulting DataFrame is saved as an Excel file in the specified output directory.
+        The function filters and maps feature combinations, aggregates statistics, and ensures
+        a consistent structure for display.
 
         Args:
-            data: A nested dictionary containing CV results with the structure:
-                {feature_combination: {model: {metric: {'M': float, 'SD': float}}}}.
-            crit: Criterion used for the heatmap title (e.g., "wb_state").
-            samples_to_include: Sample subset used (e.g., "all").
-            output_dir: Directory to save the resulting Excel file.
-            nnse_analysis: If True, include only the supplementary analysis without the Neuroticism facets and self-esteem.
-                If False, include only the main analysis.
+            data: Nested dictionary of CV results with the structure:
+                  {feature_combination: {model: {metric: {'M': float, 'SD': float}}}}.
+            crit: Criterion used for the table (e.g., "wb_state").
+            samples_to_include: Subset of samples (e.g., "all").
+            output_dir: Directory for saving the Excel file.
+            nnse_analysis: Whether to include only the supplementary (nnse) analysis. Defaults to False.
 
         """
-        # Map feature combinations and filter if a subset is provided
+        cfg = self.cfg_postprocessing["condense_cv_results"]["result_table"]
+
         if nnse_analysis:
-            feature_combo_mapping = (
-                {k: v for k, v in self.feature_combo_name_mapping.items() if "nnse" in k}
-            )
-            result_str = "nnse"
+            feature_combo_mapping = self.feature_combo_name_mapping_supp
+            result_str = cfg["result_strs"]["nnse"]
+        else:
+            feature_combo_mapping = self.feature_combo_name_mapping_main
+            result_str = cfg["result_strs"]["main"]
 
-        else:  # main analysis
-            feature_combo_mapping = (
-                {k: v for k, v in self.feature_combo_name_mapping.items() if "nnse" not in k}
-            )
-            result_str = "main"
+        #feature_combo_mapping = {
+        #    k: v
+        #    for k, v in self.feature_combo_name_mapping.items()
+        #    if ("nnse" in k) == nnse_analysis
+        #}
 
-        # Create a list of rows for DataFrame construction
+        #result_str = cfg["result_strs"]["nnse" if nnse_analysis else "main"]
+
+        # Custom order for metrics
+        metric_order = ["r", "R2", "rho", "MSE"]
+
+        # Generate rows for the DataFrame
         rows = [
             {
-                'feature_combination': feature_combo_mapping[feature_combination],
-                'model': self.model_name_mapping.get(model, model),
-                'metric': self.metric_name_mapping.get(metric, metric),
-                'M': stats.get('M', np.nan),
-                'SD': stats.get('SD', np.nan)
+                "feature_combination": feature_combo_mapping[feature_combination],
+                "model": self.model_name_mapping.get(model, model),
+                "metric": self.metric_name_mapping.get(metric, metric),
+                "M (SD)": stats.get("M (SD)", "N/A"),
             }
-            for feature_combination, models in data.items() if feature_combination in feature_combo_mapping
+            for feature_combination, models in data.items()
+            if feature_combination in feature_combo_mapping
             for model, metrics in models.items()
             for metric, stats in metrics.items()
         ]
-        try:
 
-            # Create and pivot the DataFrame
-            df = pd.DataFrame(rows)
-            df_pivot = df.pivot(index='feature_combination', columns=['model', 'metric'], values=['M', 'SD'])
+        # Create a DataFrame
+        df = pd.DataFrame(rows)
 
-            # Reorder levels and sort by model and custom metric order
-            df_pivot = df_pivot.reorder_levels(['model', 'metric', None], axis=1)
-            col_index_df = pd.DataFrame(df_pivot.columns.tolist(), columns=['model', 'metric', 'stat'])
-            col_index_df['metric'] = pd.Categorical(
-                col_index_df['metric'], categories=self.metric_name_mapping.values(), ordered=True
+        # Pivot the DataFrame to create the desired structure
+        df_pivot = df.pivot(index="feature_combination", columns=["model", "metric"], values="M (SD)")
+
+        # Reorder columns by metric custom order
+        df_pivot.columns = pd.MultiIndex.from_tuples(
+            sorted(
+                df_pivot.columns,
+                key=lambda col: (
+                    col[0],  # Model
+                    metric_order.index(col[1]) if col[1] in metric_order else len(metric_order)  # Custom metric order
+                )
             )
+        )
 
-            sorted_columns = pd.MultiIndex.from_frame(col_index_df.sort_values(by=['model', 'metric', 'stat']))
-            df_pivot.columns = sorted_columns
+        # Add an empty column with NaN values
+        empty_col = pd.Series([np.nan] * len(df_pivot), name=(" ", " "))  # Single-level column
+        df_pivot = pd.concat([df_pivot.iloc[:, :4], empty_col, df_pivot.iloc[:, 4:]], axis=1)
 
-            # Reindex rows based on feature_combo_mapping
-            custom_order = [feature_combo_mapping[k] for k in feature_combo_mapping]
-            df_pivot = df_pivot.reindex(custom_order, fill_value=np.nan)
-            df_pivot = df_pivot.round(3)
+        # Reindex rows to ensure the feature combinations are in a custom order
+        custom_order = [feature_combo_mapping[k] for k in feature_combo_mapping]
+        df_pivot = df_pivot.reindex(custom_order, fill_value="N/A")
 
-            # Save to Excel
-            output_path = os.path.join(output_dir, f'cv_results_{crit}_{samples_to_include}_{result_str}.xlsx')
-            df_pivot.to_excel(output_path, merge_cells=True)
+        if cfg["store"]:
+            output_path = os.path.join(
+                output_dir,
+                f"{cfg['file_base_name']}_{crit}_{samples_to_include}_{result_str}.xlsx",
+            )
+            self.data_saver.save_excel(df_pivot, output_path)
 
-            print(f"Saved results to {output_path}")
+        print(f"Processed {crit}_{samples_to_include}_{result_str}")
 
-        except:
-            print(f"Not worked for {crit} - {samples_to_include} - {result_str}")
 
     def create_coefficients_table(
             self,
@@ -151,11 +168,16 @@ class ResultTableCreator:
 
         # Round estimates and p-values for formatting
         regression_table['Estimates'] = regression_table['Estimates'].round(3)
-        regression_table['p'] = regression_table['p'].apply(
-            lambda x: f"<0.001" if x < 0.001 else f"{x:.3f}"
+        #regression_table['p'] = regression_table['p'].apply(
+        #    lambda x: f"<0.001" if x < 0.001 else f"{x:.3f}"
+        #)
+        regression_table['p'] = regression_table['p'].apply(format_p_values)
+        regression_table["Predictors"] = apply_name_mapping(
+            features=list(regression_table["Predictors"]),
+            name_mapping=self.name_mapping,
+            prefix=True,
         )
 
-        # Extract summary statistics
         r_squared = model.rsquared
         adj_r_squared = model.rsquared_adj
         observations = model.nobs
@@ -171,7 +193,5 @@ class ResultTableCreator:
         # Combine the regression table with footer rows
         final_table = pd.concat([regression_table, footer_rows], ignore_index=True)
 
-        os.makedirs(output_dir, exist_ok=True)
         output_path = os.path.join(output_dir, f'reg_table_{feature_combination}.xlsx')
-        final_table.to_excel(output_path, index=False, sheet_name="Regression Table")
-        print(f"Saved regression table to {output_path}")
+        self.data_saver.save_excel(df=final_table, output_path=output_path, index=False)

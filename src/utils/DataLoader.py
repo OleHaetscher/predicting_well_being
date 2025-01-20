@@ -3,8 +3,9 @@ import os
 
 import pandas as pd
 import pyreadr
+import numpy as np
 
-from src.utils.utilfuncs import create_defaultdict, defaultdict_to_dict
+from src.utils.utilfuncs import create_defaultdict, defaultdict_to_dict, NestedDict
 
 
 class DataLoader:
@@ -136,20 +137,33 @@ class DataLoader:
             data = json.load(f)
         return data
 
-    def extract_cv_results(self,
-                           base_dir,
-                           metrics,
-                           cv_results_filename):
+    def extract_cv_results(
+            self,
+            base_dir: str,
+            metrics: list[str],
+            cv_results_filename: str,
+            correct_mse: bool = True,
+            decimal: int = 3,
+    ) -> NestedDict:
         """
-        Extract required metrics from 'proc_cv_results.json' files in the directory structure.
+        Extracts required metrics from `proc_cv_results.json` files within a nested directory structure.
+
+        This method traverses the directory tree starting from `base_dir`, locates JSON files matching
+        the given filename, and extracts summary statistics (mean and standard deviation) for the specified metrics.
+
+        - Adjusts for negative MSE values when `correct_mse` is True.
+        - Organizes results into a nested dictionary based on criteria, samples, feature combinations, and models.
 
         Args:
-            base_dir (str): The base directory to start the search.
-            metric (str): The metric to extract.
+            base_dir: Base directory to search for CV results.
+            metrics: List of metric names to extract (e.g., "neg_mean_squared_error").
+            cv_results_filename: Name of the JSON file to read in each directory.
+            correct_mse: If True, converts negative MSE values to positive. Defaults to True.
+            decimal: Number of decimal places to round the extracted metrics. Defaults to 3.
 
         Returns:
-            dict: Extracted metrics dictionary.
-            list: Data points for DataFrame creation.
+            dict: A nested dictionary containing extracted metrics with the structure:
+                  {crit: {samples_to_include: {feature_combination: {model: {metric: {"M": float, "SD": float}}}}}}.
         """
         result_dct = create_defaultdict(n_nesting=5, default_factory=dict)
 
@@ -166,60 +180,20 @@ class DataLoader:
                         m_metric = cv_results_summary['m'][metric]
                         sd_metric = cv_results_summary['sd_across_folds_imps'][metric]
 
-                        # Correct MSE metrics
-                        if metric == "neg_mean_squared_error":
-                            m_metric = m_metric * -1
+                        # Correct MSE values if required
+                        if correct_mse and metric == "neg_mean_squared_error":
+                            m_metric *= -1
+
+                        rounded_m = f"{np.round(m_metric, 3):.3f}"
+                        rounded_sd = f"{np.round(sd_metric, 3):.3f}"
 
                         result_dct[crit][samples_to_include][feature_combination][model][metric] = {
-                            "M": m_metric, "SD": sd_metric
+                            "M": rounded_m, "SD": rounded_sd
                         }
                 except Exception as e:
                     print(f"Error reading {os.path.join(root, cv_results_filename)}: {e}")
 
-        result_dct = defaultdict_to_dict(result_dct)
-
-        return result_dct
-
-    def extract_coefficients(self, base_dir, coef_filename):
-        """  # TODO Do I need this at all?
-        Extract top coefficients from 'lin_model_coefficients.json' files in the directory structure.
-
-        Args:
-            base_dir (str): The base directory to start the search.
-
-        Returns:
-            dict: Extracted coefficients dictionary.
-            list: Coefficient points for DataFrame creation.
-        """
-        coefficients_dict = {}
-        coefficient_points = []
-
-        for root, _, files in os.walk(base_dir):
-            if coef_filename in files:
-                rearranged_key, feature_combination, samples_to_include, crit, model\
-                    = self.rearrange_path_parts(root, base_dir, min_depth=4)
-
-                try:
-                    with open(os.path.join(root, 'lin_model_coefs_summary.json'), 'r') as f:
-                        lin_model_coefficients = json.load(f)
-
-                    coefficients = lin_model_coefficients['m']
-                    sorted_coefficients = sorted(coefficients.items(), key=lambda x: abs(x[1]), reverse=True)
-                    top_seven_coefficients = sorted_coefficients[:7]
-
-                    coefficients_dict[rearranged_key] = dict(top_seven_coefficients)
-                    coefficient_points.append({
-                        'crit': crit,
-                        'model': model,
-                        'samples_to_include': samples_to_include,
-                        'feature_combination': feature_combination,
-                        'coefficients': top_seven_coefficients
-                    })
-
-                except Exception as e:
-                    print(f"Error reading {os.path.join(root, 'proc_lin_model_coefficients.json')}: {e}")
-
-        return coefficients_dict, coefficient_points
+        return defaultdict_to_dict(result_dct)
 
     @staticmethod
     def rearrange_path_parts(root, base_dir, min_depth=4):
@@ -251,6 +225,7 @@ class DataLoader:
                 feature_combination,
                 model
             )
+
         else:
             print(f"Skipping directory {root} due to insufficient path depth.")
             return None

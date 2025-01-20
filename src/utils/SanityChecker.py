@@ -9,6 +9,7 @@ from scipy.stats import spearmanr
 from sklearn.metrics import r2_score
 
 from src.utils.ConfigParser import ConfigParser
+from src.utils.DataSaver import DataSaver
 from src.utils.Logger import Logger
 from src.utils.utilfuncs import NestedDict
 
@@ -28,13 +29,13 @@ class SanityChecker:
         config_parser_class (Callable): A callable class for parsing configuration files.
         apply_to_full_df (bool): Indicates whether to apply checks to the full DataFrame.
     """
-
+    # TODO Update
     def __init__(
         self,
         logger: Logger,
         fix_cfg: NestedDict,
         var_cfg: NestedDict,
-        cfg_sanity_checks: NestedDict = None,
+        cfg_postprocessing: NestedDict,
         config_parser_class: ConfigParser = None,
         apply_to_full_df: bool = None,
         plotter: Any = None,
@@ -45,17 +46,19 @@ class SanityChecker:
         Args:
             logger: A logger instance for logging the results of sanity checks.
             fix_cfg: Configuration settings to handle data inconsistencies.
-            cfg_sanity_checks: Thresholds and parameters for sanity checks.
             config_parser_class: A callable class for parsing configuration files.
             apply_to_full_df: Boolean specifying whether to apply checks to the full DataFrame.
         """
         self.logger = logger
         self.fix_cfg = fix_cfg
         self.var_cfg = var_cfg
-        self.cfg_sanity_checks = cfg_sanity_checks
+        self.cfg_postprocessing = cfg_postprocessing
+        self.cfg_sanity_checks = self.var_cfg["preprocessing"]["sanity_checking"]
         self.config_parser_class = config_parser_class
         self.apply_to_full_df = apply_to_full_df  # bool
         self.plotter = plotter
+
+        self.data_saver = DataSaver()
 
     def run_sanity_checks(
         self,
@@ -531,99 +534,96 @@ class SanityChecker:
 
         return df_sensing
 
-    def sanity_check_pred_vs_true(self):  # TODO Format
+    def sanity_check_pred_vs_true(self) -> None:
         """
-        This function analysis the predicted and the true criterion values within and across samples.
-        We do this to further investigate unexpected predictive patterns in the mac analysis.
-        To do so, we aggregate the predicted vs. true values across
-            - repetitions
-            - outer folds
-            - imputations
-        and compute some summary statistics and metrics
+        Analyzes predicted vs. true criterion values across samples to identify unexpected predictive patterns.
+
+        This method:
+        - Aggregates predicted and true values across repetitions, outer folds, and imputations.
+        - Computes summary statistics and metrics (e.g., R², Spearman's rho) for each sample.
+        - Generates parity plots to visualize predicted vs. true values.
+        - Saves summary statistics and optional plots to the appropriate output directories.
+
+        Configurable via:
+            - Repetitions to check (`reps_to_check`).
+            - Output paths and filenames (`data_paths`, `plot`, `summary_stats`).
         """
-        # Could in principle do this for all analyses
-        root_dir = self.var_cfg["postprocessing"]["check_pred_vs_true"]["path"]
+        cfg_pred_vs_true = self.cfg_postprocessing["sanity_check_pred_vs_true"]
+        root_dir = os.path.join(
+            self.cfg_postprocessing["general"]["data_paths"]["base_output_path"],
+            self.cfg_postprocessing["general"]["data_paths"]["pred_vs_true_path"]
+        )
+        reps_to_check = cfg_pred_vs_true["reps_to_check"]
+        stats_decimals = cfg_pred_vs_true["summary_stats"]["decimals"]
 
-        # Walk through all subdirectories
-        for dirpath, dirnames, filenames in os.walk(root_dir):
-            if not dirnames:
-                index_data = {}
+        for dirpath, _, filenames in os.walk(root_dir):
+            if not filenames:
+                continue
 
-                for filename in filenames:
-                    reps_to_check = self.var_cfg["postprocessing"]["check_pred_vs_true"]["reps_to_check"]
-                    if filename.startswith('pred_vs_true_rep_') and filename.endswith('.json'):
-                        rep_number = filename.removeprefix('pred_vs_true_rep_').removesuffix('.json')
+            index_data = {}
+            for filename in filenames:
+                if filename.startswith("pred_vs_true_rep_") and filename.endswith(".json"):
+                    rep_number = filename.removeprefix("pred_vs_true_rep_").removesuffix(".json")
+                    if not (rep_number.isdigit() and int(rep_number) in reps_to_check):
+                        continue
 
-                        if rep_number.isdigit() and int(rep_number) in reps_to_check:
-                            file_path = os.path.join(dirpath, filename)
-                            with open(file_path, 'r') as f:
-                                data = json.load(f)
+                    file_path = os.path.join(dirpath, filename)
+                    with open(file_path, "r") as f:
+                        data = json.load(f)
 
-                            # Iterate over the nested structure
-                            for outer_fold_data in data.values():
-                                for imp_data in outer_fold_data.values():
-                                    for index, pred_true in imp_data.items():
-                                        # Append the pred_true tuple to the index in index_data
-                                        if index not in index_data:
-                                            index_data[index] = []
-                                        index_data[index].append(pred_true)
+                    for outer_fold_data in data.values():
+                        for imp_data in outer_fold_data.values():
+                            for index, pred_true in imp_data.items():
+                                index_data.setdefault(index, []).append(pred_true)
 
-                # If index_data is not empty, process it
-                if index_data:
-                    sample_data = {}
+            if not index_data:
+                continue
 
-                    # Process the collected data
-                    for index, pred_true_list in index_data.items():
-                        # Extract sample name from index (e.g., 'cocoesm' from 'cocoesm_7')
-                        sample_name = index.split('_')[0]
-                        if sample_name not in sample_data:
-                            sample_data[sample_name] = {'pred': [], 'true': [], 'diff': []}
-                        for pred_true in pred_true_list:
-                            pred, true = pred_true
-                            sample_data[sample_name]['pred'].append(pred)
-                            sample_data[sample_name]['true'].append(true)
-                            sample_data[sample_name]['diff'].append(true - pred)
+            # Process sample data
+            sample_data = {}
+            for index, pred_true_list in index_data.items():
+                sample_name = index.split("_")[0]
+                sample_data.setdefault(sample_name, {"pred": [], "true": [], "diff": []})
 
-                    dir_components = os.path.normpath(dirpath).split(os.sep)
+                for pred, true in pred_true_list:
+                    sample_data[sample_name]["pred"].append(pred)
+                    sample_data[sample_name]["true"].append(true)
+                    sample_data[sample_name]["diff"].append(true - pred)
 
-                    self.plotter.plot_pred_true_parity(sample_data,
-                                                       feature_combination="mac",
-                                                       samples_to_include=dir_components[-3],
-                                                       crit=dir_components[-2],
-                                                       model=dir_components[-1]
-                                                       )
+            # Generate parity plot
+            dir_components = os.path.normpath(dirpath).split(os.sep)
+            self.plotter.plot_pred_true_parity(
+                sample_data=sample_data,
+                samples_to_include=dir_components[-3],
+                crit=dir_components[-2],
+                model=dir_components[-1],
+                store_plot=cfg_pred_vs_true["plot"]["store"],
+                filename=cfg_pred_vs_true["plot"]["filename"]
+            )
 
-                    # Compute summary statistics for each sample
-                    summary_statistics = {}
+            # Compute summary statistics
+            summary_statistics = {
+                sample_name: {
+                    "pred_mean": np.round(np.mean(values["pred"]), stats_decimals),
+                    "pred_std": np.round(np.std(values["pred"]), stats_decimals),
+                    "true_mean": np.round(np.mean(values["true"]), stats_decimals),
+                    "true_std": np.round(np.std(values["true"]), stats_decimals),
+                    "diff_mean": np.round(np.mean(values["diff"]), stats_decimals),
+                    "diff_std": np.round(np.std(values["diff"]), stats_decimals),
+                    "r2_score": np.round(r2_score(values["true"], values["pred"]),
+                                         stats_decimals) if len(values["pred"]) > 1 else None,
+                    "spearman_rho": np.round(spearmanr(values["true"], values["pred"])[0],
+                                             stats_decimals) if len(values["pred"]) > 1 else None,
+                }
+                for sample_name, values in sample_data.items()
+            }
 
-                    for sample_name, values in sample_data.items():
-                        pred_array = np.array(values['pred'])
-                        true_array = np.array(values['true'])
-                        diff_array = np.array(values['diff'])
-
-                        # Compute R² and Spearman's rho if there are at least two data points
-                        if len(pred_array) > 1:
-                            r2 = r2_score(true_array, pred_array)
-                            rho, _ = spearmanr(true_array, pred_array)
-                        else:
-                            r2 = None
-                            rho = None
-
-                        summary_statistics[sample_name] = {
-                            'pred_mean': np.round(np.mean(pred_array), 4),
-                            'pred_std': np.round(np.std(pred_array), 4),
-                            'true_mean': np.round(np.mean(true_array), 4),
-                            'true_std': np.round(np.std(true_array), 4),
-                            'diff_mean': np.round(np.mean(diff_array), 4),
-                            'diff_std': np.round(np.std(diff_array), 4),
-                            'r2_score': np.round(r2, 4) if r2 is not None else None,
-                            'spearman_rho': np.round(rho, 4) if rho is not None else None
-                        }
-
-                    # Save the summary statistics to a JSON file in the terminal directory
-                    output_file = os.path.join(dirpath, 'pred_vs_true_summary.json')
-                    with open(output_file, 'w') as f:
-                        json.dump(summary_statistics, f, indent=4)
+            # Save summary statistics
+            if cfg_pred_vs_true["summary_stats"]["store"]:
+                output_file = os.path.join(dirpath, cfg_pred_vs_true["summary_stats"]["filename"])
+                self.data_saver.save_json(summary_statistics, output_file)
+                #with open(output_file, "w") as f:
+                #    json.dump(summary_statistics, f, indent=4)
 
 
 
