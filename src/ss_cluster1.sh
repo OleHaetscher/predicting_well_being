@@ -1,7 +1,7 @@
 #!/bin/bash
 
 : '
-This SLURM script is used to generate multiple jobs at a time for a given analysis setting.
+This SLURM script is used to generate multiple jobs at a time for a given analysis setting on cluster 1.
 
 Key parameters:
 - BASE_MINUTES is adjusted dynamically based on the analysis type.
@@ -10,18 +10,18 @@ Key parameters:
 Changeable variables/settings:
 - prediction_model ("elasticnet", "randomforestregressor")
 - crit ("state_wb", "state_pa", "state_na", "trait_wb", "trait_na", "trait_pa")
-- feature_combination ("pl", "srmc", "sens", "mac", etc.)
+- feature_combination ("pl", "srmc", "sens", "mac", -> see cfg_analysis for all options)
 - samples_to_include ("all", "selected", "control")
 '
 
 # Variables
-PREDICTION_MODELS=("randomforestregressor")  # elasticnet, randomforestregressor
-CRITERIA=("state_wb")             # state_wb, state_pa, state_na, trait_wb, trait_na, trait_pa
-FEATURE_COMBINATIONS=("srmc" "mac")     # pl, srmc, sens, mac, etc.
-SAMPLES_TO_INCLUDE=("selected")   # all, selected, control
+PREDICTION_MODELS=("randomforestregressor")
+CRITERIA=("state_wb")
+FEATURE_COMBINATIONS=("srmc")
+SAMPLES_TO_INCLUDE=("selected")
 
 # Parameters
-COMP_SHAP_IA_VALUES="false"  # if true palma -> weird mem per cpus restrictions -> use 10 CPUs with mem request on "long"
+COMP_SHAP_IA_VALUES="false"
 PARALLELIZE_INNER_CV="true"
 PARALLELIZE_SHAP="true"
 PARALLELIZE_SHAP_IA_VALUES="true"
@@ -32,10 +32,10 @@ SPLIT_REPS="true"    # If "true", split repetitions into separate jobs
 NUM_REPS=10           # Adjust as needed
 SPECIFIC_REP=""       # Set to specific rep number if needed; leave empty otherwise
 
-BASE_MINUTES=2000
-CPUS_PER_TASK=10     # Fixed number of CPUs per analysis
+BASE_MINUTES=2000    # Base Time for the job, may be increased depending on analysis parameters
+CPUS_PER_TASK=10     # Base number of CPUs per analysis
 NUM_NODES=1          # If set to 1, no multi-node analysis happens
-PARTITION="normal"   # palma: normal / long, pc2: normal
+PARTITION="normal"   # cluster1: normal / long
 
 # Memory specification based on COMP_SHAP_IA_VALUES
 if [ "$COMP_SHAP_IA_VALUES" == "true" ]; then
@@ -44,19 +44,17 @@ else
   MEMORY_REQUEST=""
 fi
 
-# TODO: Change when using different accounts
-BASE_DIR="/scratch/tmp/nkuper2/coco_wb_ml_code/ia_2011"  # ia_2011, fs_2011
-ENV_PATH="/scratch/tmp/nkuper2/coco_wb_ml_code/palma_env/bin/activate"
-PYTHONPATH_BASE="/scratch/tmp/nkuper2/coco_wb_ml_code"
+# Removed account names for blinding
+BASE_DIR="/scratch/tmp/xxx/coco_wb_ml_code/run_2812"
+ENV_PATH="/scratch/tmp/xxx/coco_wb_ml_code/palma_env/bin/activate"
+PYTHONPATH_BASE="/scratch/tmp/xxx/coco_wb_ml_code"
 
-# Current Time
 CURRENT_TIME=$(date +%Y%m%d%H%M%S)
 
-# Loop over all combinations
+# Adjust the time limits based on analysis parameters (e.g., feature_combination, samples_to_include, model)
 for crit in "${CRITERIA[@]}"; do
   for prediction_model in "${PREDICTION_MODELS[@]}"; do
 
-    # Set PRED_MODEL_MULT based on prediction_model
     case $prediction_model in
       "randomforestregressor") PRED_MODEL_MULT=1 ;;
       "elasticnet") PRED_MODEL_MULT=1 ;;
@@ -65,24 +63,19 @@ for crit in "${CRITERIA[@]}"; do
     for feature_combination in "${FEATURE_COMBINATIONS[@]}"; do
       for samples_to_include in "${SAMPLES_TO_INCLUDE[@]}"; do
 
-        # Set SAMPLE_MULT based on samples_to_include
         case $samples_to_include in
           "all") SAMPLE_MULT=1 ;;
           "selected") SAMPLE_MULT=1 ;;
           "control") SAMPLE_MULT=1 ;;
         esac
 
-        # Check if "sens" is in feature_combination and set FEATURE_MULT accordingly
         if [[ $feature_combination == *"sens"* ]]; then
           FEATURE_MULT=1
         else
           FEATURE_MULT=1
         fi
 
-        # Calculate the total minutes using all the multipliers
         TOTAL_MINUTES=$((BASE_MINUTES * PRED_MODEL_MULT * SAMPLE_MULT * FEATURE_MULT))
-
-        # Convert the total minutes to HH:MM:SS format
         HOURS=$((TOTAL_MINUTES / 60))
         MINUTES=$((TOTAL_MINUTES % 60))
         TIMELIMIT=$(printf "%02d:%02d:00" $HOURS $MINUTES)
@@ -90,7 +83,6 @@ for crit in "${CRITERIA[@]}"; do
         RESULT_DIR="${BASE_DIR}/${feature_combination}/${samples_to_include}/${crit}/${prediction_model}"
         mkdir -p "$RESULT_DIR"
 
-        # Create log directory
         LOG_BASE_DIR="../slurm_logs"
         LOG_DIR="${LOG_BASE_DIR}/${feature_combination}/${samples_to_include}/${crit}/${prediction_model}"
         mkdir -p "$LOG_DIR"
@@ -104,7 +96,6 @@ for crit in "${CRITERIA[@]}"; do
           NTASKS=1 # Adjust if necessary
         fi
 
-        # Set RUN_COMMAND
         RUN_COMMAND="python main.py"
 
             if [ "$SPLIT_REPS" == "true" ]; then
@@ -122,10 +113,8 @@ for crit in "${CRITERIA[@]}"; do
             FULL_LOG_PATH_LOG="${LOG_DIR}/${JOB_LOG_NAME}.log"
             FULL_LOG_PATH_ERR="${LOG_DIR}/${JOB_LOG_NAME}.err"
 
-            # SLURM script filename
             SLURM_SCRIPT="${LOG_DIR}/slurm_script_${JOB_LOG_NAME}.sh"  # Save SLURM script in the same directory
 
-            # Create a SLURM script
             cat > $SLURM_SCRIPT << EOF
 #!/bin/bash
 
@@ -136,7 +125,7 @@ for crit in "${CRITERIA[@]}"; do
 #SBATCH --partition=$PARTITION
 #SBATCH --time=$TIMELIMIT
 #SBATCH --mail-type=FAIL
-#SBATCH --mail-user=aeback.oh@gmail.com
+#SBATCH --mail-user=xxx  # removed for blinding
 #SBATCH -J $JOB_NAME
 #SBATCH --output=${FULL_LOG_PATH_LOG}
 #SBATCH --error=${FULL_LOG_PATH_ERR}
@@ -185,7 +174,6 @@ $RUN_COMMAND \\
     --output_path "$RESULT_DIR/"
 EOF
 
-            # Submit the SLURM job
             sbatch $SLURM_SCRIPT
 
           done
@@ -197,10 +185,8 @@ EOF
           FULL_LOG_PATH_LOG="${LOG_DIR}/${JOB_LOG_NAME}.log"
           FULL_LOG_PATH_ERR="${LOG_DIR}/${JOB_LOG_NAME}.err"
 
-          # SLURM script filename
           SLURM_SCRIPT="${LOG_DIR}/slurm_script_${JOB_LOG_NAME}.sh"
 
-          # Create a SLURM script
           cat > $SLURM_SCRIPT << EOF
 #!/bin/bash
 
@@ -208,10 +194,10 @@ EOF
 #SBATCH --nodes=$NUM_NODES
 #SBATCH --ntasks-per-node=$NTASKS
 #SBATCH --cpus-per-task=$CPUS_PER_TASK
-#SBATCH --partition=normal
+#SBATCH --partition=$PARTITION
 #SBATCH --time=$TIMELIMIT
 #SBATCH --mail-type=ALL
-#SBATCH --mail-user=aeback.oh@gmail.com
+#SBATCH --mail-user=xxx  # removed for blinding
 #SBATCH -J $JOB_NAME
 #SBATCH --output=${FULL_LOG_PATH_LOG}
 #SBATCH --error=${FULL_LOG_PATH_ERR}
@@ -257,7 +243,6 @@ $RUN_COMMAND \\
     --output_path "$RESULT_DIR/"
 EOF
 
-          # Submit the SLURM job
           sbatch $SLURM_SCRIPT
 
         fi
