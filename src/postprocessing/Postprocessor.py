@@ -398,11 +398,16 @@ class Postprocessor:  # TODO adjust class / init doc at the end
             self.base_result_path,
             self.cfg_postprocessing["create_supp_files"][
                 "shap_ia_output_filename"
-            ],  # "run_2012_shap_ia_values"
+            ],
         )
 
+        input_dir = os.path.join(
+            self.base_result_path,
+            self.cfg_postprocessing["general"]["data_paths"]["ia_values"],
+
+        )
         self.supp_file_creator.create_mirrored_dir_with_files(
-            base_dir=self.shap_ia_results_path,
+            base_dir=input_dir,
             file_name=filename,
             output_base_dir=output_dir,
         )

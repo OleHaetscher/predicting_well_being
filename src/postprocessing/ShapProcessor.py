@@ -219,7 +219,7 @@ class ShapProcessor:
             - The method traverses directories within the specified SHAP interaction values path, identifying
               files matching the expected structure and filtering by the given parameters.
             - SHAP interaction values are loaded, processed, and formatted:
-                - Interaction values are extracted and filtered to include only feature pairs.
+                - Interaction values of the best 20 feature / feature pairs are extracted (for the complete dataset)
                 - Values are sorted by their absolute mean interaction effect.
                 - Feature pairs are formatted using `apply_name_mapping`.
             - Data for the top N interactions is retrieved and used to reconstruct a SHAP explanation object.

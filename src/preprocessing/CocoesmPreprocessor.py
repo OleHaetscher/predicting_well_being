@@ -88,7 +88,7 @@ class CocoesmPreprocessor(BasePreprocessor):
         - Removing the 'r' from column names that match a regex pattern of a number followed by 'r'
             (e.g., "10r" for 10th item recoded).
 
-        The suffix pattern is defined in the configuration (`var_cfg`).
+        The suffix pattern is defined in the configuration (`cfg_preprocessing`).
 
         Args:
             df_traits: The DataFrame containing trait data with column names to be updated.

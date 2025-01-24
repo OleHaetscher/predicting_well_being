@@ -29,11 +29,11 @@ PARALLELIZE_IMPUTATION_RUNS="true"
 
 # New parameters
 SPLIT_REPS="true"    # If "true", split repetitions into separate jobs
-NUM_REPS=10           # Adjust as needed
-SPECIFIC_REP=""       # Set to specific rep number if needed; leave empty otherwise
+NUM_REPS=10          # Adjust as needed
+SPECIFIC_REP=""      # Set to specific rep number if needed; leave empty otherwise
 
 BASE_MINUTES=2000    # Base Time for the job, may be increased depending on analysis parameters
-CPUS_PER_TASK=10     # Base number of CPUs per analysis
+CPUS_PER_TASK=10     # Fixed number of CPUs per analysis
 NUM_NODES=1          # If set to 1, no multi-node analysis happens
 PARTITION="normal"   # cluster1: normal / long
 
@@ -45,7 +45,7 @@ else
 fi
 
 # Removed account names for blinding
-BASE_DIR="/scratch/tmp/xxx/coco_wb_ml_code/run_2812"
+BASE_DIR="/scratch/tmp/xxx/coco_wb_ml_code/run_2811"
 ENV_PATH="/scratch/tmp/xxx/coco_wb_ml_code/palma_env/bin/activate"
 PYTHONPATH_BASE="/scratch/tmp/xxx/coco_wb_ml_code"
 
@@ -141,7 +141,7 @@ module load palma/2023b
 module load GCC/13.2.0
 module load OpenMPI/4.1.6
 
-module load mpi4py
+module load mpi4py  # this loads Python 3.11.5
 
 # Activate your Python environment
 unset PYTHONPATH
@@ -212,7 +212,7 @@ module load palma/2023b
 module load GCC/13.2.0
 module load OpenMPI/4.1.6
 
-module load mpi4py
+module load mpi4py  # this loads Python 3.11.5
 
 # Activate your Python environment
 unset PYTHONPATH
