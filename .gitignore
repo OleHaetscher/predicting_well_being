@@ -173,6 +173,9 @@ results/
 # deprecated stuff
 deprecated/
 
+# logs
+logs/
+
 # cache
 src/cache_directory
 
