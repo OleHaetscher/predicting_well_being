@@ -1,19 +1,20 @@
+import os
 import pickle
 import re
 from abc import ABC, abstractmethod
 from copy import deepcopy
 from functools import reduce
-from typing import Union
+from typing import Union, Optional, Callable, Any
 
+import numpy as np
 import pandas as pd
 from pandas.api.types import is_numeric_dtype
 
-from src.utils.ConfigParser import *
+from src.utils.ConfigParser import ConfigParser
 from src.utils.DataLoader import DataLoader
-from src.utils.Logger import *
+from src.utils.Logger import Logger
 from src.utils.SanityChecker import SanityChecker
-from src.utils.Timer import *
-from src.utils.SanityChecker import *
+from src.utils.Timer import Timer
 from src.utils.utilfuncs import NestedDict, inverse_code
 
 
@@ -33,12 +34,11 @@ class BasePreprocessor(ABC):
     4. Merge data and execute final preprocessing steps on the combined data.
 
     Attributes:
-        fix_cfg (NestedDict): Fixed configuration for preprocessing, loaded from a YAML file.
-        var_cfg (NestedDict): Variable configuration for preprocessing, loaded from a YAML file.
+        cfg_preprocessing (NestedDict): Yaml config specifying details on preprocessing (e.g., scales, items).
         dataset (str | None): The name of the dataset being processed. This is set in subclasses.
         logger (Logger): A logger for logging preprocessing steps and sanity checks
         timer (Timer): A timer to measure and log execution times for preprocessing methods.
-        config_parser (Callable): Function to parse and retrieve configuration data from fix_cfg.
+        config_parser (Callable): Function to parse and retrieve configuration data from cfg_preprocessing.
         config_key_finder (Callable): Function to search for specific keys in the configuration.
         apply_preprocessing_methods (Callable): Preprocessing pipeline wrapped with a timer decorator.
         sanity_checker (SanityChecker): Validates the consistency and correctness of the processed data.
@@ -46,39 +46,37 @@ class BasePreprocessor(ABC):
         df_before_final_selection (Optional[pd.DataFrame]): DataFrame containing data before final column selection.
     """
 
-    def __init__(self, fix_cfg: NestedDict, var_cfg: NestedDict) -> None:
+    def __init__(self, cfg_preprocessing: NestedDict) -> None:
         """
         Initializes the BasePreprocessor with a configuration file.
 
         Args:
-            fix_cfg: yaml config
-            var_cfg: yaml config
+            cfg_preprocessing: yaml config
         """
-        self.fix_cfg = fix_cfg
-        self.var_cfg = var_cfg
+        self.cfg_preprocessing = cfg_preprocessing
         self.dataset = None  # assigned in the subclasses
         self.df_before_final_selection = None  # assigned during preprocessing
 
+        self.data_loader = DataLoader(nrows=self.cfg_preprocessing["general"]["nrows"])
         self.logger = Logger(
-            log_dir=self.var_cfg["general"]["log_dir"],
-            log_file=self.var_cfg["general"]["log_name"],
+            log_dir=self.cfg_preprocessing["general"]["log_dir"],
+            log_file=self.cfg_preprocessing["general"]["log_name"],
         )
         self.timer = Timer(logger=self.logger)
+
         self.config_parser = ConfigParser().cfg_parser
         self.config_key_finder = ConfigParser().find_key_in_config
+
         self.apply_preprocessing_methods = self.timer._decorator(
             func=self.apply_preprocessing_methods
         )
+
         self.sanity_checker = SanityChecker(
             logger=self.logger,
-            fix_cfg=self.fix_cfg,
-            var_cfg=self.var_cfg,
-            cfg_postprocessing=self.cfg_postprocessing,
-            # cfg_sanity_checks=self.var_cfg["preprocessing"]["sanity_checking"],
+            cfg_preprocessing=self.cfg_preprocessing,
             config_parser_class=ConfigParser(),
             apply_to_full_df=False,
         )
-        self.data_loader = DataLoader(nrows=self.var_cfg["preprocessing"]["nrows"])
 
     @property
     def path_to_raw_data(self) -> str:
@@ -89,7 +87,7 @@ class BasePreprocessor(ABC):
             str: The full path to the raw data folder for the dataset.
         """
         return os.path.join(
-            self.var_cfg["preprocessing"]["path_to_raw_data"], self.dataset
+            self.cfg_preprocessing["general"]["path_to_raw_data"], self.dataset
         )
 
     @property
@@ -101,7 +99,7 @@ class BasePreprocessor(ABC):
             str: The full path to the folder containing the country-level variable files.
         """
         return os.path.join(
-            self.var_cfg["preprocessing"]["path_to_raw_data"], "country_level_vars"
+            self.cfg_preprocessing["general"]["path_to_raw_data"], "country_level_vars"
         )
 
     @property
@@ -116,7 +114,7 @@ class BasePreprocessor(ABC):
         """
         if self.dataset in ["cocoms", "zpid"]:
             return os.path.join(
-                self.var_cfg["preprocessing"]["path_to_raw_data"],
+                self.cfg_preprocessing["general"]["path_to_raw_data"],
                 self.dataset,
                 "sensing_vars",
             )
@@ -132,9 +130,9 @@ class BasePreprocessor(ABC):
         Returns:
             str: The Trait ID column name specific to the dataset.
         """
-        return self.fix_cfg["person_level"]["other_trait_columns"][0]["item_names"][
-            self.dataset
-        ]
+        return self.cfg_preprocessing["person_level"]["other_trait_columns"][0][
+            "item_names"
+        ][self.dataset]
 
     @property
     def raw_esm_id_col(self) -> str:
@@ -145,9 +143,9 @@ class BasePreprocessor(ABC):
         Returns:
             str: The ESM ID column name specific to the dataset.
         """
-        return self.fix_cfg["esm_based"]["other_esm_columns"][0]["item_names"][
-            self.dataset
-        ]
+        return self.cfg_preprocessing["esm_based"]["other_esm_columns"][0][
+            "item_names"
+        ][self.dataset]
 
     @property
     def raw_sensing_id_col(self) -> Optional[str]:
@@ -160,7 +158,9 @@ class BasePreprocessor(ABC):
             otherwise, None.
         """
         if self.dataset in ["cocoms", "zpid"]:
-            return self.fix_cfg["sensing_based"]["phone"][0]["item_names"][self.dataset]
+            return self.cfg_preprocessing["sensing_based"]["phone"][0]["item_names"][
+                self.dataset
+            ]
         else:
             return None
 
@@ -173,9 +173,9 @@ class BasePreprocessor(ABC):
         Returns:
             str: The ESM timestamp column name specific to the dataset.
         """
-        return self.fix_cfg["esm_based"]["other_esm_columns"][1]["item_names"][
-            self.dataset
-        ]
+        return self.cfg_preprocessing["esm_based"]["other_esm_columns"][1][
+            "item_names"
+        ][self.dataset]
 
     def apply_preprocessing_methods(self) -> pd.DataFrame:
         """
@@ -380,7 +380,9 @@ class BasePreprocessor(ABC):
             pd.DataFrame: A DataFrame with flagged rows excluded.
         """
         flags = self.config_parser(
-            self.fix_cfg["person_level"]["other_trait_columns"], "binary", "trait_flags"
+            self.cfg_preprocessing["person_level"]["other_trait_columns"],
+            "binary",
+            "trait_flags",
         )[0]
 
         if self.dataset in flags["item_names"]:
@@ -407,7 +409,7 @@ class BasePreprocessor(ABC):
         """
         Filters the DataFrame to include only columns relevant to the specified dataset.
 
-        This method identifies columns to retain based on the configuration in `self.fix_cfg`,
+        This method identifies columns to retain based on the configuration in `self.cfg_preprocessing`,
         which specifies relevant column names for the given dataset.
 
         Args:
@@ -419,7 +421,7 @@ class BasePreprocessor(ABC):
         """
         cols_to_be_selected = []
 
-        for cat, cat_entries in self.fix_cfg[df_type].items():
+        for cat, cat_entries in self.cfg_preprocessing[df_type].items():
             for entry in cat_entries:
                 if "item_names" in entry:
                     cols_to_be_selected.extend(
@@ -481,7 +483,7 @@ class BasePreprocessor(ABC):
             pd.DataFrame: A DataFrame with the education level column mapped to the unified scale.
         """
         education_cfg = self.config_parser(
-            self.fix_cfg["person_level"]["sociodemographics"],
+            self.cfg_preprocessing["person_level"]["sociodemographics"],
             "continuous",
             "education_level",
         )[0]
@@ -593,7 +595,7 @@ class BasePreprocessor(ABC):
         Returns:
             pd.DataFrame: The DataFrame with aligned scales.
         """
-        specific_cfg = self.fix_cfg[df_type]
+        specific_cfg = self.cfg_preprocessing[df_type]
 
         for cat in cat_list:
             for entry in specific_cfg[cat]:
@@ -713,7 +715,7 @@ class BasePreprocessor(ABC):
         Returns:
             pd.DataFrame: The DataFrame with out-of-range values replaced by `np.nan`.
         """
-        for cat, cat_entries in self.fix_cfg[df_type].items():
+        for cat, cat_entries in self.cfg_preprocessing[df_type].items():
             for var in cat_entries:
                 if "scale_endpoints" in var and self.dataset in var["item_names"]:
                     scale_min = var["scale_endpoints"]["min"]
@@ -761,7 +763,7 @@ class BasePreprocessor(ABC):
         Returns:
             pd.DataFrame: The DataFrame with new binary columns added.
         """
-        demographic_cfg = self.fix_cfg["person_level"]["sociodemographics"]
+        demographic_cfg = self.cfg_preprocessing["person_level"]["sociodemographics"]
 
         for entry in demographic_cfg:
             if self.dataset in entry["item_names"] and entry["var_type"] == "binary":
@@ -1079,7 +1081,7 @@ class BasePreprocessor(ABC):
         """
         if feature_category == "self_reported_micro_context":
             cont_var_entries = self.config_parser(
-                self.fix_cfg["esm_based"]["self_reported_micro_context"],
+                self.cfg_preprocessing["esm_based"]["self_reported_micro_context"],
                 "continuous",
                 "number_interaction_partners",
                 "sleep_quality",
@@ -1088,10 +1090,10 @@ class BasePreprocessor(ABC):
 
         elif feature_category == "sensing_based":
             phone_entries = self.config_parser(
-                self.fix_cfg["sensing_based"]["phone"], "continuous"
+                self.cfg_preprocessing["sensing_based"]["phone"], "continuous"
             )
             gps_weather_entries = self.config_parser(
-                self.fix_cfg["sensing_based"]["gps_weather"], "continuous"
+                self.cfg_preprocessing["sensing_based"]["gps_weather"], "continuous"
             )
             cont_var_entries = phone_entries + gps_weather_entries
             id_col = self.raw_sensing_id_col
@@ -1174,7 +1176,7 @@ class BasePreprocessor(ABC):
             ValueError: If the datatype of a column is invalid for processing.
         """
         percentage_var_entries = self.config_parser(
-            cfg=self.fix_cfg["esm_based"]["self_reported_micro_context"],
+            cfg=self.cfg_preprocessing["esm_based"]["self_reported_micro_context"],
             var_type="percentage",
         )
         person_level_stats = []
@@ -1280,7 +1282,7 @@ class BasePreprocessor(ABC):
             pd.DataFrame: The original DataFrame with a new column, `number_interactions`, added.
         """
         cfg_num_ia = self.config_parser(
-            self.fix_cfg["esm_based"]["self_reported_micro_context"],
+            self.cfg_preprocessing["esm_based"]["self_reported_micro_context"],
             "continuous",
             "number_interactions",
         )[0]
@@ -1421,12 +1423,14 @@ class BasePreprocessor(ABC):
             KeyError: If required columns or mappings are missing from the configuration.
         """
         max_responses = self.config_parser(
-            self.fix_cfg["esm_based"]["self_reported_micro_context"],
+            self.cfg_preprocessing["esm_based"]["self_reported_micro_context"],
             "percentage",
             "percentage_responses",
         )[0]["special_mappings"][self.dataset]
         study_wave_col = self.config_parser(
-            self.fix_cfg["esm_based"]["other_esm_columns"], "string", "studyWave"
+            self.cfg_preprocessing["esm_based"]["other_esm_columns"],
+            "string",
+            "studyWave",
         )[0]["item_names"]
 
         if self.dataset in [
@@ -1481,7 +1485,7 @@ class BasePreprocessor(ABC):
         df_states = df_states.merge(df_years, on=self.raw_esm_id_col, how="left")
         df_states = df_states.drop(columns=["year"])
         years_of_data_collection = tuple(
-            self.var_cfg["preprocessing"]["years_of_data_collection"][self.dataset]
+            self.cfg_preprocessing["general"]["years_of_data_collection"][self.dataset]
         )
 
         def _contains_nan(value: Union[tuple, Any]) -> bool:
@@ -1541,7 +1545,10 @@ class BasePreprocessor(ABC):
             dict[str, list[str]]: A dictionary mapping affect types to their respective item names for the dataset.
         """
         affect_var_entries = self.config_parser(
-            self.fix_cfg["esm_based"]["criterion"], "continuous", "pa_state", "na_state"
+            self.cfg_preprocessing["esm_based"]["criterion"],
+            "continuous",
+            "pa_state",
+            "na_state",
         )
         affect_states_dct = {
             val["name"]: val["item_names"][self.dataset]
@@ -1573,7 +1580,7 @@ class BasePreprocessor(ABC):
             ValueError: If no positive or negative affect items are found in the configuration for the dataset.
         """
         affect_states_dct = self._get_state_affect_dct()
-        min_num_esm = self.var_cfg["preprocessing"]["min_num_esm_measures"]
+        min_num_esm = self.cfg_preprocessing["general"]["min_num_esm_measures"]
         pos_affect_cols = affect_states_dct.get("pa_state", [])
         neg_affect_cols = affect_states_dct.get("na_state", [])
 
@@ -1685,9 +1692,9 @@ class BasePreprocessor(ABC):
             df_wb_items = pd.concat([df_wb_items, new_columns], axis=1)
             df_wb_items = df_wb_items.drop(["state_na_inv"], axis=1)
 
-        if self.var_cfg["preprocessing"]["store_wb_items"]:
+        if self.cfg_preprocessing["general"]["store_wb_items"]:
             filename = os.path.join(
-                self.var_cfg["preprocessing"]["path_to_preprocessed_data"],
+                self.cfg_preprocessing["general"]["path_to_preprocessed_data"],
                 f"wb_items_{self.dataset}",
             )
             with open(filename, "wb") as f:
@@ -1906,7 +1913,7 @@ class BasePreprocessor(ABC):
             KeyError: If a specified item to be recoded is not found in the DataFrame.
         """
         cont_pers_entries = self.config_parser(
-            self.fix_cfg["person_level"]["personality"], "continuous"
+            self.cfg_preprocessing["person_level"]["personality"], "continuous"
         )
         for entry in cont_pers_entries:
             if "items_to_recode" in entry and entry["items_to_recode"].get(
@@ -1940,10 +1947,10 @@ class BasePreprocessor(ABC):
             pd.DataFrame: The DataFrame with new columns added for the scale means.
         """
         cont_pers_entries = self.config_parser(
-            self.fix_cfg["person_level"]["personality"], "continuous"
+            self.cfg_preprocessing["person_level"]["personality"], "continuous"
         )
         cont_soc_dem_entries = self.config_parser(
-            self.fix_cfg["person_level"]["sociodemographics"], "continuous"
+            self.cfg_preprocessing["person_level"]["sociodemographics"], "continuous"
         )
         for entry in cont_pers_entries + cont_soc_dem_entries:
             if self.dataset in entry["item_names"]:
@@ -1974,16 +1981,16 @@ class BasePreprocessor(ABC):
             pd.DataFrame: The input DataFrame, unchanged.
         """
         try:
-            pa_trait_items = self.fix_cfg["person_level"]["criterion"][0]["item_names"][
-                self.dataset
-            ]
+            pa_trait_items = self.cfg_preprocessing["person_level"]["criterion"][0][
+                "item_names"
+            ][self.dataset]
         except KeyError:
             pa_trait_items = []
 
         try:
-            na_trait_items = self.fix_cfg["person_level"]["criterion"][1]["item_names"][
-                self.dataset
-            ]
+            na_trait_items = self.cfg_preprocessing["person_level"]["criterion"][1][
+                "item_names"
+            ][self.dataset]
         except KeyError:
             na_trait_items = []
 
@@ -1993,7 +2000,7 @@ class BasePreprocessor(ABC):
             df_trait_wb_items = df[wb_trait_items]
 
             filename = os.path.join(
-                self.var_cfg["preprocessing"]["path_to_preprocessed_data"],
+                self.cfg_preprocessing["general"]["path_to_preprocessed_data"],
                 f"trait_wb_items_{self.dataset}",
             )
             with open(filename, "wb") as f:
@@ -2034,7 +2041,7 @@ class BasePreprocessor(ABC):
         criteria_types = {"trait": "person_level", "state": "esm_based"}
         for criterion_type, config_lvl in criteria_types.items():
             wb_items = self.config_parser(
-                self.fix_cfg[config_lvl]["criterion"], var_type=None
+                self.cfg_preprocessing[config_lvl]["criterion"], var_type=None
             )
             pa_items = None
             na_items = None
@@ -2118,7 +2125,7 @@ class BasePreprocessor(ABC):
         Selects and renames the final columns to be included in the output DataFrame.
 
         This method filters the input DataFrame to include only the specified columns based on the
-        configuration in `self.fix_cfg["var_assignments"]`. It also prefixes the selected columns
+        configuration in `self.cfg_preprocessing["var_assignments"]`. It also prefixes the selected columns
         with category-specific prefixes (e.g., "pl_" for person-level variables) for easier identification.
 
         Included categories of features :
@@ -2138,7 +2145,7 @@ class BasePreprocessor(ABC):
         """
         final_df = pd.DataFrame()
 
-        for prefix, columns in self.fix_cfg["var_assignments"].items():
+        for prefix, columns in self.cfg_preprocessing["var_assignments"].items():
             selected_columns = [col for col in columns if col in df.columns]
             renamed_columns = {col: f"{prefix}_{col}" for col in selected_columns}
 
@@ -2234,7 +2241,7 @@ class BasePreprocessor(ABC):
                 self.set_nan_to_zero,
                 {
                     "df": None,
-                    "selected_cols_part": self.var_cfg["preprocessing"]["sensing"][
+                    "selected_cols_part": self.cfg_preprocessing["general"]["sensing"][
                         "app_substring"
                     ][self.dataset],
                     "reference": "dummy",
@@ -2244,10 +2251,10 @@ class BasePreprocessor(ABC):
                 self.set_nan_to_zero,
                 {
                     "df": None,
-                    "selected_cols_part": self.var_cfg["preprocessing"]["sensing"][
+                    "selected_cols_part": self.cfg_preprocessing["general"]["sensing"][
                         "call_substring"
                     ][self.dataset],
-                    "reference": self.var_cfg["preprocessing"]["sensing"][
+                    "reference": self.cfg_preprocessing["general"]["sensing"][
                         "call_reference"
                     ][self.dataset],
                 },
@@ -2305,12 +2312,12 @@ class BasePreprocessor(ABC):
         Returns:
             pd.DataFrame: A merged DataFrame containing both mobile phone and GPS + weather features.
         """
-        date_col_phone = self.fix_cfg["sensing_based"]["phone"][1]["item_names"][
-            self.dataset
-        ]
-        date_col_gps_weather = self.fix_cfg["sensing_based"]["gps_weather"][1][
+        date_col_phone = self.cfg_preprocessing["sensing_based"]["phone"][1][
             "item_names"
         ][self.dataset]
+        date_col_gps_weather = self.cfg_preprocessing["sensing_based"]["gps_weather"][
+            1
+        ]["item_names"][self.dataset]
 
         phone_df = sensing_dct["phone_sensing"]
         gps_weather_df = sensing_dct["gps_weather"]
@@ -2354,7 +2361,9 @@ class BasePreprocessor(ABC):
 
         for var_name in kwargs.values():
             col_name = self.config_parser(
-                self.fix_cfg["sensing_based"]["gps_weather"], "continuous", var_name
+                self.cfg_preprocessing["sensing_based"]["gps_weather"],
+                "continuous",
+                var_name,
             )[0]["item_names"][self.dataset]
             df[col_name] = pd.to_datetime(df[col_name], errors="coerce")
             df[col_name] = df[col_name].dt.hour * 60 + df[col_name].dt.minute
@@ -2382,7 +2391,7 @@ class BasePreprocessor(ABC):
         """
         for var_name in kwargs.values():
             col_name = self.config_parser(
-                self.fix_cfg["sensing_based"]["phone"], "continuous", var_name
+                self.cfg_preprocessing["sensing_based"]["phone"], "continuous", var_name
             )[0]["item_names"][self.dataset]
             df[col_name] = df[col_name].where(
                 ~(
@@ -2408,10 +2417,10 @@ class BasePreprocessor(ABC):
             pd.DataFrame: The modified DataFrame with capped values for variables with defined thresholds.
         """
         vars_phone_sensing = self.config_parser(
-            self.fix_cfg["sensing_based"]["phone"], "continuous"
+            self.cfg_preprocessing["sensing_based"]["phone"], "continuous"
         )
         vars_gps_weather = self.config_parser(
-            self.fix_cfg["sensing_based"]["gps_weather"], "continuous"
+            self.cfg_preprocessing["sensing_based"]["gps_weather"], "continuous"
         )
         total_vars = vars_phone_sensing + vars_gps_weather
 

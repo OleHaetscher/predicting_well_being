@@ -14,24 +14,23 @@ class EmotionsPreprocessor(BasePreprocessor):
 
     This class implements preprocessing logic specific to the "emotions" dataset.
     It inherits all the attributes and methods of BasePreprocessor, including:
-    - Configuration files (`fix_cfg`, `var_cfg`).
+    - Configuration file ('cfg_preprocessing').
     - Logging and timing utilities (`logger`, `timer`).
     - Data loading, processing, and sanity checking methods.
 
-    Attributes:
+    Additional Attributes (for other Attributes, see BasePreprocessor):
         dataset (str): Specifies the current dataset as "emotions".
         close_interactions (Any): Stores data related to close interactions, assigned during preprocessing.
     """
 
-    def __init__(self, fix_cfg: NestedDict, var_cfg: NestedDict) -> None:
+    def __init__(self, cfg_preprocessing: NestedDict) -> None:
         """
         Initializes the EmotionsPreprocessor with dataset-specific configurations.
 
         Args:
-            fix_cfg: Fixed configuration data loaded from YAML.
-            var_cfg: Variable configuration data loaded from YAML.
+            cfg_preprocessing: Yaml config specifying details on preprocessing (e.g., scales, items).
         """
-        super().__init__(fix_cfg, var_cfg)
+        super().__init__(cfg_preprocessing=cfg_preprocessing)
         self.dataset = "emotions"
         self.close_interactions = None
 
@@ -81,7 +80,7 @@ class EmotionsPreprocessor(BasePreprocessor):
         Raises:
             AssertionError: If duplicate column names are found after renaming and processing.
         """
-        trait_suffixes = self.var_cfg["preprocessing"]["pl_suffixes"][self.dataset]
+        trait_suffixes = self.cfg_preprocessing["general"]["pl_suffixes"][self.dataset]
         suffix_pattern = re.compile(r"_t\d$")
 
         for col in df_traits.columns:
@@ -197,7 +196,9 @@ class EmotionsPreprocessor(BasePreprocessor):
         """
         close_interaction_cfg = [
             entry
-            for entry in self.fix_cfg["esm_based"]["self_reported_micro_context"]
+            for entry in self.cfg_preprocessing["esm_based"][
+                "self_reported_micro_context"
+            ]
             if entry["name"] == "close_interactions"
         ][0]
         int_partner_cols = close_interaction_cfg["special_mappings"]["emotions"][
@@ -245,7 +246,7 @@ class EmotionsPreprocessor(BasePreprocessor):
         Returns:
             pd.DataFrame: The updated DataFrame with consolidated affect columns.
         """
-        crit_state_cfg = self.fix_cfg["esm_based"]["criterion"]
+        crit_state_cfg = self.cfg_preprocessing["esm_based"]["criterion"]
         pa_items = crit_state_cfg[0]["item_names"][self.dataset]
         na_items = crit_state_cfg[1]["item_names"][self.dataset]
 

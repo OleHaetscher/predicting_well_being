@@ -15,24 +15,23 @@ class ZpidPreprocessor(BasePreprocessor):
 
     This class implements preprocessing logic specific to the "zpid" dataset.
     It inherits all the attributes and methods of BasePreprocessor, including:
-    - Configuration files (`fix_cfg`, `var_cfg`).
+    - Configuration file ('cfg_preprocessing').
     - Logging and timing utilities (`logger`, `timer`).
     - Data loading, processing, and sanity checking methods.
 
-    Attributes:
+    Additional Attributes (for other Attributes, see BasePreprocessor):
         dataset (str): Specifies the current dataset as "zpid".
         home_office (Any): Stores data related to home office, assigned during preprocessing.
     """
 
-    def __init__(self, fix_cfg: NestedDict, var_cfg: NestedDict) -> None:
+    def __init__(self, cfg_preprocessing: NestedDict) -> None:
         """
         Initializes the ZpidPreprocessor with dataset-specific configurations.
 
         Args:
-            fix_cfg: Fixed configuration data loaded from YAML.
-            var_cfg: Variable configuration data loaded from YAML.
+            cfg_preprocessing: Yaml config specifying details on preprocessing (e.g., scales, items).
         """
-        super().__init__(fix_cfg, var_cfg)
+        super().__init__(cfg_preprocessing=cfg_preprocessing)
         self.dataset = "zpid"
         self.home_office = None
 
@@ -213,7 +212,7 @@ class ZpidPreprocessor(BasePreprocessor):
             pd.DataFrame: The updated DataFrame with a "home_office" column.
         """
         home_office_cfg = self.config_parser(
-            self.fix_cfg["person_level"]["sociodemographics"],
+            self.cfg_preprocessing["person_level"]["sociodemographics"],
             "percentage",
             "home_office",
         )[0]

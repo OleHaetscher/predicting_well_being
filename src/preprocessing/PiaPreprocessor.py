@@ -13,23 +13,22 @@ class PiaPreprocessor(BasePreprocessor):
 
     This class implements preprocessing logic specific to the "pia" dataset.
     It inherits all the attributes and methods of BasePreprocessor, including:
-    - Configuration files (`fix_cfg`, `var_cfg`).
+    - Configuration file ('cfg_preprocessing').
     - Logging and timing utilities (`logger`, `timer`).
     - Data loading, processing, and sanity checking methods.
 
-    Attributes:
+    Additional Attributes (for other Attributes, see BasePreprocessor):
         dataset (str): Specifies the current dataset as "pia".
     """
 
-    def __init__(self, fix_cfg: NestedDict, var_cfg: NestedDict) -> None:
+    def __init__(self, cfg_preprocessing: NestedDict) -> None:
         """
         Initializes the PiaPreprocessor with dataset-specific configurations.
 
         Args:
-            fix_cfg: Fixed configuration data loaded from YAML.
-            var_cfg: Variable configuration data loaded from YAML.
+            cfg_preprocessing: Yaml config specifying details on preprocessing (e.g., scales, items).
         """
-        super().__init__(fix_cfg, var_cfg)
+        super().__init__(cfg_preprocessing=cfg_preprocessing)
         self.dataset = "pia"
 
     def merge_traits(self, df_dct: dict[str, pd.DataFrame]) -> pd.DataFrame:
@@ -93,7 +92,7 @@ class PiaPreprocessor(BasePreprocessor):
         Raises:
             AssertionError: If duplicate column names remain after renaming.
         """
-        trait_suffixes = self.var_cfg["preprocessing"]["pl_suffixes"][self.dataset]
+        trait_suffixes = self.cfg_preprocessing["general"]["pl_suffixes"][self.dataset]
         suffix_pattern = re.compile(r"_t\d$")
 
         for col in df_traits.columns:

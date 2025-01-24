@@ -11,23 +11,22 @@ class CocoutPreprocessor(BasePreprocessor):
 
     This class implements preprocessing logic specific to the "cocout" dataset.
     It inherits all the attributes and methods of BasePreprocessor, including:
-    - Configuration files (`fix_cfg`, `var_cfg`).
+    - Configuration file ('cfg_preprocessing').
     - Logging and timing utilities (`logger`, `timer`).
     - Data loading, processing, and sanity checking methods.
 
-    Attributes:
+    Additional Attributes (for other Attributes, see BasePreprocessor):
         dataset (str): Specifies the current dataset as "cocout".
     """
 
-    def __init__(self, fix_cfg: NestedDict, var_cfg: NestedDict) -> None:
+    def __init__(self, cfg_preprocessing: NestedDict) -> None:
         """
         Initializes the CocoutPreprocessor with dataset-specific configurations.
 
         Args:
-            fix_cfg: Fixed configuration data loaded from YAML.
-            var_cfg: Variable configuration data loaded from YAML.
+            cfg_preprocessing: Yaml config specifying details on preprocessing (e.g., scales, items).
         """
-        super().__init__(fix_cfg, var_cfg)
+        super().__init__(cfg_preprocessing=cfg_preprocessing)
         self.dataset = "cocout"
 
     def merge_traits(self, df_dct: dict[str, pd.DataFrame]) -> pd.DataFrame:
@@ -163,7 +162,7 @@ class CocoutPreprocessor(BasePreprocessor):
         Returns:
             pd.DataFrame: The modified DataFrame with cleaned column names.
         """
-        trait_suffix = self.var_cfg["preprocessing"]["pl_suffixes"]["cocout"]
+        trait_suffix = self.cfg_preprocessing["general"]["pl_suffixes"]["cocout"]
         updated_columns = []
 
         for col in df_traits.columns:
@@ -268,7 +267,9 @@ class CocoutPreprocessor(BasePreprocessor):
         """
         number_int_partners_cfg = [
             entry
-            for entry in self.fix_cfg["esm_based"]["self_reported_micro_context"]
+            for entry in self.cfg_preprocessing["esm_based"][
+                "self_reported_micro_context"
+            ]
             if entry["name"] == "number_interaction_partners"
         ][0]
         col_name = number_int_partners_cfg["item_names"]["cocout"]

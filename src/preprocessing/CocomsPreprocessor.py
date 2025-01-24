@@ -15,11 +15,11 @@ class CocomsPreprocessor(BasePreprocessor):
 
     This class implements preprocessing logic specific to the "cocoms" dataset.
     It inherits all the attributes and methods of BasePreprocessor, including:
-    - Configuration files (`fix_cfg`, `var_cfg`).
+    - Configuration file ('cfg_preprocessing').
     - Logging and timing utilities (`logger`, `timer`).
     - Data loading, processing, and sanity checking methods.
 
-    Attributes:
+    Additional Attributes (for other Attributes, see BasePreprocessor):
         dataset (str): Specifies the current dataset as "cocoms".
         relationship (Optional[pd.DataFrame]): Stores relationship-specific data for later use.
         work_conversations (Optional[pd.DataFrame]): Stores data related to work conversations.
@@ -28,15 +28,14 @@ class CocomsPreprocessor(BasePreprocessor):
         close_interactions: (Optional[pd.DataFrame]): Stores close interaction data.
     """
 
-    def __init__(self, fix_cfg: NestedDict, var_cfg: NestedDict) -> None:
+    def __init__(self, cfg_preprocessing: NestedDict) -> None:
         """
         Initializes the CocomsPreprocessor with dataset-specific configurations.
 
         Args:
-            fix_cfg: Fixed configuration data loaded from YAML.
-            var_cfg: Variable configuration data loaded from YAML.
+            cfg_preprocessing: Yaml config specifying details on preprocessing (e.g., scales, items).
         """
-        super().__init__(fix_cfg, var_cfg)
+        super().__init__(cfg_preprocessing=cfg_preprocessing)
         self.dataset = "cocoms"
 
         self.relationship = None  # will be assigned and stored for later use
@@ -150,7 +149,7 @@ class CocomsPreprocessor(BasePreprocessor):
         Returns:
             pd.DataFrame: A DataFrame with updated column names and resolved conflicts between suffix columns.
         """
-        trait_suffixes = self.var_cfg["preprocessing"]["pl_suffixes"]["cocoms"]
+        trait_suffixes = self.cfg_preprocessing["general"]["pl_suffixes"]["cocoms"]
         updated_columns = []
         columns_to_fill = {}
 
@@ -200,7 +199,7 @@ class CocomsPreprocessor(BasePreprocessor):
         """
         party_number_map = [
             entry["party_num_mapping"]
-            for entry in self.fix_cfg["person_level"]["personality"]
+            for entry in self.cfg_preprocessing["person_level"]["personality"]
             if "party_num_mapping" in entry.keys()
         ][0]["cocoms"]
 
@@ -261,7 +260,7 @@ class CocomsPreprocessor(BasePreprocessor):
             pd.DataFrame: The updated DataFrame with "close_interactions_raw" and "close_interactions" columns.
         """
         close_interaction_cfg = self.config_parser(
-            self.fix_cfg["esm_based"]["self_reported_micro_context"],
+            self.cfg_preprocessing["esm_based"]["self_reported_micro_context"],
             "percentage",
             "close_interactions",
         )[0]
@@ -346,7 +345,7 @@ class CocomsPreprocessor(BasePreprocessor):
             pd.DataFrame: The updated DataFrame with columns for conversation topics and their percentages.
         """
         conv_topic_vars = self.config_parser(
-            self.fix_cfg["esm_based"]["self_reported_micro_context"],
+            self.cfg_preprocessing["esm_based"]["self_reported_micro_context"],
             "percentage",
             "work_conversations",
             "personal_conversations",
@@ -442,7 +441,7 @@ class CocomsPreprocessor(BasePreprocessor):
         """
 
         relationship_cfg = self.config_parser(
-            self.fix_cfg["esm_based"]["self_reported_micro_context"],
+            self.cfg_preprocessing["esm_based"]["self_reported_micro_context"],
             "binary",
             "relationship",
         )[0]
