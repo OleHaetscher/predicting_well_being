@@ -24,17 +24,17 @@ class SanityChecker:
 
     Attributes:
         logger (Any): A logger instance for logging sanity check results.
-        fix_cfg (NestedDict): Configuration settings for handling data inconsistencies.
+        cfg_preprocessing (NestedDict): Configuration settings for preprocessing data.
+        cfg_postprocessing (NestedDict): Configuration settings for postprocessing data.
         cfg_sanity_checks (NestedDict): Thresholds and parameters for sanity checks.
         config_parser_class (Callable): A callable class for parsing configuration files.
         apply_to_full_df (bool): Indicates whether to apply checks to the full DataFrame.
+        plotter: (ResultPlotter): Class that creates plots.
     """
-    # TODO Update
     def __init__(
         self,
         logger: Logger,
-        fix_cfg: NestedDict,
-        var_cfg: NestedDict,
+        cfg_preprocessing: NestedDict,
         cfg_postprocessing: NestedDict,
         config_parser_class: ConfigParser = None,
         apply_to_full_df: bool = None,
@@ -45,17 +45,19 @@ class SanityChecker:
 
         Args:
             logger: A logger instance for logging the results of sanity checks.
-            fix_cfg: Configuration settings to handle data inconsistencies.
+            cfg_preprocessing: Configuration settings for preprocessing data.
+            cfg_postprocessing: Configuration settings for postprocessing data.
             config_parser_class: A callable class for parsing configuration files.
             apply_to_full_df: Boolean specifying whether to apply checks to the full DataFrame.
+            plotter. Class that creates plots.
         """
         self.logger = logger
-        self.fix_cfg = fix_cfg
-        self.var_cfg = var_cfg
+        self.cfg_preprocessing = cfg_preprocessing
         self.cfg_postprocessing = cfg_postprocessing
-        self.cfg_sanity_checks = self.var_cfg["preprocessing"]["sanity_checking"]
+        self.cfg_sanity_checks = self.cfg_preprocessing["sanity_checks"]
+
         self.config_parser_class = config_parser_class
-        self.apply_to_full_df = apply_to_full_df  # bool
+        self.apply_to_full_df = apply_to_full_df
         self.plotter = plotter
 
         self.data_saver = DataSaver()
@@ -264,7 +266,7 @@ class SanityChecker:
             dataset: The name of the dataset being processed.
         """
         # features_cats = ["pl", "srmc", "crit", "sens", "other"]
-        features_cats = list(self.fix_cfg["var_assignments"].keys())
+        features_cats = list(self.cfg_preprocessing["var_assignments"].keys())
 
         if dataset == "cocoesm":
             features_cats.append("mac")
@@ -275,7 +277,7 @@ class SanityChecker:
         for cat in features_cats:
             self.logger.log(".")
             col_lst_per_cat = [
-                f"{cat}_{col}" for col in self.fix_cfg["var_assignments"][cat]
+                f"{cat}_{col}" for col in self.cfg_preprocessing["var_assignments"][cat]
             ]
             cols_in_df = [col for col in df.columns if col in col_lst_per_cat]
 
@@ -338,7 +340,7 @@ class SanityChecker:
         errors = []
 
         for meta_cat in ["person_level", "esm_based"]:
-            for cat, cat_entries in self.fix_cfg[meta_cat].items():
+            for cat, cat_entries in self.cfg_preprocessing[meta_cat].items():
                 for var in cat_entries:
                     if "scale_endpoints" not in var or dataset not in var.get(
                         "item_names", []
@@ -416,7 +418,7 @@ class SanityChecker:
             dataset: The name of the dataset being processed.
         """
         scale_entries = self.config_parser_class.find_key_in_config(
-            cfg=self.fix_cfg, key="scale_endpoints"
+            cfg=self.cfg_preprocessing, key="scale_endpoints"
         )
 
         for scale in scale_entries:
@@ -504,10 +506,10 @@ class SanityChecker:
             pd.DataFrame: The updated DataFrame after performing the sanity checks.
         """
         vars_phone_sensing = self.config_parser_class.cfg_parser(
-            self.fix_cfg["sensing_based"]["phone"], "continuous"
+            self.cfg_preprocessing["sensing_based"]["phone"], "continuous"
         )
         vars_gps_weather = self.config_parser_class.cfg_parser(
-            self.fix_cfg["sensing_based"]["gps_weather"], "continuous"
+            self.cfg_preprocessing["sensing_based"]["gps_weather"], "continuous"
         )
         total_vars = vars_phone_sensing + vars_gps_weather
 
@@ -550,8 +552,8 @@ class SanityChecker:
         """
         cfg_pred_vs_true = self.cfg_postprocessing["sanity_check_pred_vs_true"]
         root_dir = os.path.join(
-            self.cfg_postprocessing["general"]["data_paths"]["base_output_path"],
-            self.cfg_postprocessing["general"]["data_paths"]["pred_vs_true_path"]
+            self.cfg_postprocessing["general"]["data_paths"]["base_path"],
+            self.cfg_postprocessing["general"]["data_paths"]["pred_vs_true"]
         )
         reps_to_check = cfg_pred_vs_true["reps_to_check"]
         stats_decimals = cfg_pred_vs_true["summary_stats"]["decimals"]
@@ -622,9 +624,3 @@ class SanityChecker:
             if cfg_pred_vs_true["summary_stats"]["store"]:
                 output_file = os.path.join(dirpath, cfg_pred_vs_true["summary_stats"]["filename"])
                 self.data_saver.save_json(summary_statistics, output_file)
-                #with open(output_file, "w") as f:
-                #    json.dump(summary_statistics, f, indent=4)
-
-
-
-

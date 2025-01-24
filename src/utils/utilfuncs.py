@@ -267,3 +267,76 @@ def format_p_values(lst_of_p_vals: list[float]) -> list[str]:
 
     return formatted_p_vals
 
+
+def rearrange_path_parts(
+    root: str,
+    base_dir: str,
+    min_depth: int = 4,
+    order_mapping: dict[str, int] = None,
+    cat_values: dict[str, list[str]] = None,
+) -> tuple[str, str, str, str, str] | None:
+    """
+    Rearranges parts of a relative path based on a mapping and possible values for categories.
+
+    Args:
+        root (str): The full path to process.
+        base_dir (str): The base directory to calculate the relative path from.
+        min_depth (int): Minimum depth of the path to proceed.
+        order_mapping (dict[str, int]): Mapping of category names (e.g., 'crit') to their order in the rearranged key.
+        cat_values (dict[str, list[str]]): Dictionary where keys are category names (e.g., 'crit') and values
+                                           are lists of possible values for each category.
+
+    Returns:
+        tuple:
+            - Rearranged path key as a string based on the mapping.
+            - Values for crit, samples_to_include, feature_combination, and model as separate elements.
+        None: If the depth requirement is not met.
+    """
+    # Normalize path and split into parts
+    relative_path = os.path.relpath(root, base_dir)
+    path_parts = relative_path.strip(os.sep).split(os.sep)
+
+    if len(path_parts) < min_depth:
+        print(f"Skipping directory {root} due to insufficient path depth.")
+        return None
+
+    # Determine the categories for each path part
+    categorized_parts = {}
+    for idx, part in enumerate(path_parts):
+        for category, values in cat_values.items():
+            if part in values:
+                categorized_parts[category] = part
+
+    # Rearrange based on the mapping
+    try:
+        rearranged_key = "_".join(categorized_parts[cat] for cat in order_mapping)
+    except KeyError:
+        print("Key Error indicating that we try to process analyses we do not include in the tables")
+        return None
+
+    return (
+        rearranged_key,
+        categorized_parts["crit"],
+        categorized_parts["samples_to_include"],
+        categorized_parts["feature_combination"],
+        categorized_parts["model"],
+    )
+
+def inverse_code(df: pd.DataFrame, min_scale: int, max_scale: int) -> pd.DataFrame:
+    """
+    Performs inverse coding for items in a DataFrame.
+
+    This method recodes items by subtracting each value from the sum of the scale's minimum
+    and maximum values (`max_scale + min_scale`). It is typically used to reverse-code
+    negative affect items.
+
+    Args:
+        df: A pandas DataFrame containing the items to be inverse-coded.
+        min_scale: The minimum value of the scale.
+        max_scale: The maximum value of the scale.
+
+    Returns:
+        pd.DataFrame: A DataFrame with inverse-coded values.
+    """
+    return max_scale + min_scale - df
+

@@ -4,6 +4,7 @@ from copy import copy
 
 import pandas as pd
 
+from src.utils.DataLoader import DataLoader
 from src.utils.utilfuncs import NestedDict
 
 
@@ -18,7 +19,7 @@ class DataSelector:
     - Optionally selecting the best features based on prior results.
 
     Attributes:
-        var_cfg (NestedDict): Configuration dictionary specifying data selection criteria.
+        cfg_analysis (NestedDict): Yaml config specifying details on the ML analysis (e.g., CV, models).
         df (pd.DataFrame): Input DataFrame containing all datasets, features, and metadata columns.
         feature_combination (str): Feature combination to use for analysis (e.g., "pl_srmc_mac").
         crit (str): Criterion variable to predict (e.g., "wb_state").
@@ -31,7 +32,7 @@ class DataSelector:
 
     def __init__(
         self,
-        var_cfg: NestedDict,
+        cfg_analysis: NestedDict,
         df: pd.DataFrame,
         feature_combination: str,
         crit: str,
@@ -42,14 +43,14 @@ class DataSelector:
         Initializes the DataSelector with configuration and input data.
 
         Args:
-            var_cfg: Configuration dictionary specifying selection rules.
+            cfg_analysis: Yaml config specifying details on the ML analysis (e.g., CV, models).
             df: DataFrame containing all datasets, features, and metadata columns.
             feature_combination: Feature combination to use for analysis (e.g., "pl_srmc_mac").
             crit: Criterion variable to predict (e.g., "wb_state").
             samples_to_include: Sample inclusion criteria (e.g., "selected", "control", "all").
             meta_vars: List of metadata columns required for downstream processing.
         """
-        self.var_cfg = var_cfg
+        self.cfg_analysis = cfg_analysis
         self.feature_combination = feature_combination
         self.crit = crit
         self.samples_to_include = samples_to_include
@@ -60,7 +61,9 @@ class DataSelector:
         self.X = None
         self.y = None
 
-    def select_samples(self, dataset: str = None) -> None:
+        self.data_loader = DataLoader()
+
+    def select_samples(self) -> None:
         """
         Selects samples based on the specified `samples_to_include` and `feature_combination`.
 
@@ -77,13 +80,13 @@ class DataSelector:
         At the end of the function, it sets the filtered df as the class attribute.
         """
         if self.samples_to_include in ["selected", "control"]:
-            datasets_included = self.var_cfg["analysis"]["feature_sample_combinations"][
+            datasets_included = self.cfg_analysis["feature_sample_combinations"][
                 self.feature_combination
             ]
             datasets_included_filtered = [
                 dataset
                 for dataset in datasets_included
-                if dataset in self.var_cfg["analysis"]["crit_available"][self.crit]
+                if dataset in self.cfg_analysis["crit_available"][self.crit]
             ]
             self.datasets_included = datasets_included_filtered
 
@@ -113,10 +116,10 @@ class DataSelector:
         else:
             datasets_included_filtered = [
                 dataset
-                for dataset in self.var_cfg["analysis"]["feature_sample_combinations"][
+                for dataset in self.cfg_analysis["feature_sample_combinations"][
                     "all_in"
                 ]
-                if dataset in self.var_cfg["analysis"]["crit_available"][self.crit]
+                if dataset in self.cfg_analysis["crit_available"][self.crit]
             ]
             self.datasets_included = datasets_included_filtered
 
@@ -131,10 +134,10 @@ class DataSelector:
         crit_col = f"crit_{self.crit}"
         df_filtered_crit_na = df_filtered.dropna(subset=[crit_col])
 
-        if self.var_cfg["analysis"]["tests"]["sample"]:
-            sample_size = self.var_cfg["analysis"]["tests"]["sample_size"]
+        if self.cfg_analysis["tests"]["sample"]:
+            sample_size = self.cfg_analysis["tests"]["sample_size"]
             df_filtered_crit_na = df_filtered_crit_na.sample(
-                n=sample_size, random_state=self.var_cfg["analysis"]["random_state"]
+                n=sample_size, random_state=self.cfg_analysis["random_state"]
             )
 
         self.df = df_filtered_crit_na
@@ -162,7 +165,7 @@ class DataSelector:
         elif self.samples_to_include == "control":
             feature_prefix_lst = ["pl"]
 
-            no_control_lst = self.var_cfg["analysis"]["no_control_lst"]
+            no_control_lst = self.cfg_analysis["no_control_lst"]
             if self.feature_combination in no_control_lst:
                 sys.exit(0)
 
@@ -239,9 +242,7 @@ class DataSelector:
             f"top_{num_features}_features.txt",
         )
 
-        with open(file_path, "r") as file:
-            feature_lst = [line.strip() for line in file]
-
+        feature_lst = self.data_loader.read_txt(file_path)
         df_filtered = df[feature_lst + self.meta_vars]
 
         return df_filtered

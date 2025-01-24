@@ -3,9 +3,6 @@ import os
 
 import pandas as pd
 import pyreadr
-import numpy as np
-
-from src.utils.utilfuncs import create_defaultdict, defaultdict_to_dict, NestedDict
 
 
 class DataLoader:
@@ -123,111 +120,32 @@ class DataLoader:
         return df
 
     @staticmethod
-    def read_json(path_to_dataset: str) -> pd.DataFrame:
+    def read_json(path_to_dataset: str) -> dict:
         """
         This method loads a JSON file from a given directory and returns a dataframe.
 
         Args:
-            path_to_dataset (str): The path to the JSON file to be loaded.
+            path_to_dataset: The path to the JSON file to be loaded.
 
         Returns:
-            pd.DataFrame: DataFrame loaded from the JSON file.
+            dict: Dictionary containing the JSON data.
         """
         with open(path_to_dataset, "r") as f:
             data = json.load(f)
         return data
 
-    def extract_cv_results(
-            self,
-            base_dir: str,
-            metrics: list[str],
-            cv_results_filename: str,
-            correct_mse: bool = True,
-            decimal: int = 3,
-    ) -> NestedDict:
-        """
-        Extracts required metrics from `proc_cv_results.json` files within a nested directory structure.
-
-        This method traverses the directory tree starting from `base_dir`, locates JSON files matching
-        the given filename, and extracts summary statistics (mean and standard deviation) for the specified metrics.
-
-        - Adjusts for negative MSE values when `correct_mse` is True.
-        - Organizes results into a nested dictionary based on criteria, samples, feature combinations, and models.
-
-        Args:
-            base_dir: Base directory to search for CV results.
-            metrics: List of metric names to extract (e.g., "neg_mean_squared_error").
-            cv_results_filename: Name of the JSON file to read in each directory.
-            correct_mse: If True, converts negative MSE values to positive. Defaults to True.
-            decimal: Number of decimal places to round the extracted metrics. Defaults to 3.
-
-        Returns:
-            dict: A nested dictionary containing extracted metrics with the structure:
-                  {crit: {samples_to_include: {feature_combination: {model: {metric: {"M": float, "SD": float}}}}}}.
-        """
-        result_dct = create_defaultdict(n_nesting=5, default_factory=dict)
-
-        for root, _, files in os.walk(base_dir):
-            if cv_results_filename in files:
-
-                rearranged_key, crit, samples_to_include, feature_combination, model\
-                    = self.rearrange_path_parts(root, base_dir, min_depth=4)
-
-                try:
-                    cv_results_summary = self.read_json(os.path.join(root, cv_results_filename))
-
-                    for metric in metrics:
-                        m_metric = cv_results_summary['m'][metric]
-                        sd_metric = cv_results_summary['sd_across_folds_imps'][metric]
-
-                        # Correct MSE values if required
-                        if correct_mse and metric == "neg_mean_squared_error":
-                            m_metric *= -1
-
-                        rounded_m = f"{np.round(m_metric, 3):.3f}"
-                        rounded_sd = f"{np.round(sd_metric, 3):.3f}"
-
-                        result_dct[crit][samples_to_include][feature_combination][model][metric] = {
-                            "M": rounded_m, "SD": rounded_sd
-                        }
-                except Exception as e:
-                    print(f"Error reading {os.path.join(root, cv_results_filename)}: {e}")
-
-        return defaultdict_to_dict(result_dct)
-
     @staticmethod
-    def rearrange_path_parts(root, base_dir, min_depth=4):
+    def read_txt(file_path: str) -> list[str]:
         """
-        Rearranges parts of a relative path if it meets the minimum depth requirement.
+        Loads a text file and returns its contents as a list of strings,
+        where each line is stripped of leading/trailing whitespace.
 
         Args:
-            root (str): The full path to process.
-            base_dir (str): The base directory to calculate the relative path from.
-            min_depth (int): Minimum depth of the path to proceed.
+            file_path: The path to the input text file.
 
         Returns:
-            str or None: Rearranged path key if the depth requirement is met, else None.
+            list[str]: A list of strings, where each string corresponds to a line in the file.
         """
-        relative_path = os.path.relpath(root, base_dir)
-        path_parts = relative_path.strip(os.sep).split(os.sep)
-
-        if len(path_parts) >= min_depth:
-            # Do this as most appropriate for the tables
-            feature_combination = path_parts[0]
-            samples_to_include = path_parts[1]
-            crit = path_parts[2]
-            model = path_parts[3]
-            rearranged_path_parts_joined = '_'.join([crit, samples_to_include, feature_combination, path_parts[1]])
-            return (
-                rearranged_path_parts_joined,
-                crit,
-                samples_to_include,
-                feature_combination,
-                model
-            )
-
-        else:
-            print(f"Skipping directory {root} due to insufficient path depth.")
-            return None
-
-
+        with open(file_path, "r") as file:
+            feature_lst = [line.strip() for line in file]
+        return feature_lst

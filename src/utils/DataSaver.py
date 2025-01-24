@@ -4,7 +4,6 @@ import pickle
 from typing import Union
 
 import pandas as pd
-import pyreadr
 from matplotlib.figure import Figure
 
 from src.utils.utilfuncs import NestedDict
@@ -23,9 +22,6 @@ class DataSaver:
         Args:
             df: DataFrame to save.
             output_path: Path to save the CSV file (including filename and `.csv` extension).
-
-        Returns:
-            None
         """
         os.makedirs(os.path.dirname(output_path), exist_ok=True)
         df.to_csv(output_path, index=False)
@@ -33,16 +29,13 @@ class DataSaver:
         print(f"CSV saved to {output_path}")
 
     @staticmethod
-    def save_pickle(data: pd.DataFrame, output_path: str) -> None:
+    def save_pickle(data: Union[pd.DataFrame, dict], output_path: str) -> None:
         """
         Saves an object as a pickle file.
 
         Args:
-            obj: Object to save (e.g., a DataFrame, dictionary, etc.).
+            data: Data to save (e.g., a DataFrame, dictionary, etc.).
             output_path: Path to save the pickle file (including filename and `.pkl` extension).
-
-        Returns:
-            None
         """
         os.makedirs(os.path.dirname(output_path), exist_ok=True)
 
@@ -60,9 +53,6 @@ class DataSaver:
             data: Dictionary to save.
             output_path: Path to save the JSON file (including filename and `.json` extension).
             indent: Number of spaces for JSON indentation. Defaults to 4.
-
-        Returns:
-            None
         """
         os.makedirs(os.path.dirname(output_path), exist_ok=True)
 
@@ -79,9 +69,6 @@ class DataSaver:
         Args:
             fig: Matplotlib figure to save.
             output_path: Path to save the PNG file (including filename and `.png` extension).
-
-        Returns:
-            None
         """
         os.makedirs(os.path.dirname(output_path), exist_ok=True)
         fig.savefig(output_path, format="png", bbox_inches="tight")
@@ -96,9 +83,6 @@ class DataSaver:
         Args:
             fig: Matplotlib figure to save.
             output_path: Path to save the PDF file (including filename and `.pdf` extension).
-
-        Returns:
-            None
         """
         os.makedirs(os.path.dirname(output_path), exist_ok=True)
         fig.savefig(output_path, format="pdf", bbox_inches="tight")
@@ -124,3 +108,16 @@ class DataSaver:
         df.to_excel(output_path, index=index, merge_cells=merge_cells, engine="openpyxl")
 
         print(f"Excel file saved to {output_path}")
+
+    @staticmethod
+    def save_txt(output_file: str, data: list[str]) -> None:
+        """
+        Saves a list of strings to a text file, with each item written on a new line.
+
+        Args:
+            output_file: The path to the output text file.
+            data: The list of strings to be written to the file.
+        """
+        with open(output_file, 'w') as f:
+            for item in data:
+                f.write(item + '\n')
