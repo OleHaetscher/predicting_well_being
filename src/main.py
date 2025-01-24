@@ -7,16 +7,26 @@ import pandas as pd
 from src.utils.SlurmHandler import SlurmHandler
 
 if __name__ == "__main__":
-    # Load configurations (before importing mpi4py)
+    # Load configurations (before importing mpi4py)  # TODO Adjust
     var_config_path = "../configs/config_var.yaml"
     with open(var_config_path, "r") as f:
         var_cfg = yaml.safe_load(f)
     fix_config_path = "../configs/config_fix.yaml"
     with open(fix_config_path, "r") as f:
         fix_cfg = yaml.safe_load(f)
+
+    preprocessing_config_path = "../configs/cfg_preprocessing.yaml"
+    with open(preprocessing_config_path, "r") as f:
+        cfg_preprocessing = yaml.safe_load(f)
+
+    analysis_config_path = "../configs/cfg_analysis.yaml"
+    with open(analysis_config_path, "r") as f:
+        cfg_analysis = yaml.safe_load(f)
+
     postprocessing_config_path = "../configs/cfg_postprocessing.yaml"
     with open(postprocessing_config_path, "r") as f:
         cfg_postprocessing = yaml.safe_load(f)
+
     name_mapping_path = "../configs/name_mapping.yaml"
     with open(name_mapping_path, "r") as f:
         name_mapping = yaml.safe_load(f)
@@ -141,18 +151,17 @@ if __name__ == "__main__":
     # Postprocessing step
     if var_cfg_updated["general"]["steps"]["postprocessing"]:
         if use_mpi and rank == 0:
-            postprocessor = Postprocessor(fix_cfg=fix_cfg,
-                                          var_cfg=var_cfg_updated,
+            postprocessor = Postprocessor(cfg_preprocessing=cfg_preprocessing,
+                                          cfg_analysis=cfg_analysis,
                                           cfg_postprocessing=cfg_postprocessing,
                                           name_mapping=name_mapping)
-            postprocessor.postprocess()
+            postprocessor.apply_methods()
         elif not use_mpi:
-            # Run postprocessing after all repetitions have been completed
-            postprocessor = Postprocessor(fix_cfg=fix_cfg,
-                                          var_cfg=var_cfg_updated,
+            postprocessor = Postprocessor(cfg_preprocessing=cfg_preprocessing,
+                                          cfg_analysis=cfg_analysis,
                                           cfg_postprocessing=cfg_postprocessing,
                                           name_mapping=name_mapping)
-            postprocessor.postprocess()
+            postprocessor.apply_methods()
 
 
 
