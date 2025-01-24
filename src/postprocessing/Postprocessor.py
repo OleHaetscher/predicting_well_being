@@ -52,12 +52,14 @@ class Postprocessor:  # TODO adjust class / init doc at the end
         supp_file_creator: Instance of `SuppFileCreator` for creating supplemental files.
         sanity_checker: Instance of `SanityChecker` for validating preprocessing and results.
     """
-    def __init__(self,
-                 cfg_preprocessing: NestedDict,
-                 cfg_analysis: NestedDict,
-                 cfg_postprocessing: NestedDict,
-                 name_mapping: NestedDict
-                 ):
+
+    def __init__(
+        self,
+        cfg_preprocessing: NestedDict,
+        cfg_analysis: NestedDict,
+        cfg_postprocessing: NestedDict,
+        name_mapping: NestedDict,
+    ):
         """
         Initializes the Postprocessor with configuration settings, paths, and analysis components.
 
@@ -75,13 +77,14 @@ class Postprocessor:  # TODO adjust class / init doc at the end
         self.cfg_postprocessing = cfg_postprocessing
         self.name_mapping = name_mapping
 
-        self.data_base_path = self.cfg_preprocessing["general"]["path_to_preprocessed_data"]
+        self.data_base_path = self.cfg_preprocessing["general"][
+            "path_to_preprocessed_data"
+        ]
 
         result_paths_cfg = self.cfg_postprocessing["general"]["data_paths"]
         self.base_result_path = result_paths_cfg["base_path"]
         self.cv_shap_results_path = os.path.join(
-            self.base_result_path,
-            result_paths_cfg["main_results"]
+            self.base_result_path, result_paths_cfg["main_results"]
         )
 
         self.methods_to_apply = self.cfg_postprocessing["methods_to_apply"]
@@ -89,24 +92,26 @@ class Postprocessor:  # TODO adjust class / init doc at the end
         self.meta_vars = [
             self.cfg_analysis["cv"]["id_grouping_col"],
             self.cfg_analysis["imputation"]["country_grouping_col"],
-            self.cfg_analysis["imputation"]["years_col"]
+            self.cfg_analysis["imputation"]["years_col"],
         ]
 
         self.data_loader = DataLoader()
         self.data_saver = DataSaver()
         self.raw_results_filenames = self.cfg_analysis["output_filenames"]
-        self.processed_results_filenames = self.cfg_postprocessing["general"]["processed_filenames"]
+        self.processed_results_filenames = self.cfg_postprocessing["general"][
+            "processed_filenames"
+        ]
 
         self.full_data = self.data_loader.read_pkl(
             os.path.join(
                 self.data_base_path,
-                self.cfg_preprocessing["general"]["full_data_filename"]
+                self.cfg_preprocessing["general"]["full_data_filename"],
             )
         )
 
         self.logger = Logger(
             log_dir=self.cfg_preprocessing["general"]["log_dir"],
-            log_file=self.cfg_preprocessing["general"]["log_name"]
+            log_file=self.cfg_preprocessing["general"]["log_name"],
         )
 
         self.descriptives_creator = DescriptiveStatistics(
@@ -133,7 +138,7 @@ class Postprocessor:  # TODO adjust class / init doc at the end
             cv_shap_results_path=self.cv_shap_results_path,
             processed_results_filenames=self.processed_results_filenames,
             name_mapping=self.name_mapping,
-            meta_vars=self.meta_vars
+            meta_vars=self.meta_vars,
         )
 
         self.plotter = ResultPlotter(
@@ -171,7 +176,9 @@ class Postprocessor:  # TODO adjust class / init doc at the end
     def condense_cv_results(self) -> None:
         """Summarizes the CV results for all analysis and stores the results in tables."""
 
-        cv_results_filename = self.cfg_postprocessing["general"]["processed_filenames"]["cv_results_summarized"]
+        cv_results_filename = self.cfg_postprocessing["general"]["processed_filenames"][
+            "cv_results_summarized"
+        ]
 
         cfg_condense_results = self.cfg_postprocessing["condense_cv_results"]
         store_all_results = cfg_condense_results["all_results"]["store"]
@@ -185,13 +192,14 @@ class Postprocessor:  # TODO adjust class / init doc at the end
             decimals=cfg_condense_results["decimals"],
         )
         if store_all_results:
-            all_result_path = os.path.join(self.cv_shap_results_path, all_results_filename)
+            all_result_path = os.path.join(
+                self.cv_shap_results_path, all_results_filename
+            )
             self.data_saver.save_json(cv_results_dct, all_result_path)
 
         for crit, crit_vals in cv_results_dct.items():
             for samples_to_include, samples_to_include_vals in crit_vals.items():
                 for nnse_analysis in [True, False]:
-
                     if nnse_analysis and samples_to_include == "control":
                         continue
 
@@ -203,13 +211,13 @@ class Postprocessor:  # TODO adjust class / init doc at the end
                         data=data_for_table,
                         output_dir=self.cv_shap_results_path,
                         nnse_analysis=nnse_analysis,
-                        include_empty_col_between_models=True
+                        include_empty_col_between_models=True,
                     )
-                    
+
     def sanity_check_pred_vs_true(self) -> None:
         """Sanity checks the predictions vs. the true values for selected analysis and plots the results."""
         self.sanity_checker.sanity_check_pred_vs_true()
-        
+
     def create_descriptives(self) -> None:
         """Creates tables containing descriptives (e.g., M, SD, correlations, reliability) for the datasets."""
         desc_cfg = self.cfg_postprocessing["create_descriptives"]
@@ -222,19 +230,35 @@ class Postprocessor:  # TODO adjust class / init doc at the end
             table_decimals=var_table_cfg["decimals"],
             store_table=var_table_cfg["store"],
             filename=var_table_cfg["filename"],
-            store_index=var_table_cfg["store_index"]
+            store_index=var_table_cfg["store_index"],
         )
 
         rel_dct = {}
 
         for dataset in self.datasets:
-            traits_base_filename = self.cfg_postprocessing["create_descriptives"]["traits_base_filename"]
-            path_to_trait_df = os.path.join(self.data_base_path, f"{traits_base_filename}_{dataset}")
-            trait_df = self.data_loader.read_pkl(path_to_trait_df) if os.path.exists(path_to_trait_df) else None
+            traits_base_filename = self.cfg_postprocessing["create_descriptives"][
+                "traits_base_filename"
+            ]
+            path_to_trait_df = os.path.join(
+                self.data_base_path, f"{traits_base_filename}_{dataset}"
+            )
+            trait_df = (
+                self.data_loader.read_pkl(path_to_trait_df)
+                if os.path.exists(path_to_trait_df)
+                else None
+            )
 
-            states_base_filename = self.cfg_postprocessing["create_descriptives"]["states_base_filename"]
-            path_to_state_df = os.path.join(self.data_base_path, f"{states_base_filename}_{dataset}")
-            state_df = self.data_loader.read_pkl(path_to_state_df) if os.path.exists(path_to_state_df) else None
+            states_base_filename = self.cfg_postprocessing["create_descriptives"][
+                "states_base_filename"
+            ]
+            path_to_state_df = os.path.join(
+                self.data_base_path, f"{states_base_filename}_{dataset}"
+            )
+            state_df = (
+                self.data_loader.read_pkl(path_to_state_df)
+                if os.path.exists(path_to_state_df)
+                else None
+            )
             esm_id_col = self.cfg_preprocessing["general"]["esm_id_col"][dataset]
             esm_tp_col = self.cfg_preprocessing["general"]["esm_timestamp_col"][dataset]
 
@@ -262,13 +286,13 @@ class Postprocessor:  # TODO adjust class / init doc at the end
                 icc1=wb_items_dct["icc1"],
                 bp_corr=wb_items_dct["bp_corr"],
                 wp_corr=wb_items_dct["wp_corr"],
-                trait_corr=wb_items_dct["trait_corr"]
+                trait_corr=wb_items_dct["trait_corr"],
             )
 
         if desc_cfg["rel"]["store"]:
             file_path = os.path.join(
                 self.descriptives_creator.desc_results_base_path,
-                desc_cfg["rel"]["filename"]
+                desc_cfg["rel"]["filename"],
             )
             self.data_saver.save_json(rel_dct, file_path)
 
@@ -282,7 +306,7 @@ class Postprocessor:  # TODO adjust class / init doc at the end
 
         all_results_file_path = os.path.join(
             self.cv_shap_results_path,
-            self.cfg_postprocessing["condense_cv_results"]["all_results"]["filename"]
+            self.cfg_postprocessing["condense_cv_results"]["all_results"]["filename"],
         )
         all_cv_results_dct = self.data_loader.read_json(all_results_file_path)
 
@@ -305,12 +329,14 @@ class Postprocessor:  # TODO adjust class / init doc at the end
 
         linear_regressor_cfg = self.cfg_postprocessing["calculate_exp_lin_models"]
 
-        for feature_combination in self.cfg_postprocessing["general"]["feature_combinations"][
-            "name_mapping"]["main"].keys():
+        for feature_combination in self.cfg_postprocessing["general"][
+            "feature_combinations"
+        ]["name_mapping"]["main"].keys():
             for samples_to_include in linear_regressor_cfg["samples_to_include"]:
                 for crit in linear_regressor_cfg["crits"]:
-                    for model_for_features in linear_regressor_cfg["model_for_features"]:
-
+                    for model_for_features in linear_regressor_cfg[
+                        "model_for_features"
+                    ]:
                         linear_regressor = LinearRegressor(
                             cfg_preprocessing=self.cfg_preprocessing,
                             cfg_analysis=self.cfg_analysis,
@@ -322,7 +348,7 @@ class Postprocessor:  # TODO adjust class / init doc at the end
                             crit=crit,
                             samples_to_include=samples_to_include,
                             model_for_features=model_for_features,
-                            meta_vars=self.meta_vars
+                            meta_vars=self.meta_vars,
                         )
 
                         linear_regressor.get_regression_data()
@@ -370,7 +396,9 @@ class Postprocessor:  # TODO adjust class / init doc at the end
         filename = self.processed_results_filenames["shap_ia_values_summarized"]
         output_dir = os.path.join(
             self.base_result_path,
-            self.cfg_postprocessing["create_supp_files"]["shap_ia_output_filename"],  # "run_2012_shap_ia_values"
+            self.cfg_postprocessing["create_supp_files"][
+                "shap_ia_output_filename"
+            ],  # "run_2012_shap_ia_values"
         )
 
         self.supp_file_creator.create_mirrored_dir_with_files(

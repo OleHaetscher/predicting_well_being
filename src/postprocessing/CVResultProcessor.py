@@ -5,8 +5,12 @@ import pandas as pd
 
 from src.utils.DataLoader import DataLoader
 from src.utils.DataSaver import DataSaver
-from src.utils.utilfuncs import defaultdict_to_dict, create_defaultdict, \
-    rearrange_path_parts, NestedDict
+from src.utils.utilfuncs import (
+    defaultdict_to_dict,
+    create_defaultdict,
+    rearrange_path_parts,
+    NestedDict,
+)
 
 
 class CVResultProcessor:
@@ -29,6 +33,7 @@ class CVResultProcessor:
         model_name_mapping (dict): Mapping of model names.
         metric_name_mapping (dict): Mapping of metric names.
     """
+
     def __init__(self, cfg_postprocessing: NestedDict) -> None:
         """
         Initializes the CVResultProcessor with configuration data.
@@ -42,15 +47,32 @@ class CVResultProcessor:
         self.data_loader = DataLoader()
         self.data_saver = DataSaver()
 
-        self.feature_combo_name_mapping_main = self.cfg_postprocessing["general"]["feature_combinations"]["name_mapping"]["main"]
-        self.feature_combo_name_mapping_supp = self.cfg_postprocessing["general"]["feature_combinations"]["name_mapping"]["supp"]
-        self.feature_combo_name_mapping = {**self.feature_combo_name_mapping_main, **self.feature_combo_name_mapping_supp}
-        self.samples_to_include_name_mapping = self.cfg_postprocessing["general"]["samples_to_include"]["name_mapping"]
-        self.crit_name_mapping = self.cfg_postprocessing["general"]["crits"]["name_mapping"]
-        self.model_name_mapping = self.cfg_postprocessing["general"]["models"]["name_mapping"]
-        self.metric_name_mapping = self.cfg_postprocessing["general"]["metrics"]["name_mapping"]
+        self.feature_combo_name_mapping_main = self.cfg_postprocessing["general"][
+            "feature_combinations"
+        ]["name_mapping"]["main"]
+        self.feature_combo_name_mapping_supp = self.cfg_postprocessing["general"][
+            "feature_combinations"
+        ]["name_mapping"]["supp"]
+        self.feature_combo_name_mapping = {
+            **self.feature_combo_name_mapping_main,
+            **self.feature_combo_name_mapping_supp,
+        }
+        self.samples_to_include_name_mapping = self.cfg_postprocessing["general"][
+            "samples_to_include"
+        ]["name_mapping"]
+        self.crit_name_mapping = self.cfg_postprocessing["general"]["crits"][
+            "name_mapping"
+        ]
+        self.model_name_mapping = self.cfg_postprocessing["general"]["models"][
+            "name_mapping"
+        ]
+        self.metric_name_mapping = self.cfg_postprocessing["general"]["metrics"][
+            "name_mapping"
+        ]
 
-        self.result_table_cfg = self.cfg_postprocessing["condense_cv_results"]["result_table"]
+        self.result_table_cfg = self.cfg_postprocessing["condense_cv_results"][
+            "result_table"
+        ]
         self.table_cat_name_mapping = self.result_table_cfg["mapping"]
 
     @property
@@ -76,12 +98,12 @@ class CVResultProcessor:
         }
 
     def extract_cv_results(
-            self,
-            base_dir: str,
-            metrics: list[str],
-            cv_results_filename: str,
-            negate_mse: bool = True,
-            decimals: int = 3,
+        self,
+        base_dir: str,
+        metrics: list[str],
+        cv_results_filename: str,
+        negate_mse: bool = True,
+        decimals: int = 3,
     ) -> NestedDict:
         """
         Extracts required metrics from `proc_cv_results.json` files within a nested directory structure.
@@ -107,46 +129,58 @@ class CVResultProcessor:
 
         for root, _, files in os.walk(base_dir):
             if cv_results_filename in files:
-
                 # These analyses are not included in the tables
                 if "pl_srmc_control" in root or "srmc_control" in root:
                     continue
 
-                rearranged_key, crit, samples_to_include, feature_combination, model\
-                    = rearrange_path_parts(root,
-                                           base_dir,
-                                           min_depth=4,
-                                           order_mapping={"crit": 1,
-                                                          "samples_to_include": 2,
-                                                          "feature_combination": 3,
-                                                          "model": 4},
-                                           cat_values=self.cat_mapping)
+                (
+                    rearranged_key,
+                    crit,
+                    samples_to_include,
+                    feature_combination,
+                    model,
+                ) = rearrange_path_parts(
+                    root,
+                    base_dir,
+                    min_depth=4,
+                    order_mapping={
+                        "crit": 1,
+                        "samples_to_include": 2,
+                        "feature_combination": 3,
+                        "model": 4,
+                    },
+                    cat_values=self.cat_mapping,
+                )
 
-                cv_results_summary = self.data_loader.read_json(os.path.join(root, cv_results_filename))
+                cv_results_summary = self.data_loader.read_json(
+                    os.path.join(root, cv_results_filename)
+                )
 
                 for metric in metrics:
-                    m_metric = cv_results_summary['m'][metric]
-                    sd_metric = cv_results_summary['sd_across_folds_imps'][metric]
+                    m_metric = cv_results_summary["m"][metric]
+                    sd_metric = cv_results_summary["sd_across_folds_imps"][metric]
 
                     # Correct MSE values if required, as these are negative values in scikit-learn
                     if negate_mse and metric == "neg_mean_squared_error":
                         m_metric *= -1
 
-                    result_dct[crit][samples_to_include][feature_combination][model][metric] = {
+                    result_dct[crit][samples_to_include][feature_combination][model][
+                        metric
+                    ] = {
                         "M": f"{m_metric:.{decimals}f}",
-                        "SD": f"{sd_metric:.{decimals}f}"
+                        "SD": f"{sd_metric:.{decimals}f}",
                     }
 
         return defaultdict_to_dict(result_dct)
 
     def create_cv_results_table(
-            self,
-            data: NestedDict,
-            crit: str,
-            samples_to_include: str,
-            output_dir: str,
-            include_empty_col_between_models: bool = True,
-            nnse_analysis: bool = False
+        self,
+        data: NestedDict,
+        crit: str,
+        samples_to_include: str,
+        output_dir: str,
+        include_empty_col_between_models: bool = True,
+        nnse_analysis: bool = False,
     ) -> None:
         """
         Generates and saves a cross-validation (CV) results table as an Excel file.
@@ -179,9 +213,15 @@ class CVResultProcessor:
 
         rows = [
             {
-                self.table_cat_name_mapping["feature_combination"]: feature_combo_mapping[feature_combination],
-                self.table_cat_name_mapping["model"]: self.model_name_mapping.get(model, model),
-                self.table_cat_name_mapping["metric"]: self.metric_name_mapping.get(metric, metric),
+                self.table_cat_name_mapping[
+                    "feature_combination"
+                ]: feature_combo_mapping[feature_combination],
+                self.table_cat_name_mapping["model"]: self.model_name_mapping.get(
+                    model, model
+                ),
+                self.table_cat_name_mapping["metric"]: self.metric_name_mapping.get(
+                    metric, metric
+                ),
                 "M (SD)": stats.get("M (SD)", "N/A"),
             }
             for feature_combination, models in data.items()
@@ -191,12 +231,14 @@ class CVResultProcessor:
         ]
 
         df = pd.DataFrame(rows)
-        df_pivot = df.pivot(index=self.table_cat_name_mapping["feature_combination"],
-                            columns=[
-                                self.table_cat_name_mapping["model"],
-                                self.table_cat_name_mapping["metric"]
-                            ],
-                            values="M (SD)")
+        df_pivot = df.pivot(
+            index=self.table_cat_name_mapping["feature_combination"],
+            columns=[
+                self.table_cat_name_mapping["model"],
+                self.table_cat_name_mapping["metric"],
+            ],
+            values="M (SD)",
+        )
 
         # Custom order for metrics
         metric_order = list(self.metric_name_mapping.values())
@@ -205,16 +247,20 @@ class CVResultProcessor:
             sorted(
                 df_pivot.columns,
                 key=lambda col: (
-                    col[0],  metric_order.index(col[1])
+                    col[0],
+                    metric_order.index(col[1])
                     if col[1] in metric_order
-                    else len(metric_order)
-                )
+                    else len(metric_order),
+                ),
             )
         )
 
         if include_empty_col_between_models:
             empty_col = pd.Series([np.nan] * len(df_pivot), name=(" ", " "))
-            df_pivot = pd.concat([df_pivot.iloc[:, :n_metrics], empty_col, df_pivot.iloc[:, n_metrics:]], axis=1)
+            df_pivot = pd.concat(
+                [df_pivot.iloc[:, :n_metrics], empty_col, df_pivot.iloc[:, n_metrics:]],
+                axis=1,
+            )
 
         custom_order = [feature_combo_mapping[k] for k in feature_combo_mapping]
         df_pivot = df_pivot.reindex(custom_order, fill_value="N/A")

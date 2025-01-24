@@ -13,7 +13,12 @@ from statsmodels.stats.multitest import fdrcorrection
 
 from src.utils.DataLoader import DataLoader
 from src.utils.DataSaver import DataSaver
-from src.utils.utilfuncs import defaultdict_to_dict, NestedDict, create_defaultdict, format_p_values
+from src.utils.utilfuncs import (
+    defaultdict_to_dict,
+    NestedDict,
+    create_defaultdict,
+    format_p_values,
+)
 
 
 class SignificanceTesting:
@@ -68,23 +73,33 @@ class SignificanceTesting:
 
         self.sig_result_dir = os.path.join(
             base_result_path,
-            self.cfg_postprocessing["general"]["data_paths"]["sig_tests"]
+            self.cfg_postprocessing["general"]["data_paths"]["sig_tests"],
         )
 
         self.data_loader = DataLoader()
         self.data_saver = DataSaver()
-        
+
         self.cv_file_matching_pattern = re.compile(
             self.cfg_sig["cv_results_matching_pattern"]
         )
 
-        self.model_name_mapping = self.cfg_postprocessing["general"]["models"]["name_mapping"]
-        self.feature_combo_name_mapping_main = self.cfg_postprocessing["general"]["feature_combinations"]["name_mapping"]["main"]
+        self.model_name_mapping = self.cfg_postprocessing["general"]["models"][
+            "name_mapping"
+        ]
+        self.feature_combo_name_mapping_main = self.cfg_postprocessing["general"][
+            "feature_combinations"
+        ]["name_mapping"]["main"]
 
         self.crit = self.cfg_sig["crit"]
         self.metric = self.cfg_sig["metric"]
-        self.models = list(self.cfg_postprocessing["general"]["models"]["name_mapping"].keys())
-        self.samples_to_include = list(self.cfg_postprocessing["general"]["samples_to_include"]["name_mapping"].keys())
+        self.models = list(
+            self.cfg_postprocessing["general"]["models"]["name_mapping"].keys()
+        )
+        self.samples_to_include = list(
+            self.cfg_postprocessing["general"]["samples_to_include"][
+                "name_mapping"
+            ].keys()
+        )
         self.decimals = self.cfg_sig["decimals"]
 
         self.delta_r2_str = self.cfg_sig["delta_r2_str"]
@@ -156,39 +171,55 @@ class SignificanceTesting:
 
         file_path_comp_models_main = os.path.join(
             self.sig_result_dir,
-            cfg_sig["compare_models"]["filename_compare_models_main"]
+            cfg_sig["compare_models"]["filename_compare_models_main"],
         )
         file_path_comp_models_control = os.path.join(
             self.sig_result_dir,
-            cfg_sig["compare_models"]["filename_compare_models_control"]
+            cfg_sig["compare_models"]["filename_compare_models_control"],
         )
         file_path_comp_predictors = os.path.join(
             self.sig_result_dir,
-            cfg_sig["compare_predictor_classes"]["filename_compare_predictor_classes"]
+            cfg_sig["compare_predictor_classes"]["filename_compare_predictor_classes"],
         )
 
         # compare models
         data_to_compare_models = self.get_model_comparison_data()
         sig_results_models = self.apply_compare_models(data_to_compare_models)
         sig_results_models_fdr = self.fdr_correct_p_values(sig_results_models)
-        sig_results_models_main_table, sig_results_models_control_table = (
-            self.create_sig_results_table_models(sig_results_models_fdr)
-        )
+        (
+            sig_results_models_main_table,
+            sig_results_models_control_table,
+        ) = self.create_sig_results_table_models(sig_results_models_fdr)
         if self.cfg_sig["compare_models"]["store"]:
-            self.data_saver.save_excel(sig_results_models_main_table, file_path_comp_models_main)
-            self.data_saver.save_excel(sig_results_models_control_table, file_path_comp_models_control)
+            self.data_saver.save_excel(
+                sig_results_models_main_table, file_path_comp_models_main
+            )
+            self.data_saver.save_excel(
+                sig_results_models_control_table, file_path_comp_models_control
+            )
 
         # compare predictor classes
         data_to_compare_predictor_classes = self.get_predictor_class_comparison_data()
-        sig_results_predictor_classes = self.apply_compare_predictor_classes(data_to_compare_predictor_classes)
-        sig_results_predictor_classes_fdr = self.fdr_correct_p_values(sig_results_predictor_classes)
-        sig_results_predictor_classes_table = self.create_sig_results_table_predictor_classes(
-            sig_results_predictor_classes_fdr)
+        sig_results_predictor_classes = self.apply_compare_predictor_classes(
+            data_to_compare_predictor_classes
+        )
+        sig_results_predictor_classes_fdr = self.fdr_correct_p_values(
+            sig_results_predictor_classes
+        )
+        sig_results_predictor_classes_table = (
+            self.create_sig_results_table_predictor_classes(
+                sig_results_predictor_classes_fdr
+            )
+        )
 
         if self.cfg_sig["compare_predictor_classes"]["store"]:
-            self.data_saver.save_excel(sig_results_predictor_classes_table, file_path_comp_predictors)
+            self.data_saver.save_excel(
+                sig_results_predictor_classes_table, file_path_comp_predictors
+            )
 
-    def create_sig_results_table_models(self, p_val_dct: NestedDict) -> tuple[pd.DataFrame, pd.DataFrame]:
+    def create_sig_results_table_models(
+        self, p_val_dct: NestedDict
+    ) -> tuple[pd.DataFrame, pd.DataFrame]:
         """
         Creates formatted pandas DataFrames from a nested dictionary of statistical results.
 
@@ -242,33 +273,48 @@ class SignificanceTesting:
         for feature_combo, inner_dict in p_val_dct.items():
             for samples_to_include, metrics in inner_dict.items():
                 for stat, stat_value in metrics.items():
-                    flattened_data.append({
-                        "Predictor class": feature_combo,
-                        "Samples to include": samples_to_include,
-                        "Stat": stat,
-                        "Stat value": stat_value
-                    })
+                    flattened_data.append(
+                        {
+                            "Predictor class": feature_combo,
+                            "Samples to include": samples_to_include,
+                            "Stat": stat,
+                            "Stat value": stat_value,
+                        }
+                    )
 
         df = pd.DataFrame(flattened_data)
 
         custom_order_stats = self.cfg_sig["compare_models"]["stat_order"]
-        df["Stat"] = pd.Categorical(df["Stat"], categories=custom_order_stats, ordered=True)
+        df["Stat"] = pd.Categorical(
+            df["Stat"], categories=custom_order_stats, ordered=True
+        )
 
-        custom_order_predictor_classes = list(self.feature_combo_name_mapping_main.keys())
-        df["Predictor class"] = pd.Categorical(df["Predictor class"], categories=custom_order_predictor_classes, ordered=True)
-        df["Predictor class"] = df["Predictor class"].map(self.feature_combo_name_mapping_main)
+        custom_order_predictor_classes = list(
+            self.feature_combo_name_mapping_main.keys()
+        )
+        df["Predictor class"] = pd.Categorical(
+            df["Predictor class"],
+            categories=custom_order_predictor_classes,
+            ordered=True,
+        )
+        df["Predictor class"] = df["Predictor class"].map(
+            self.feature_combo_name_mapping_main
+        )
 
         df_pivoted = df.pivot(
             index=["Samples to include", "Stat"],
             columns="Predictor class",
-            values="Stat value")
+            values="Stat value",
+        )
 
-        df_control_pivoted = df_pivoted.loc[('control',), :].copy()
-        df_pivoted.drop('control', level='Samples to include', inplace=True)
+        df_control_pivoted = df_pivoted.loc[("control",), :].copy()
+        df_pivoted.drop("control", level="Samples to include", inplace=True)
 
         return df_pivoted, df_control_pivoted
 
-    def create_sig_results_table_predictor_classes(self, p_val_dct: NestedDict) -> pd.DataFrame:
+    def create_sig_results_table_predictor_classes(
+        self, p_val_dct: NestedDict
+    ) -> pd.DataFrame:
         """
         Creates a pandas DataFrame for predictor classes from a nested dictionary structure.
 
@@ -322,26 +368,37 @@ class SignificanceTesting:
             for sample, feature_dict in sample_dict.items():
                 for feature, metrics in feature_dict.items():
                     for metric_key, metric_value in metrics.items():
-                        flattened_data.append({
-                            "Prediction model": model,
-                            "Samples to include": sample,
-                            "Predictor class": feature,
-                            "Stat": metric_key,
-                            "Stat value": metric_value
-                        })
+                        flattened_data.append(
+                            {
+                                "Prediction model": model,
+                                "Samples to include": sample,
+                                "Predictor class": feature,
+                                "Stat": metric_key,
+                                "Stat value": metric_value,
+                            }
+                        )
 
         df = pd.DataFrame(flattened_data)
 
-        col_order = [val for key, val in self.cfg_postprocessing["general"]["feature_combinations"]["name_mapping"]["main"].items()
-                     if key in df["Predictor class"].unique()]
+        col_order = [
+            val
+            for key, val in self.cfg_postprocessing["general"]["feature_combinations"][
+                "name_mapping"
+            ]["main"].items()
+            if key in df["Predictor class"].unique()
+        ]
 
-        df["Predictor class"] = df["Predictor class"].map(self.feature_combo_name_mapping_main)
+        df["Predictor class"] = df["Predictor class"].map(
+            self.feature_combo_name_mapping_main
+        )
         custom_order = self.cfg_sig["compare_predictor_classes"]["stat_order"]
         df["Stat"] = pd.Categorical(df["Stat"], categories=custom_order, ordered=True)
 
-        df_pivoted = df.pivot(index=["Prediction model", "Samples to include", "Stat"],
-                              columns="Predictor class",
-                              values="Stat value")
+        df_pivoted = df.pivot(
+            index=["Prediction model", "Samples to include", "Stat"],
+            columns="Predictor class",
+            values="Stat value",
+        )
         df_pivoted = df_pivoted[col_order]
 
         return df_pivoted
@@ -414,7 +471,11 @@ class SignificanceTesting:
             ```
         """
 
-        feature_combos = list(self.cfg_postprocessing["general"]["feature_combinations"]["name_mapping"]["main"].keys())
+        feature_combos = list(
+            self.cfg_postprocessing["general"]["feature_combinations"]["name_mapping"][
+                "main"
+            ].keys()
+        )
         results = defaultdict(lambda: defaultdict(lambda: defaultdict(list)))
 
         for dirpath, dirnames, filenames in os.walk(self.sig_result_dir):
@@ -424,8 +485,12 @@ class SignificanceTesting:
                 continue
 
             # Check if this directory contains one of the desired feature combos and samples
-            feature_combo = next((fc for fc in feature_combos if fc in dir_components), None)
-            sample = next((s for s in self.samples_to_include if s in dir_components), None)
+            feature_combo = next(
+                (fc for fc in feature_combos if fc in dir_components), None
+            )
+            sample = next(
+                (s for s in self.samples_to_include if s in dir_components), None
+            )
             if not feature_combo or not sample:
                 continue
 
@@ -444,7 +509,9 @@ class SignificanceTesting:
                 for outer_fold_data in data.values():
                     for metrics in outer_fold_data.values():
                         if self.metric in metrics:
-                            results[feature_combo][sample][model].append(metrics[self.metric])
+                            results[feature_combo][sample][model].append(
+                                metrics[self.metric]
+                            )
 
         results_dct = defaultdict_to_dict(results)
 
@@ -503,22 +570,32 @@ class SignificanceTesting:
             dict: A structured dictionary containing comparison data for each model, with results categorized
                   under "all" and "selected" scenarios.
         """
-        feature_combos = self.cfg_sig["compare_predictor_classes"]["feature_combinations_included"]
-        predictor_class_ref = self.cfg_sig["compare_predictor_classes"]["ref_predictor_class"]
+        feature_combos = self.cfg_sig["compare_predictor_classes"][
+            "feature_combinations_included"
+        ]
+        predictor_class_ref = self.cfg_sig["compare_predictor_classes"][
+            "ref_predictor_class"
+        ]
 
-        raw_data = defaultdict(lambda: {
-            "all": defaultdict(list),
-            "selected": defaultdict(list),
-            "control": defaultdict(list)
-        })
+        raw_data = defaultdict(
+            lambda: {
+                "all": defaultdict(list),
+                "selected": defaultdict(list),
+                "control": defaultdict(list),
+            }
+        )
 
         for dirpath, _, filenames in os.walk(self.sig_result_dir):
             dir_components = os.path.normpath(dirpath).split(os.sep)
             if self.crit not in dir_components:
                 continue
 
-            feature_combo = next((fc for fc in feature_combos if fc in dir_components), None)
-            sample_to_include = next((s for s in self.samples_to_include if s in dir_components), None)
+            feature_combo = next(
+                (fc for fc in feature_combos if fc in dir_components), None
+            )
+            sample_to_include = next(
+                (s for s in self.samples_to_include if s in dir_components), None
+            )
             model = next((m for m in self.models if m in dir_components), None)
 
             for filename in filenames:
@@ -530,7 +607,9 @@ class SignificanceTesting:
                 for _, outer_fold_data in data.items():
                     for imp_data in outer_fold_data.values():
                         if self.metric in imp_data:
-                            raw_data[model][sample_to_include][feature_combo].append(imp_data[self.metric])
+                            raw_data[model][sample_to_include][feature_combo].append(
+                                imp_data[self.metric]
+                            )
 
         final_results = {}
         for model, model_data in raw_data.items():
@@ -543,21 +622,14 @@ class SignificanceTesting:
                     continue
 
                 other_all_data = model_data["all"][other]
-                all_pairs.append({
-                    predictor_class_ref: all_ref,
-                    other: other_all_data
-                })
+                all_pairs.append({predictor_class_ref: all_ref, other: other_all_data})
                 ref_selected_data = model_data["control"][other]
                 other_selected_data = model_data["selected"][other]
-                selected_pairs.append({
-                    predictor_class_ref: ref_selected_data,
-                    other: other_selected_data
-                })
+                selected_pairs.append(
+                    {predictor_class_ref: ref_selected_data, other: other_selected_data}
+                )
 
-            final_results[model] = {
-                "all": all_pairs,
-                "selected": selected_pairs
-            }
+            final_results[model] = {"all": all_pairs, "selected": selected_pairs}
 
         return final_results
 
@@ -620,13 +692,21 @@ class SignificanceTesting:
                     continue
 
                 model1_name, model2_name = list(model_data.keys())
-                cv_results_model1, cv_results_model2 = model_data[model1_name], model_data[model2_name]
+                cv_results_model1, cv_results_model2 = (
+                    model_data[model1_name],
+                    model_data[model2_name],
+                )
 
                 mean1, sd1 = np.mean(cv_results_model1), np.std(cv_results_model1)
                 mean2, sd2 = np.mean(cv_results_model2), np.std(cv_results_model2)
 
-                t_val, p_val = self.corrected_dependent_ttest(cv_results_model2, cv_results_model1)
-                delta_R2 = np.round(np.round(mean2, self.decimals) - np.round(mean1, self.decimals), self.decimals)
+                t_val, p_val = self.corrected_dependent_ttest(
+                    cv_results_model2, cv_results_model1
+                )
+                delta_R2 = np.round(
+                    np.round(mean2, self.decimals) - np.round(mean1, self.decimals),
+                    self.decimals,
+                )
 
                 sig_results_dct[fc][sti] = {
                     f"M (SD) {self.model_name_mapping[model1_name]}": f"{mean1:.{self.decimals}f} ({sd1:.{self.decimals}f})",
@@ -694,20 +774,33 @@ class SignificanceTesting:
         for model, model_vals in cv_results_dct.items():
             for samples_to_include, comparisons in model_vals.items():
                 for comparison in comparisons:
-                    pl_data, pl_combo_data = comparison.get("pl"), list(comparison.values())[1]
+                    pl_data, pl_combo_data = (
+                        comparison.get("pl"),
+                        list(comparison.values())[1],
+                    )
 
                     if pl_data and pl_combo_data:
                         mean_pl, sd_pl = np.mean(pl_data), np.std(pl_data)
-                        mean_combo, sd_combo = np.mean(pl_combo_data), np.std(pl_combo_data)
-                        t_val, p_val = self.corrected_dependent_ttest(pl_combo_data, pl_data)
-                        delta_R2 = np.round(np.round(mean_combo, self.decimals) - np.round(mean_pl, self.decimals), self.decimals)
+                        mean_combo, sd_combo = np.mean(pl_combo_data), np.std(
+                            pl_combo_data
+                        )
+                        t_val, p_val = self.corrected_dependent_ttest(
+                            pl_combo_data, pl_data
+                        )
+                        delta_R2 = np.round(
+                            np.round(mean_combo, self.decimals)
+                            - np.round(mean_pl, self.decimals),
+                            self.decimals,
+                        )
 
-                        sig_results_dct[model][samples_to_include][list(comparison.keys())[1]] = {
+                        sig_results_dct[model][samples_to_include][
+                            list(comparison.keys())[1]
+                        ] = {
                             f"M (SD) Personal": f"{mean_pl:.{self.decimals}f} ({sd_pl:.{self.decimals}f})",
                             f"M (SD) Other": f"{mean_combo:.{self.decimals}f} ({sd_combo:.{self.decimals}f})",
                             self.delta_r2_str: f"{delta_R2:.{self.decimals}f}",
                             self.p_strng: p_val,  # Kept as is, assuming p-value formatting is handled elsewhere
-                            self.t_strng: f"{t_val:.{self.decimals}f}"
+                            self.t_strng: f"{t_val:.{self.decimals}f}",
                         }
 
         return defaultdict_to_dict(sig_results_dct)
@@ -754,14 +847,18 @@ class SignificanceTesting:
             formatted_p_values_fdr = format_p_values(adjusted_p_values)
             formatted_p_values = format_p_values(p_values)
 
-            for loc, adj_p, orig_p in zip(p_val_locations, formatted_p_values_fdr, formatted_p_values):
+            for loc, adj_p, orig_p in zip(
+                p_val_locations, formatted_p_values_fdr, formatted_p_values
+            ):
                 loc[self.p_fdr_strng] = adj_p
                 loc[self.p_strng] = orig_p
 
         return p_val_fdr_dct
 
     @staticmethod
-    def corrected_dependent_ttest(data1: list[float], data2: list[float], test_training_ratio: float = 1/9):
+    def corrected_dependent_ttest(
+        data1: list[float], data2: list[float], test_training_ratio: float = 1 / 9
+    ):
         """
         Python implementation for the corrected paired t-test as described by Nadeau & Bengio (2003) and
         Bouckaert & Frank (2004).
@@ -788,7 +885,3 @@ class SignificanceTesting:
         p = (1.0 - t.cdf(abs(t_stat), df)) * 2.0
 
         return t_stat, p
-
-
-
-

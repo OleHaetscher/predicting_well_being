@@ -17,7 +17,13 @@ class SuppFileCreator:
         name_mapping (NestedDict): Mapping of feature names to their formatted equivalents for presentation.
         data_loader (DataLoader): Instance of the DataLoader class for reading input files.
     """
-    def __init__(self, cfg_postprocessing: NestedDict, name_mapping: NestedDict, meta_vars: list[str]) -> None:
+
+    def __init__(
+        self,
+        cfg_postprocessing: NestedDict,
+        name_mapping: NestedDict,
+        meta_vars: list[str],
+    ) -> None:
         """
         Initializes the SuppFileCreator class.
 
@@ -35,10 +41,10 @@ class SuppFileCreator:
         self.meta_vars = meta_vars
 
     def create_mirrored_dir_with_files(
-            self,
-            base_dir: str,
-            file_name: str,
-            output_base_dir: str,
+        self,
+        base_dir: str,
+        file_name: str,
+        output_base_dir: str,
     ) -> None:
         """
         Creates a mirrored directory structure at the output location and processes specific files.
@@ -53,7 +59,6 @@ class SuppFileCreator:
         """
         for root, _, files in os.walk(base_dir):
             if file_name in files:
-
                 relative_path = os.path.relpath(root, base_dir)
                 target_dir = os.path.join(output_base_dir, relative_path)
                 os.makedirs(target_dir, exist_ok=True)
@@ -62,20 +67,24 @@ class SuppFileCreator:
                 output_file_path = os.path.join(target_dir, file_name)
 
                 if file_name.startswith("lin_model_coefs"):
-                    self.process_lin_model_coefs_for_supp(input_file_path, output_file_path)
+                    self.process_lin_model_coefs_for_supp(
+                        input_file_path, output_file_path
+                    )
 
                 elif file_name.startswith("shap_values"):
                     self.process_shap_values_for_supp(input_file_path, output_file_path)
 
                 elif file_name.startswith("shap_ia_values"):
-                    self.process_shap_ia_values_for_supp(input_file_path, output_file_path)
+                    self.process_shap_ia_values_for_supp(
+                        input_file_path, output_file_path
+                    )
 
                 else:
                     raise ValueError(f"Input file {file_name} not supported yet")
 
-    def process_lin_model_coefs_for_supp(self,
-                                         input_file_path: str,
-                                         output_file_path: str) -> None:
+    def process_lin_model_coefs_for_supp(
+        self, input_file_path: str, output_file_path: str
+    ) -> None:
         """
         Processes lin_model_coefs by replacing feature names with formatted versions
 
@@ -87,18 +96,20 @@ class SuppFileCreator:
 
         for stat, vals in lin_model_coefs.items():
             new_feature_names = apply_name_mapping(
-                features=list(vals.keys()),
-                name_mapping=self.name_mapping,
-                prefix=True
+                features=list(vals.keys()), name_mapping=self.name_mapping, prefix=True
             )
-            updated_vals = {new_name: vals[old_name] for old_name, new_name
-                            in zip(vals.keys(), new_feature_names)}
+            updated_vals = {
+                new_name: vals[old_name]
+                for old_name, new_name in zip(vals.keys(), new_feature_names)
+            }
 
             lin_model_coefs[stat] = updated_vals
 
         self.data_saver.save_json(lin_model_coefs, output_file_path)
 
-    def process_shap_values_for_supp(self, input_file_path: str, output_file_path: str) -> None:
+    def process_shap_values_for_supp(
+        self, input_file_path: str, output_file_path: str
+    ) -> None:
         """
         Processes SHAP values by replacing feature names and storing the formatted versions.
 
@@ -108,18 +119,22 @@ class SuppFileCreator:
         """
         shap_values = self.data_loader.read_pkl(input_file_path)
         feature_names_copy = shap_values["feature_names"].copy()
-        feature_names_copy = [feature for feature in feature_names_copy if feature not in self.meta_vars]
+        feature_names_copy = [
+            feature for feature in feature_names_copy if feature not in self.meta_vars
+        ]
 
         formatted_feature_names = apply_name_mapping(
-                features=feature_names_copy,
-                name_mapping=self.name_mapping,
-                prefix=True,
-            )
+            features=feature_names_copy,
+            name_mapping=self.name_mapping,
+            prefix=True,
+        )
         shap_values["feature_names"] = formatted_feature_names
 
         self.data_saver.save_pickle(shap_values, output_file_path)
 
-    def process_shap_ia_values_for_supp(self, input_file_path: str, output_file_path: str) -> None:
+    def process_shap_ia_values_for_supp(
+        self, input_file_path: str, output_file_path: str
+    ) -> None:
         """
         Processes SHAP interaction values by renaming keys that correspond to specific features.
 
@@ -128,8 +143,10 @@ class SuppFileCreator:
             output_file_path: Path to save the processed pickle file.
         """
         shap_ia_values = self.data_loader.read_pkl(input_file_path)
-        srmc_name_mapping = {f"srmc_{feature}": feature_formatted for feature, feature_formatted
-                             in self.name_mapping["srmc"].items()}
+        srmc_name_mapping = {
+            f"srmc_{feature}": feature_formatted
+            for feature, feature_formatted in self.name_mapping["srmc"].items()
+        }
         renamed_ia_values = self.rename_srmc_keys(shap_ia_values, srmc_name_mapping)
 
         self.data_saver.save_pickle(renamed_ia_values, output_file_path)
@@ -153,7 +170,6 @@ class SuppFileCreator:
         if isinstance(data, dict):
             new_dict = {}
             for key, value in data.items():
-
                 if isinstance(key, str) and key.startswith("srmc"):
                     new_key = srmc_name_mapping.get(key, key)
 

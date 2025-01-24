@@ -30,13 +30,16 @@ class ShapProcessor:
         shap_ia_values_file_name: Filename for summarized interaction SHAP values.
         meta_vars: List of meta variables (e.g., identifiers or columns excluded from SHAP processing).
     """
-    def __init__(self,
-                 cfg_postprocessing: NestedDict,
-                 name_mapping: NestedDict,
-                 base_result_path: str,
-                 cv_shap_results_path: str,
-                 processed_results_filenames: dict[str, str],
-                 meta_vars: list[str]) -> None:
+
+    def __init__(
+        self,
+        cfg_postprocessing: NestedDict,
+        name_mapping: NestedDict,
+        base_result_path: str,
+        cv_shap_results_path: str,
+        processed_results_filenames: dict[str, str],
+        meta_vars: list[str],
+    ) -> None:
         """
         Initializes the ShapProcessor with configuration settings, file paths, and filenames.
 
@@ -54,13 +57,17 @@ class ShapProcessor:
         self.cv_shap_results_path = cv_shap_results_path
         self.shap_ia_values_path = os.path.join(
             base_result_path,
-            self.cfg_postprocessing["general"]["data_paths"]["ia_values"]
+            self.cfg_postprocessing["general"]["data_paths"]["ia_values"],
         )
 
         self.data_loader = DataLoader()
         self.data_saver = DataSaver()
-        self.shap_values_file_name = processed_results_filenames["shap_values_summarized"]
-        self.shap_ia_values_file_name = processed_results_filenames["shap_ia_values_summarized"]
+        self.shap_values_file_name = processed_results_filenames[
+            "shap_values_summarized"
+        ]
+        self.shap_ia_values_file_name = processed_results_filenames[
+            "shap_ia_values_summarized"
+        ]
 
         self.meta_vars = meta_vars
 
@@ -77,11 +84,13 @@ class ShapProcessor:
         """
         return defaultdict(cls.nested_dict)
 
-    def prepare_shap_data(self,
-                          model_to_plot: str,
-                          crit_to_plot: str,
-                          samples_to_include: str,
-                          col_assignment: dict[str, list[str]]) -> dict[str, Explanation]:
+    def prepare_shap_data(
+        self,
+        model_to_plot: str,
+        crit_to_plot: str,
+        samples_to_include: str,
+        col_assignment: dict[str, list[str]],
+    ) -> dict[str, Explanation]:
         """
         Prepares the data for SHAP visualization in the beeswarm plots.
 
@@ -104,14 +113,15 @@ class ShapProcessor:
 
         for root, dirs, files in os.walk(self.cv_shap_results_path):
             if self.shap_values_file_name in files:
-
                 relative_path = os.path.relpath(root, self.cv_shap_results_path)
                 parts = relative_path.split(os.sep)
 
                 if len(parts) == 4:
                     feature_combination, samples, crit, model = parts
 
-                    if samples_to_include == "combo":  # currently not used in the SHAP plots
+                    if (
+                        samples_to_include == "combo"
+                    ):  # currently not used in the SHAP plots
                         required_samples = self.get_required_sample_for_combo(
                             feature_combination=feature_combination,
                             col_assignment=col_assignment,
@@ -123,16 +133,25 @@ class ShapProcessor:
                         required_samples = "all"
 
                     # Only load if all filters match
-                    if crit == crit_to_plot and samples == required_samples and model == model_to_plot:
-                        shap_values_path = os.path.join(root, self.shap_values_file_name)
+                    if (
+                        crit == crit_to_plot
+                        and samples == required_samples
+                        and model == model_to_plot
+                    ):
+                        shap_values_path = os.path.join(
+                            root, self.shap_values_file_name
+                        )
                         shap_values = self.data_loader.read_pkl(shap_values_path)
 
-                        feature_names_raw = [feature for feature in shap_values["feature_names"]
-                                             if feature not in self.meta_vars]
+                        feature_names_raw = [
+                            feature
+                            for feature in shap_values["feature_names"]
+                            if feature not in self.meta_vars
+                        ]
                         feature_names_formatted = apply_name_mapping(
                             features=feature_names_raw,
                             name_mapping=self.name_mapping,
-                            prefix=True
+                            prefix=True,
                         )
 
                         # Recreate explanation objects
@@ -149,18 +168,23 @@ class ShapProcessor:
                             shap_values=shap_exp.values,
                             feature_names=feature_names_raw,
                             root=root,
-                            n=self.cfg_postprocessing["calculate_exp_lin_models"]["num_features"],
-                            store=self.cfg_postprocessing["calculate_exp_lin_models"]["store"],
+                            n=self.cfg_postprocessing["calculate_exp_lin_models"][
+                                "num_features"
+                            ],
+                            store=self.cfg_postprocessing["calculate_exp_lin_models"][
+                                "store"
+                            ],
                         )
         return defaultdict_to_dict(result_dct)
 
-    def get_most_important_features(self,
-                                    shap_values: np.ndarray,
-                                    feature_names: list[str],
-                                    root: str,
-                                    n: int,
-                                    store: bool = True
-                                    ) -> None:
+    def get_most_important_features(
+        self,
+        shap_values: np.ndarray,
+        feature_names: list[str],
+        root: str,
+        n: int,
+        store: bool = True,
+    ) -> None:
         """
         Extracts the x most important features for a given analysis setting.
 
@@ -179,11 +203,13 @@ class ShapProcessor:
             output_file = os.path.join(root, f"top_{n}_features.txt")
             self.data_saver.save_txt(output_file, top_features)
 
-    def prepare_shap_ia_data(self,
-                             model_to_plot: str,
-                             crit_to_plot: str,
-                             samples_to_include: str,
-                             feature_combination_to_plot: str) -> dict[str, Explanation]:
+    def prepare_shap_ia_data(
+        self,
+        model_to_plot: str,
+        crit_to_plot: str,
+        samples_to_include: str,
+        feature_combination_to_plot: str,
+    ) -> dict[str, Explanation]:
         """
         Prepares the SHAP interaction data for visualization.
 
@@ -222,53 +248,68 @@ class ShapProcessor:
                 if len(parts) == 4:
                     feature_combination, samples, crit, model = parts
 
-                    if (crit == crit_to_plot and samples == samples_to_include and
-                            model == model_to_plot and feature_combination == feature_combination_to_plot):
-
-                        shap_ia_values_path = os.path.join(str(root), str(self.shap_ia_values_file_name))
+                    if (
+                        crit == crit_to_plot
+                        and samples == samples_to_include
+                        and model == model_to_plot
+                        and feature_combination == feature_combination_to_plot
+                    ):
+                        shap_ia_values_path = os.path.join(
+                            str(root), str(self.shap_ia_values_file_name)
+                        )
                         shap_ia_values = self.data_loader.read_pkl(shap_ia_values_path)
 
                         base_value = self.get_base_values(root)
 
                         shap_ia_values_dct = {
-                            key: value['mean']
-                            for key, value
-                            in shap_ia_values["top_interactions"]["top_abs_interactions_of_sample"].items()
+                            key: value["mean"]
+                            for key, value in shap_ia_values["top_interactions"][
+                                "top_abs_interactions_of_sample"
+                            ].items()
                             if isinstance(key, tuple) and len(key) > 1
                         }
 
-                        shap_ia_values_dct = dict(sorted(
-                            shap_ia_values_dct.items(),
-                            key=lambda item: abs(np.mean(item[1])),
-                            reverse=True
-                        ))
+                        shap_ia_values_dct = dict(
+                            sorted(
+                                shap_ia_values_dct.items(),
+                                key=lambda item: abs(np.mean(item[1])),
+                                reverse=True,
+                            )
+                        )
                         feature_tuples = list(shap_ia_values_dct.keys())
 
                         formatted_features_dct = {}
                         for feature_pair, values in shap_ia_values_dct.items():
-                            mapped_key = " x ".join(apply_name_mapping([k], self.name_mapping, prefix=True)[0] for k in feature_pair)
+                            mapped_key = " x ".join(
+                                apply_name_mapping([k], self.name_mapping, prefix=True)[
+                                    0
+                                ]
+                                for k in feature_pair
+                            )
                             formatted_features_dct[mapped_key] = values
 
-                        shap_ia_values_arr = np.array([
-                            value for value in formatted_features_dct.values()
-                        ])
+                        shap_ia_values_arr = np.array(
+                            [value for value in formatted_features_dct.values()]
+                        )
                         feature_names = list(formatted_features_dct.keys())
 
-                        data = self.get_ia_feature_data(root_path=root, top_n_interactions=feature_tuples)
+                        data = self.get_ia_feature_data(
+                            root_path=root, top_n_interactions=feature_tuples
+                        )
                         shap_ia_exp = self.recreate_shap_exp_objects(
                             shap_values=shap_ia_values_arr.T,
                             base_values=np.array(base_value),
                             feature_names=feature_names,
-                            data=data.values
+                            data=data.values,
                         )
 
                         result_dct[f"{feature_combination}_ia_values"] = shap_ia_exp
 
         return defaultdict_to_dict(result_dct)
 
-    def get_ia_feature_data(self,
-                            root_path: str,
-                            top_n_interactions: list[tuple[str, str]]) -> pd.DataFrame:
+    def get_ia_feature_data(
+        self, root_path: str, top_n_interactions: list[tuple[str, str]]
+    ) -> pd.DataFrame:
         """
         Loads feature values for SHAP interaction analysis and computes the mean of specified feature pairs for the beeswarm plot.
 
@@ -285,20 +326,30 @@ class ShapProcessor:
         file_name = os.path.join(root_path, self.shap_values_file_name)
         shap_values = self.data_loader.read_pkl(file_name)
         data = shap_values["data"]["mean"]
-        feature_names = [feature for feature in shap_values["feature_names"]if feature not in self.meta_vars]
+        feature_names = [
+            feature
+            for feature in shap_values["feature_names"]
+            if feature not in self.meta_vars
+        ]
 
         feature_df = pd.DataFrame(data, columns=feature_names)
 
         for interaction in top_n_interactions:
             if len(interaction) != 2:
-                raise ValueError(f"Each interaction must contain exactly two feature names. Invalid entry: {interaction}")
+                raise ValueError(
+                    f"Each interaction must contain exactly two feature names. Invalid entry: {interaction}"
+                )
 
             feature1, feature2 = interaction
             if feature1 not in feature_df.columns or feature2 not in feature_df.columns:
-                raise ValueError(f"Features {feature1} and {feature2} must be present in the DataFrame columns.")
+                raise ValueError(
+                    f"Features {feature1} and {feature2} must be present in the DataFrame columns."
+                )
 
             interaction_col_name = (feature1, feature2)
-            feature_df[interaction_col_name] = feature_df[[feature1, feature2]].mean(axis=1)
+            feature_df[interaction_col_name] = feature_df[[feature1, feature2]].mean(
+                axis=1
+            )
 
         feature_df = feature_df.drop(columns=feature_names)
 
@@ -320,8 +371,9 @@ class ShapProcessor:
         return shap_values["base_values"]["mean"]
 
     @staticmethod
-    def get_required_sample_for_combo(feature_combination: str,
-                                      col_assignment: dict[str, list[str]]) -> str:
+    def get_required_sample_for_combo(
+        feature_combination: str, col_assignment: dict[str, list[str]]
+    ) -> str:
         """
         Selects
         For the plot in the paper, we need to adjust "samples_to_include" based on the specific feature combination.
@@ -343,10 +395,10 @@ class ShapProcessor:
 
     @staticmethod
     def recreate_shap_exp_objects(
-            shap_values: np.ndarray,
-            base_values: np.ndarray,
-            feature_names: list = None,
-            data: np.ndarray = None,
+        shap_values: np.ndarray,
+        base_values: np.ndarray,
+        feature_names: list = None,
+        data: np.ndarray = None,
     ) -> Explanation:
         """
         Recreates the SHAP explanation objects from the data.
@@ -360,8 +412,10 @@ class ShapProcessor:
         Returns:
             SHAP.Explanation object
         """
-        explanation = shap.Explanation(values=shap_values,
-                                       base_values=base_values,
-                                       data=data,
-                                       feature_names=feature_names)
+        explanation = shap.Explanation(
+            values=shap_values,
+            base_values=base_values,
+            data=data,
+            feature_names=feature_names,
+        )
         return explanation

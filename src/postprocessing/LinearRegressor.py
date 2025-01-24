@@ -45,6 +45,7 @@ class LinearRegressor:
         country_grouping_col (str): Column name for grouping data by country, as specified in the configuration.
         years_col (str): Column name for grouping data by year, as specified in the configuration.
     """
+
     def __init__(
         self,
         cfg_preprocessing: NestedDict,
@@ -105,7 +106,7 @@ class LinearRegressor:
             self.feature_combination,
             self.crit,
             self.samples_to_include,
-            self.meta_vars
+            self.meta_vars,
         )
 
         self.logger = Logger(
@@ -129,7 +130,9 @@ class LinearRegressor:
         Returns:
             Imputer: An Imputer instance initialized with the specified settings.
         """
-        postprocessing_imputation_params = self.cfg_postprocessing["calculate_exp_lin_models"]["imputation"]
+        postprocessing_imputation_params = self.cfg_postprocessing[
+            "calculate_exp_lin_models"
+        ]["imputation"]
         return Imputer(
             logger=self.logger,
             model=postprocessing_imputation_params["model"],
@@ -138,7 +141,9 @@ class LinearRegressor:
             num_imputations=postprocessing_imputation_params["num_imputations"],
             conv_thresh=self.cfg_analysis["imputation"]["conv_thresh"],
             tree_max_depth=self.cfg_analysis["imputation"]["tree_max_depth"],
-            percentage_of_features=postprocessing_imputation_params["percentage_of_features"],
+            percentage_of_features=postprocessing_imputation_params[
+                "percentage_of_features"
+            ],
             n_features_thresh=postprocessing_imputation_params["n_features_thresh"],
             sample_posterior=self.cfg_analysis["imputation"]["sample_posterior"],
             pmm_k=self.cfg_analysis["imputation"]["pmm_k"],
@@ -189,9 +194,11 @@ class LinearRegressor:
         X_imputed = X_imputed.drop(columns=self.meta_vars, errors="ignore")
 
         scaler = StandardScaler()
-        X_imputed_scaled = pd.DataFrame(scaler.fit_transform(X_imputed),
-                                        columns=X_imputed.columns,
-                                        index=X_imputed.index)
+        X_imputed_scaled = pd.DataFrame(
+            scaler.fit_transform(X_imputed),
+            columns=X_imputed.columns,
+            index=X_imputed.index,
+        )
 
         X_imputed_scaled_intercept = sm.add_constant(X_imputed_scaled)
         model = sm.OLS(self.y, X_imputed_scaled_intercept).fit()
@@ -232,15 +239,21 @@ class LinearRegressor:
         store = lin_model_cfg["store"]
         base_filename = lin_model_cfg["base_filename"]
 
-        regression_table = pd.DataFrame({
-            'Predictors': coefficients.index,
-            'Estimates': coefficients.values,
-            'CI': conf_int.apply(lambda x: f"[{x[0]:.{decimals}f}, {x[1]:.{decimals}f}]", axis=1),
-            'p': p_values.values
-        })
+        regression_table = pd.DataFrame(
+            {
+                "Predictors": coefficients.index,
+                "Estimates": coefficients.values,
+                "CI": conf_int.apply(
+                    lambda x: f"[{x[0]:.{decimals}f}, {x[1]:.{decimals}f}]", axis=1
+                ),
+                "p": p_values.values,
+            }
+        )
 
-        regression_table['Estimates'] = regression_table['Estimates'].apply(lambda x: f"{x:.{decimals}f}")
-        regression_table['p'] = format_p_values(regression_table['p'].tolist())
+        regression_table["Estimates"] = regression_table["Estimates"].apply(
+            lambda x: f"{x:.{decimals}f}"
+        )
+        regression_table["p"] = format_p_values(regression_table["p"].tolist())
         regression_table["Predictors"] = apply_name_mapping(
             features=list(regression_table["Predictors"]),
             name_mapping=self.name_mapping,
@@ -251,14 +264,23 @@ class LinearRegressor:
         adj_r_squared = model.rsquared_adj
         observations = model.nobs
 
-        footer_rows = pd.DataFrame({
-            'Predictors': ['Observations', 'R² / R² adjusted'],
-            'Estimates': [f"{observations}", f"{r_squared:.{decimals}f} / {adj_r_squared:.{decimals}f}"],
-            'CI': [None, None],
-            'p': [None, None]
-        })
+        footer_rows = pd.DataFrame(
+            {
+                "Predictors": ["Observations", "R² / R² adjusted"],
+                "Estimates": [
+                    f"{observations}",
+                    f"{r_squared:.{decimals}f} / {adj_r_squared:.{decimals}f}",
+                ],
+                "CI": [None, None],
+                "p": [None, None],
+            }
+        )
         final_table = pd.concat([regression_table, footer_rows], ignore_index=True)
 
         if store:
-            output_path = os.path.join(output_dir, f'{base_filename}_{feature_combination}.xlsx')
-            self.data_saver.save_excel(df=final_table, output_path=output_path, index=False)
+            output_path = os.path.join(
+                output_dir, f"{base_filename}_{feature_combination}.xlsx"
+            )
+            self.data_saver.save_excel(
+                df=final_table, output_path=output_path, index=False
+            )

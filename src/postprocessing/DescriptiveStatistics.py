@@ -8,8 +8,14 @@ import openpyxl
 import pingouin as pg
 
 from src.utils.DataSaver import DataSaver
-from src.utils.utilfuncs import apply_name_mapping, format_df, separate_binary_continuous_cols, NestedDict, remove_leading_zero, \
-    inverse_code
+from src.utils.utilfuncs import (
+    apply_name_mapping,
+    format_df,
+    separate_binary_continuous_cols,
+    NestedDict,
+    remove_leading_zero,
+    inverse_code,
+)
 
 
 class DescriptiveStatistics:
@@ -42,6 +48,7 @@ class DescriptiveStatistics:
         desc_results_base_path (str): Path where the descriptive results will be saved.
         full_data (pd.DataFrame): Full dataset containing all features and criteria.
     """
+
     def __init__(
         self,
         cfg_preprocessing: NestedDict,
@@ -52,16 +59,16 @@ class DescriptiveStatistics:
         base_result_path: str,
     ) -> None:
         """
-         Initializes the DescriptiveStatistics class.
+        Initializes the DescriptiveStatistics class.
 
-         Args:
-            cfg_preprocessing: Yaml config specifying details on preprocessing (e.g., scales, items).
-            cfg_analysis: Yaml config specifying details on the ML analysis (e.g., CV, models)
-            cfg_postprocessing: Yaml config specifying details on postprocessing (e.g., tables, plots)
-            name_mapping: Mapping of feature names in code to features names in paper.
-            full_data: Full dataset containing all features and criteria used in the analysis.
-            base_result_path: Base paths of all results.
-         """
+        Args:
+           cfg_preprocessing: Yaml config specifying details on preprocessing (e.g., scales, items).
+           cfg_analysis: Yaml config specifying details on the ML analysis (e.g., CV, models)
+           cfg_postprocessing: Yaml config specifying details on postprocessing (e.g., tables, plots)
+           name_mapping: Mapping of feature names in code to features names in paper.
+           full_data: Full dataset containing all features and criteria used in the analysis.
+           base_result_path: Base paths of all results.
+        """
         self.cfg_preprocessing = cfg_preprocessing
         self.cfg_analysis = cfg_analysis
         self.cfg_postprocessing = cfg_postprocessing
@@ -75,24 +82,26 @@ class DescriptiveStatistics:
         self.esm_id_col_dct = self.cfg_preprocessing["general"]["esm_id_col"]
         self.esm_tp_col_dct = self.cfg_preprocessing["general"]["esm_timestamp_col"]
 
-        self.data_base_path = self.cfg_preprocessing['general']["path_to_preprocessed_data"]
+        self.data_base_path = self.cfg_preprocessing["general"][
+            "path_to_preprocessed_data"
+        ]
         self.base_result_path = base_result_path
         self.desc_results_base_path = os.path.join(
             self.base_result_path,
-            self.cfg_postprocessing["general"]["data_paths"]["descriptives"]
+            self.cfg_postprocessing["general"]["data_paths"]["descriptives"],
         )
 
         self.full_data = full_data
 
     def create_m_sd_var_table(
-            self,
-            vars_to_include: list[str],
-            binary_stats_to_calc: list[str],
-            continuous_stats_to_calc: dict[str, str],
-            table_decimals: int,
-            store_table: bool,
-            filename: str,
-            store_index: bool,
+        self,
+        vars_to_include: list[str],
+        binary_stats_to_calc: list[str],
+        continuous_stats_to_calc: dict[str, str],
+        table_decimals: int,
+        store_table: bool,
+        filename: str,
+        store_index: bool,
     ) -> None:
         """
         Creates a table with descriptive statistics for variables grouped by prefixes.
@@ -149,8 +158,12 @@ class DescriptiveStatistics:
             decimals=table_decimals,
         )
 
-        final_table["Group"] = final_table["Group"].replace(self.name_mapping["category_names"])
-        final_table = final_table[["Group"] + [col for col in final_table.columns if col != "Group"]]
+        final_table["Group"] = final_table["Group"].replace(
+            self.name_mapping["category_names"]
+        )
+        final_table = final_table[
+            ["Group"] + [col for col in final_table.columns if col != "Group"]
+        ]
 
         final_table["M / %"] = final_table.apply(
             lambda row: row["M"] if pd.notna(row["M"]) else row["%"],
@@ -180,9 +193,9 @@ class DescriptiveStatistics:
             file_path = os.path.join(self.desc_results_base_path, filename)
             self.data_saver.save_excel(final_table, file_path, index=store_index)
 
-    def get_scale_endpoints(self,
-                            data: Union[NestedDict, dict, list],
-                            feature_name: str) -> Union[np.nan, tuple[float, float]]:
+    def get_scale_endpoints(
+        self, data: Union[NestedDict, dict, list], feature_name: str
+    ) -> Union[np.nan, tuple[float, float]]:
         """
         Searches a nested dictionary or list structure to locate an entry where the "name" key matches the given feature name.
         If found, it extracts and returns the "scale_endpoints" as a tuple of (min, max). Handles feature names with specific prefixes.
@@ -201,8 +214,11 @@ class DescriptiveStatistics:
             - Supported prefixes for feature names include: "pl_", "srmc_", "mac_", and "sens:".
             - The method supports recursive search through both dictionary values and list elements.
         """
-        if any(feature_name.startswith(prefix) for prefix in ["pl_", "srmc_", "mac_", "sens:"]):
-            feature_name_no_prefix = feature_name.split('_', 1)[-1]
+        if any(
+            feature_name.startswith(prefix)
+            for prefix in ["pl_", "srmc_", "mac_", "sens:"]
+        ):
+            feature_name_no_prefix = feature_name.split("_", 1)[-1]
         else:
             feature_name_no_prefix = feature_name
 
@@ -228,11 +244,11 @@ class DescriptiveStatistics:
 
     @staticmethod
     def calculate_cont_stats(
-            df: pd.DataFrame,
-            continuous_vars: list[str],
-            stats: dict[str, str],
-            var_as_index: bool = True,
-            prefix: Union[str, None] = None
+        df: pd.DataFrame,
+        continuous_vars: list[str],
+        stats: dict[str, str],
+        var_as_index: bool = True,
+        prefix: Union[str, None] = None,
     ) -> pd.DataFrame:
         """
         Calculates descriptive statistics for continuous variables in APA format.
@@ -261,7 +277,7 @@ class DescriptiveStatistics:
 
     @staticmethod
     def calculate_bin_stats(
-            df: pd.DataFrame, binary_vars: list[str], prefix: str, stats: list[str]
+        df: pd.DataFrame, binary_vars: list[str], prefix: str, stats: list[str]
     ) -> pd.DataFrame:
         """
         Calculates binary statistics for specified variables.
@@ -279,7 +295,9 @@ class DescriptiveStatistics:
             pd.DataFrame: A DataFrame with binary statistics including 'Group', 'Variable', and '%'.
         """
         if "%" in stats:
-            bin_stats = df[binary_vars].apply(lambda x: x.value_counts(dropna=True)).transpose()
+            bin_stats = (
+                df[binary_vars].apply(lambda x: x.value_counts(dropna=True)).transpose()
+            )
 
             bin_stats.index.name = "Variable"
             bin_stats = bin_stats.reset_index()
@@ -292,13 +310,14 @@ class DescriptiveStatistics:
 
             return bin_stats[["Group", "Variable", "%"]].reset_index(drop=True)
 
-    def create_wb_items_stats_per_dataset(self,
-                                          dataset: str,
-                                          state_df: pd.DataFrame,
-                                          trait_df: pd.DataFrame,
-                                          esm_id_col: str,
-                                          esm_tp_col: str,
-                                          ) -> dict[str, Optional[pd.DataFrame]]:
+    def create_wb_items_stats_per_dataset(
+        self,
+        dataset: str,
+        state_df: pd.DataFrame,
+        trait_df: pd.DataFrame,
+        esm_id_col: str,
+        esm_tp_col: str,
+    ) -> dict[str, Optional[pd.DataFrame]]:
         """
         Computes well-being item statistics for a given dataset.
 
@@ -328,33 +347,50 @@ class DescriptiveStatistics:
         result_dct = {}
 
         if state_df is not None:
-            state_df = state_df.drop(columns=["wb_state", "pa_state", "na_state"], errors="ignore")
+            state_df = state_df.drop(
+                columns=["wb_state", "pa_state", "na_state"], errors="ignore"
+            )
 
             if dataset == "emotions":
-                state_df = self.merge_wb_items(state_df, prefix_a="occup_", prefix_b="int_")
+                state_df = self.merge_wb_items(
+                    state_df, prefix_a="occup_", prefix_b="int_"
+                )
 
-            state_df.columns = apply_name_mapping(features=state_df.columns, name_mapping=self.name_mapping, prefix=False)
+            state_df.columns = apply_name_mapping(
+                features=state_df.columns, name_mapping=self.name_mapping, prefix=False
+            )
             state_order = self.desc_cfg["wb_items"]["state_order"]
 
             state_df = state_df[
-                [col for col in state_df.columns if col not in state_order] + [col for col in state_order if col in state_df.columns]
-                ]
-            state_df.columns = [f"state_{col}" if col not in [esm_id_col, esm_tp_col] else col for col in state_df.columns]
+                [col for col in state_df.columns if col not in state_order]
+                + [col for col in state_order if col in state_df.columns]
+            ]
+            state_df.columns = [
+                f"state_{col}" if col not in [esm_id_col, esm_tp_col] else col
+                for col in state_df.columns
+            ]
 
         if trait_df is not None:
-            trait_df = trait_df.drop(columns=["wb_trait", "pa_trait", "na_trait"], errors="ignore")
+            trait_df = trait_df.drop(
+                columns=["wb_trait", "pa_trait", "na_trait"], errors="ignore"
+            )
 
-            trait_df.columns = apply_name_mapping(features=trait_df.columns, name_mapping=self.name_mapping, prefix=False)
+            trait_df.columns = apply_name_mapping(
+                features=trait_df.columns, name_mapping=self.name_mapping, prefix=False
+            )
             trait_order = self.desc_cfg["wb_items"]["trait_order"]
 
             trait_df = trait_df[
-                [col for col in trait_df.columns if col not in trait_order] +
-                [col for col in trait_order if col in trait_df.columns]
-                ]
+                [col for col in trait_df.columns if col not in trait_order]
+                + [col for col in trait_order if col in trait_df.columns]
+            ]
             trait_df.columns = [f"trait_{col}" for col in trait_df.columns]
 
-        wb_items_df = pd.concat([state_df, trait_df], axis=0,
-                                ignore_index=True) if state_df is not None or trait_df is not None else None
+        wb_items_df = (
+            pd.concat([state_df, trait_df], axis=0, ignore_index=True)
+            if state_df is not None or trait_df is not None
+            else None
+        )
 
         if wb_items_df is not None:
             df_filtered = wb_items_df.drop(columns=esm_id_col, errors="ignore")
@@ -368,21 +404,29 @@ class DescriptiveStatistics:
             )
             result_dct["m_sd"] = m_sd_df_wb_items
 
-            if state_df is not None and dataset in self.esm_id_col_dct and dataset in self.esm_tp_col_dct:
+            if (
+                state_df is not None
+                and dataset in self.esm_id_col_dct
+                and dataset in self.esm_tp_col_dct
+            ):
                 wp_corr, bp_corr, icc1, icc2 = self.calc_bp_wp_statistics(
                     df=state_df,
                     id_col=self.esm_id_col_dct[dataset],
                     tp_col=self.esm_tp_col_dct[dataset],
                 )
 
-                result_dct.update({"wp_corr": wp_corr, "bp_corr": bp_corr, "icc1": icc1, "icc2": icc2})
+                result_dct.update(
+                    {"wp_corr": wp_corr, "bp_corr": bp_corr, "icc1": icc1, "icc2": icc2}
+                )
 
             result_dct["trait_corr"] = trait_df.corr() if trait_df is not None else None
 
         return result_dct
 
     @staticmethod
-    def merge_wb_items(state_df: pd.DataFrame, prefix_a: str, prefix_b: str) -> pd.DataFrame:
+    def merge_wb_items(
+        state_df: pd.DataFrame, prefix_a: str, prefix_b: str
+    ) -> pd.DataFrame:
         """
         Merges columns in `state_df` that differ only by the specified prefixes.
 
@@ -404,8 +448,8 @@ class DescriptiveStatistics:
         cols_a = [col for col in state_df.columns if col.startswith(prefix_a)]
         cols_b = [col for col in state_df.columns if col.startswith(prefix_b)]
 
-        common_suffixes = {col[len(prefix_a):] for col in cols_a}.intersection(
-            col[len(prefix_b):] for col in cols_b
+        common_suffixes = {col[len(prefix_a) :] for col in cols_a}.intersection(
+            col[len(prefix_b) :] for col in cols_b
         )
 
         if not common_suffixes:
@@ -423,9 +467,7 @@ class DescriptiveStatistics:
 
     @staticmethod
     def calc_bp_wp_statistics(
-            df: pd.DataFrame,
-            id_col: str,
-            tp_col: str
+        df: pd.DataFrame, id_col: str, tp_col: str
     ) -> tuple[pd.DataFrame, pd.DataFrame, pd.Series, pd.Series]:
         """
         Calculates within-person (WP) and between-person (BP) statistics for the given variables
@@ -463,7 +505,9 @@ class DescriptiveStatistics:
         variables_to_correlate = df.columns.drop([id_col, tp_col], errors="ignore")
         N, K, n_list = len(df), df[id_col].nunique(), []
         overall_mean = df[variables_to_correlate].mean()
-        SSB_dict, SSW_dict = {var: 0 for var in variables_to_correlate}, {var: 0 for var in variables_to_correlate}
+        SSB_dict, SSW_dict = {var: 0 for var in variables_to_correlate}, {
+            var: 0 for var in variables_to_correlate
+        }
 
         for group in df[id_col].unique():
             group_df = df[df[id_col] == group]
@@ -512,16 +556,22 @@ class DescriptiveStatistics:
         corr_W = S_W / np.outer(std_W, std_W)
         corr_B = np.where(np.outer(std_B, std_B) == 0, 0, S_B / np.outer(std_B, std_B))
 
-        corr_W = pd.DataFrame(corr_W, index=variables_to_correlate, columns=variables_to_correlate)
-        corr_B = pd.DataFrame(corr_B, index=variables_to_correlate, columns=variables_to_correlate)
+        corr_W = pd.DataFrame(
+            corr_W, index=variables_to_correlate, columns=variables_to_correlate
+        )
+        corr_B = pd.DataFrame(
+            corr_B, index=variables_to_correlate, columns=variables_to_correlate
+        )
 
         return corr_W, corr_B, ICC1_series, ICC2_series
 
-    def compute_rel(self,
-                    state_df: pd.DataFrame,
-                    trait_df: pd.DataFrame,
-                    dataset: str,
-                    decimals: int) -> dict[str, float]:
+    def compute_rel(
+        self,
+        state_df: pd.DataFrame,
+        trait_df: pd.DataFrame,
+        dataset: str,
+        decimals: int,
+    ) -> dict[str, float]:
         """
         Computes the reliability of well-being measures for the given dataset.
 
@@ -564,10 +614,15 @@ class DescriptiveStatistics:
             elif "state" in crit:
                 df = state_df.copy()
 
-                rel_state_cfg = self.cfg_postprocessing["create_descriptives"]["rel"]["state"]
+                rel_state_cfg = self.cfg_postprocessing["create_descriptives"]["rel"][
+                    "state"
+                ]
                 n_per_person_col_name = rel_state_cfg["n_per_person_col_name"]
                 person_id_col_name = rel_state_cfg["id_name"]
-                state_cols_to_select = rel_state_cfg["crits"] + [n_per_person_col_name, person_id_col_name]
+                state_cols_to_select = rel_state_cfg["crits"] + [
+                    n_per_person_col_name,
+                    person_id_col_name,
+                ]
 
                 rel = self.compute_split_half_rel(
                     df=self.prepare_rel_data(
@@ -599,16 +654,19 @@ class DescriptiveStatistics:
             prefix=False,
         )
 
-        return {**state_rel_series.round(decimals).to_dict(), **trait_rel_series.round(decimals).to_dict()}
+        return {
+            **state_rel_series.round(decimals).to_dict(),
+            **trait_rel_series.round(decimals).to_dict(),
+        }
 
     def prepare_rel_data(
-            self,
-            df: pd.DataFrame,
-            dataset: str,
-            crit_type: str,
-            state_cols_to_select: Optional[list[str]] = None,
-            n_measures_person_col: Optional[str] = None,
-            person_id_col: Optional[str] = None,
+        self,
+        df: pd.DataFrame,
+        dataset: str,
+        crit_type: str,
+        state_cols_to_select: Optional[list[str]] = None,
+        n_measures_person_col: Optional[str] = None,
+        person_id_col: Optional[str] = None,
     ) -> pd.DataFrame:
         """
         Prepares data for reliability computation.
@@ -628,11 +686,15 @@ class DescriptiveStatistics:
             pd.DataFrame: Processed data ready for reliability analysis.
         """
         if crit_type == "state":
-            timestamp_col = self.cfg_preprocessing["general"]["esm_timestamp_col"][dataset]
+            timestamp_col = self.cfg_preprocessing["general"]["esm_timestamp_col"][
+                dataset
+            ]
             id_col = self.cfg_preprocessing["general"]["esm_id_col"][dataset]
 
             df[timestamp_col] = pd.to_datetime(df[timestamp_col])
-            df[n_measures_person_col] = df.sort_values(by=timestamp_col).groupby(id_col).cumcount()
+            df[n_measures_person_col] = (
+                df.sort_values(by=timestamp_col).groupby(id_col).cumcount()
+            )
             df[person_id_col] = df[id_col].apply(lambda x: f"{dataset}_{x}")
             df = df.sort_values([id_col, n_measures_person_col])
 
@@ -644,7 +706,9 @@ class DescriptiveStatistics:
 
         return df
 
-    def compute_internal_consistency(self, df: pd.DataFrame, construct: str, dataset: str) -> Optional[float]:
+    def compute_internal_consistency(
+        self, df: pd.DataFrame, construct: str, dataset: str
+    ) -> Optional[float]:
         """
         Computes internal consistency (Cronbach's alpha) for the specified trait reliability measure.
 
@@ -668,13 +732,15 @@ class DescriptiveStatistics:
         item_dct = {
             "pa_trait": pa_trait_items,
             "na_trait": na_trait_items,
-            "wb_trait": pa_trait_items + na_trait_items
+            "wb_trait": pa_trait_items + na_trait_items,
         }
 
         selected_items = item_dct[construct]
 
         if construct == "wb_trait" and selected_items:
-            df[na_trait_items] = inverse_code(df[na_trait_items], min_scale=1, max_scale=6)
+            df[na_trait_items] = inverse_code(
+                df[na_trait_items], min_scale=1, max_scale=6
+            )
 
         df_filtered = df[selected_items] if selected_items else pd.DataFrame()
         if not df_filtered.empty and len(df_filtered.columns) > 1:
@@ -686,13 +752,13 @@ class DescriptiveStatistics:
 
     @staticmethod
     def compute_split_half_rel(
-            df: pd.DataFrame,
-            dataset: str,
-            construct: str,
-            user_id_col: str,
-            measurement_idx_col: str,
-            method: str = "individual_halves",
-            correlation_method: str = "pearson",
+        df: pd.DataFrame,
+        dataset: str,
+        construct: str,
+        user_id_col: str,
+        measurement_idx_col: str,
+        method: str = "individual_halves",
+        correlation_method: str = "pearson",
     ) -> Optional[float]:
         """
         Computes split-half reliability for a construct across users in a dataset.
@@ -714,7 +780,9 @@ class DescriptiveStatistics:
             Optional[float]: Estimated split-half reliability or NaN if insufficient data.
         """
         if construct not in df.columns:  # This may happen
-            print(f"The construct '{construct}' is not a column in the DataFrame for dataset {dataset}.")
+            print(
+                f"The construct '{construct}' is not a column in the DataFrame for dataset {dataset}."
+            )
 
         first_half_means, second_half_means = [], []
         for user_id, group in df.groupby(user_id_col):
@@ -732,34 +800,45 @@ class DescriptiveStatistics:
                 second_half_means.append(group.iloc[half:][construct].mean())
 
             else:
-                raise ValueError(f"Unknown method '{method}'. Use 'odd_even' or 'individual_halves'.")
+                raise ValueError(
+                    f"Unknown method '{method}'. Use 'odd_even' or 'individual_halves'."
+                )
 
-        first_half_series, second_half_series = pd.Series(first_half_means), pd.Series(second_half_means)
+        first_half_series, second_half_series = pd.Series(first_half_means), pd.Series(
+            second_half_means
+        )
         valid_idx = (~first_half_series.isna()) & (~second_half_series.isna())
-        first_half_series, second_half_series = first_half_series[valid_idx], second_half_series[valid_idx]
+        first_half_series, second_half_series = (
+            first_half_series[valid_idx],
+            second_half_series[valid_idx],
+        )
 
         if len(first_half_series) < 2:
             print(f"Not enough data to compute correlation for dataset '{dataset}'.")
             return np.nan
 
-        correlation = first_half_series.corr(second_half_series, method=correlation_method)
-        reliability = 2 * correlation / (1 + correlation) if correlation is not None else np.nan
+        correlation = first_half_series.corr(
+            second_half_series, method=correlation_method
+        )
+        reliability = (
+            2 * correlation / (1 + correlation) if correlation is not None else np.nan
+        )
 
         return reliability
 
     def create_wb_items_table(
-            self,
-            dataset: str,
-            m_sd_df: pd.DataFrame,
-            decimals: int,
-            store: bool,
-            base_filename: str,
-            icc1: pd.Series = None,
-            icc2: pd.Series = None,
-            rel: pd.Series = None,
-            bp_corr: pd.DataFrame = None,
-            wp_corr: pd.DataFrame = None,
-            trait_corr: pd.DataFrame = None,
+        self,
+        dataset: str,
+        m_sd_df: pd.DataFrame,
+        decimals: int,
+        store: bool,
+        base_filename: str,
+        icc1: pd.Series = None,
+        icc2: pd.Series = None,
+        rel: pd.Series = None,
+        bp_corr: pd.DataFrame = None,
+        wp_corr: pd.DataFrame = None,
+        trait_corr: pd.DataFrame = None,
     ) -> None:
         """
         Creates a classical item descriptives table in APA style.
@@ -786,13 +865,21 @@ class DescriptiveStatistics:
 
         # Combine state correlation matrices
         if bp_corr is not None or wp_corr is not None:
-            corr_values = (bp_corr if bp_corr is not None else wp_corr).reindex(index=unified_index, columns=unified_index).values
+            corr_values = (
+                (bp_corr if bp_corr is not None else wp_corr)
+                .reindex(index=unified_index, columns=unified_index)
+                .values
+            )
 
             if bp_corr is not None and wp_corr is not None:
                 lower_mask = np.tril(np.ones(corr_values.shape, dtype=bool), k=-1)
-                corr_values[lower_mask] = wp_corr.reindex(index=unified_index, columns=unified_index).values[lower_mask]
+                corr_values[lower_mask] = wp_corr.reindex(
+                    index=unified_index, columns=unified_index
+                ).values[lower_mask]
 
-            combined_corr = pd.DataFrame(corr_values, index=unified_index, columns=unified_index)
+            combined_corr = pd.DataFrame(
+                corr_values, index=unified_index, columns=unified_index
+            )
             table = table.join(combined_corr, how="left", rsuffix="_corr")
 
         # Add trait correlations (upper triangular only)
@@ -802,12 +889,16 @@ class DescriptiveStatistics:
             table = table.join(trait_corr, how="left", rsuffix="_trait_corr")
 
         # Drop empty columns and format table
-        table = format_df(df=table.dropna(axis=1, how="all"), capitalize=False, decimals=decimals)
+        table = format_df(
+            df=table.dropna(axis=1, how="all"), capitalize=False, decimals=decimals
+        )
         excluded_cols = ["M", "SD"]
         for col in table.columns:
             if col not in excluded_cols:
                 table[col] = table[col].astype(str).apply(remove_leading_zero)
 
         if store:
-            file_path = os.path.join(self.desc_results_base_path, f"{dataset}_{base_filename}")
+            file_path = os.path.join(
+                self.desc_results_base_path, f"{dataset}_{base_filename}"
+            )
             self.data_saver.save_excel(table, file_path)

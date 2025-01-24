@@ -54,9 +54,8 @@ class ResultPlotter:
         )
 
     def plot_cv_results_plots_wrapper(
-                                      self,
-                                      cv_results_dct: NestedDict,
-                                      rel: Optional[float] = None) -> None:
+        self, cv_results_dct: NestedDict, rel: Optional[float] = None
+    ) -> None:
         """
         Wraps the `plot_cv_results_plots` function to generate and plot cross-validation results.
 
@@ -75,19 +74,31 @@ class ResultPlotter:
                             Each entry corresponds to mean/standard deviation values for a given metric.
             rel: Optional reliability of the specified criterion. If `None`, reliability is not included in the plots.
         """
-        feature_combos = [feature_combination_lst for feature_combination_lst
-                          in self.cfg_cv_results_plot["col_assignment"].values()]
+        feature_combos = [
+            feature_combination_lst
+            for feature_combination_lst in self.cfg_cv_results_plot[
+                "col_assignment"
+            ].values()
+        ]
 
         for metric in self.cfg_cv_results_plot["metrics"]:
             for crit in self.cfg_cv_results_plot["crits"]:
-                for samples_to_include in self.cfg_cv_results_plot["samples_to_include"]:
-
+                for samples_to_include in self.cfg_cv_results_plot[
+                    "samples_to_include"
+                ]:
                     fig, axes = self.create_grid(
                         num_cols=self.cfg_cv_results_plot["figure_params"]["num_cols"],
                         num_rows=self.cfg_cv_results_plot["figure_params"]["num_rows"],
-                        figsize=(self.cfg_cv_results_plot["figure_params"]["width"],
-                                 self.cfg_cv_results_plot["figure_params"]["height"]),
-                        empty_cells=[tuple(cell) for cell in self.cfg_cv_results_plot["figure_params"]['empty_cells']]
+                        figsize=(
+                            self.cfg_cv_results_plot["figure_params"]["width"],
+                            self.cfg_cv_results_plot["figure_params"]["height"],
+                        ),
+                        empty_cells=[
+                            tuple(cell)
+                            for cell in self.cfg_cv_results_plot["figure_params"][
+                                "empty_cells"
+                            ]
+                        ],
                     )
 
                     filtered_metric_cols = self.prepare_cv_results_plot_data(
@@ -97,8 +108,12 @@ class ResultPlotter:
                         metric=metric,
                         feature_combinations=feature_combos,
                     )
-                    ref_samples_to_include = self.cfg_cv_results_plot["ref_dct"]["samples_to_include"]
-                    ref_feature_combo = self.cfg_cv_results_plot["ref_dct"]["feature_combo"]
+                    ref_samples_to_include = self.cfg_cv_results_plot["ref_dct"][
+                        "samples_to_include"
+                    ]
+                    ref_feature_combo = self.cfg_cv_results_plot["ref_dct"][
+                        "feature_combo"
+                    ]
 
                     ref_dct = self.get_refs(
                         cv_results_dct=cv_results_dct,
@@ -136,12 +151,12 @@ class ResultPlotter:
                     )
 
     def prepare_cv_results_plot_data(
-            self,
-            cv_results_dct: NestedDict,
-            crit: str,
-            metric: str,
-            samples_to_include: str,
-            feature_combinations: list[list[str]]
+        self,
+        cv_results_dct: NestedDict,
+        crit: str,
+        metric: str,
+        samples_to_include: str,
+        feature_combinations: list[list[str]],
     ) -> list[NestedDict]:
         """
         Prepares the filtered data for CV results plotting.
@@ -161,20 +176,24 @@ class ResultPlotter:
             list[NestedDict]: A list where each element contains filtered data for one feature group.
         """
         if samples_to_include not in ["all", "selected", "combo"]:
-            raise ValueError("Invalid value for samples_to_include. Must be one of ['all', 'selected', 'combo'].")
+            raise ValueError(
+                "Invalid value for samples_to_include. Must be one of ['all', 'selected', 'combo']."
+            )
 
         filtered_metrics_cols = []
 
         for i, group in enumerate(feature_combinations):
             # For "combo", the first column uses "selected" samples, and the others use "all"
-            sublist_sample = "selected" if samples_to_include == "combo" and i == 0 else "all"
+            sublist_sample = (
+                "selected" if samples_to_include == "combo" and i == 0 else "all"
+            )
 
             print(sublist_sample)
             filtered_metrics = self.filter_cv_results_data(
                 cv_results_dct=cv_results_dct,
                 crit=crit,
                 samples_to_include=sublist_sample,
-                metric=metric
+                metric=metric,
             )
 
             filtered_metric_col = {
@@ -190,10 +209,7 @@ class ResultPlotter:
 
     @staticmethod
     def filter_cv_results_data(
-            cv_results_dct: NestedDict,
-            crit: str,
-            metric: str,
-            samples_to_include: str
+        cv_results_dct: NestedDict, crit: str, metric: str, samples_to_include: str
     ) -> NestedDict:
         """
         Filters the cv_results_dct for a specific criterion, samples_to_include, and metric
@@ -209,19 +225,22 @@ class ResultPlotter:
                 with keys for feature_combinations, models.
         """
         if crit not in cv_results_dct:
-            raise KeyError(f"Criterion '{crit}' not found in the provided CV results dictionary.")
+            raise KeyError(
+                f"Criterion '{crit}' not found in the provided CV results dictionary."
+            )
 
         crit_results = cv_results_dct[crit]
 
         if samples_to_include not in crit_results:
-            raise KeyError(f"Samples_to_include '{samples_to_include}' not found for criterion '{crit}'.")
+            raise KeyError(
+                f"Samples_to_include '{samples_to_include}' not found for criterion '{crit}'."
+            )
 
         samples_results = crit_results[samples_to_include]
 
         filtered_results = {
             feature_comb: {
-                model: {k: float(v)
-                        for k, v in metrics.get(metric, {}).items()}
+                model: {k: float(v) for k, v in metrics.get(metric, {}).items()}
                 for model, metrics in models_metrics.items()
             }
             for feature_comb, models_metrics in samples_results.items()
@@ -229,23 +248,24 @@ class ResultPlotter:
 
         return filtered_results
 
-    def plot_cv_results_plots(self,
-                              feature_combinations: list[list[str]],
-                              crit: str,
-                              samples_to_include: str,
-                              titles: list[str],
-                              filtered_metric_col: list[NestedDict],
-                              margin_dct: dict[str, dict[str, float]],
-                              ref_dct: dict[str, dict[str, float]],
-                              fig: Figure,
-                              axes: ndarray[Axes],
-                              models: list[str],
-                              color_dct: NestedDict,
-                              fontsizes: dict[str, int],
-                              figure_params: dict[Any],
-                              metric: str,
-                              rel: float = None,
-                              ) -> None:
+    def plot_cv_results_plots(
+        self,
+        feature_combinations: list[list[str]],
+        crit: str,
+        samples_to_include: str,
+        titles: list[str],
+        filtered_metric_col: list[NestedDict],
+        margin_dct: dict[str, dict[str, float]],
+        ref_dct: dict[str, dict[str, float]],
+        fig: Figure,
+        axes: ndarray[Axes],
+        models: list[str],
+        color_dct: NestedDict,
+        fontsizes: dict[str, int],
+        figure_params: dict[Any],
+        metric: str,
+        rel: float = None,
+    ) -> None:
         """
         Creates bar plots summarizing cross-validation (CV) results for a given analysis.
 
@@ -279,14 +299,19 @@ class ResultPlotter:
             rel: The reliability of the criterion, if we include this.
 
         """
-        feature_combo_name_mapping = self.cfg_postprocessing["general"]["feature_combinations"]["name_mapping"]["main"]
+        feature_combo_name_mapping = self.cfg_postprocessing["general"][
+            "feature_combinations"
+        ]["name_mapping"]["main"]
 
-        for col_idx, (group, title, metrics) in enumerate(zip(feature_combinations, titles, filtered_metric_col)):
+        for col_idx, (group, title, metrics) in enumerate(
+            zip(feature_combinations, titles, filtered_metric_col)
+        ):
             for row_idx, feature_combo in enumerate(group):
                 ax = axes[row_idx, col_idx]
                 single_category_metrics = {
-                    f"{feature_combo}_{model}": metrics[f"{feature_combo}_{model}"] for model in models if
-                    f"{feature_combo}_{model}" in metrics
+                    f"{feature_combo}_{model}": metrics[f"{feature_combo}_{model}"]
+                    for model in models
+                    if f"{feature_combo}_{model}" in metrics
                 }
 
                 if col_idx == 0:
@@ -318,7 +343,7 @@ class ResultPlotter:
                         fontsizes=fontsizes,
                         bar_width=figure_params["bar_width"],
                         rel=rel,
-                        pl_reference_dct=ref_dct
+                        pl_reference_dct=ref_dct,
                     )
 
                 ax.set_xlim(figure_params["x_min"], figure_params["x_max"])
@@ -327,17 +352,17 @@ class ResultPlotter:
                     fontsize=fontsizes["tick_params"],
                     pad=figure_params["title_pad"],
                     fontweight="bold",
-                    loc="center"
+                    loc="center",
                 )
                 ax.title.set_position(figure_params["title_pos"])
                 ax.set_xlim(figure_params["x_min"], figure_params["x_max"])
-                ax.tick_params(axis='y', labelsize=fontsizes["tick_params"])
+                ax.tick_params(axis="y", labelsize=fontsizes["tick_params"])
 
-                for spine in ['top', 'right', 'left']:
+                for spine in ["top", "right", "left"]:
                     ax.spines[spine].set_visible(False)
                 if row_idx < len(group) - 1:
-                    ax.tick_params(axis='x', bottom=False, labelbottom=False)
-                    ax.spines['bottom'].set_visible(False)
+                    ax.tick_params(axis="x", bottom=False, labelbottom=False)
+                    ax.spines["bottom"].set_visible(False)
 
         self.add_cv_results_plot_legend(
             fig=fig,
@@ -368,19 +393,21 @@ class ResultPlotter:
                 dpi=self.cfg_cv_results_plot["store_params"]["dpi"],
                 crit=crit,
                 samples_to_include=samples_to_include,
-                model=None
+                model=None,
             )
 
         else:
             plt.show()
 
-    def add_cv_results_plot_legend(self,
-                                   fig: Figure,
-                                   legend_cfg: dict[str, Any],
-                                   legend_fontsize: int,
-                                   color_dct: dict,
-                                   ref_feature_combo: str = "pl",
-                                   rel: bool = False) -> None:
+    def add_cv_results_plot_legend(
+        self,
+        fig: Figure,
+        legend_cfg: dict[str, Any],
+        legend_fontsize: int,
+        color_dct: dict,
+        ref_feature_combo: str = "pl",
+        rel: bool = False,
+    ) -> None:
         """
         Adds a legend to the lower-right corner of the cross-validation results plot.
 
@@ -407,13 +434,13 @@ class ResultPlotter:
             model_legend_cfg = legend_cfg["model_legend"]
             elasticnet_patch = mpatches.Patch(
                 facecolor=model_legend_cfg["enr_color"],
-                edgecolor='none',
-                label=model_legend_cfg["enr_label"]
+                edgecolor="none",
+                label=model_legend_cfg["enr_label"],
             )
             randomforest_patch = mpatches.Patch(
                 facecolor=model_legend_cfg["rfr_color"],
-                edgecolor='none',
-                label=model_legend_cfg["rfr_label"]
+                edgecolor="none",
+                label=model_legend_cfg["rfr_label"],
             )
             legends_to_plot.extend([elasticnet_patch, randomforest_patch])
 
@@ -421,13 +448,13 @@ class ResultPlotter:
             feature_combo_legend_cfg = legend_cfg["feature_combo_legend"]
             personal_patch = mpatches.Patch(
                 facecolor=color_dct[ref_feature_combo],
-                edgecolor='none',
-                label=feature_combo_legend_cfg["ref_label"]
+                edgecolor="none",
+                label=feature_combo_legend_cfg["ref_label"],
             )
             other_patch = mpatches.Patch(
                 facecolor=color_dct["other"],
-                edgecolor='none',
-                label=feature_combo_legend_cfg["other_label"]
+                edgecolor="none",
+                label=feature_combo_legend_cfg["other_label"],
             )
             legends_to_plot.extend([personal_patch, other_patch])
 
@@ -451,22 +478,24 @@ class ResultPlotter:
             ncol=legend_cfg["ncol"],
             frameon=False,
             title="",
-            fontsize=legend_fontsize
+            fontsize=legend_fontsize,
         )
 
-    def plot_bar_plot(self,
-                      ax: Axes,
-                      data: dict[str, dict[str, float]],
-                      feature_combo: str,
-                      models: list[str],
-                      color_dct: dict[str, Union[str, dict[str, float]]],
-                      feature_combo_mapping: dict[str, str],
-                      fontsizes: dict[str, int],
-                      metric: str,
-                      bar_width: float,
-                      row_idx: int,
-                      ref_feature_combo: str = "pl",
-                      rel: float = None) -> None:
+    def plot_bar_plot(
+        self,
+        ax: Axes,
+        data: dict[str, dict[str, float]],
+        feature_combo: str,
+        models: list[str],
+        color_dct: dict[str, Union[str, dict[str, float]]],
+        feature_combo_mapping: dict[str, str],
+        fontsizes: dict[str, int],
+        metric: str,
+        bar_width: float,
+        row_idx: int,
+        ref_feature_combo: str = "pl",
+        rel: float = None,
+    ) -> None:
         """
         Creates a horizontal bar plot with error bars for a given feature group and its associated models.
 
@@ -490,7 +519,6 @@ class ResultPlotter:
             rel: Optional reliability threshold to be shown as a vertical line. If `None`, no line is added.
         """
         for i, model in enumerate(models):
-
             if feature_combo == ref_feature_combo:
                 base_color = color_dct[ref_feature_combo]
             else:
@@ -503,15 +531,17 @@ class ResultPlotter:
             value = data[model_key][self.cfg_cv_results_plot["m_metric"]]
             error = data[model_key][self.cfg_cv_results_plot["sd_metric"]]
 
-            ax.barh(y_position_to_plot,
-                    value,
-                    xerr=error,
-                    height=bar_width,
-                    color=base_color,
-                    align=self.cfg_cv_results_plot["figure_params"]["bar_align"],
-                    capsize=self.cfg_cv_results_plot["figure_params"]["bar_capsize"],
-                    edgecolor=None,
-                    alpha=alpha)
+            ax.barh(
+                y_position_to_plot,
+                value,
+                xerr=error,
+                height=bar_width,
+                color=base_color,
+                align=self.cfg_cv_results_plot["figure_params"]["bar_align"],
+                capsize=self.cfg_cv_results_plot["figure_params"]["bar_capsize"],
+                edgecolor=None,
+                alpha=alpha,
+            )
 
         self.format_bar_plot(
             ax=ax,
@@ -522,24 +552,26 @@ class ResultPlotter:
             feature_combo=feature_combo,
             metric=metric,
             fontsizes=fontsizes,
-            rel=rel
+            rel=rel,
         )
 
-    def plot_incremental_bar_plot(self,
-                                  ax: Axes,
-                                  data: dict[str, dict[str, float]],
-                                  pl_margin_dct: dict[str, dict[str, float]],
-                                  pl_reference_dct: dict[str, dict[str, float]],
-                                  feature_combo: str,
-                                  models: list[str],
-                                  color_dct: NestedDict,
-                                  feature_combo_mapping: dict[str, str],
-                                  fontsizes: dict[str, int],
-                                  metric: str,
-                                  row_idx: int,
-                                  bar_width: float,
-                                  ref_feature_combo: str = "pl",
-                                  rel: float = None) -> None:
+    def plot_incremental_bar_plot(
+        self,
+        ax: Axes,
+        data: dict[str, dict[str, float]],
+        pl_margin_dct: dict[str, dict[str, float]],
+        pl_reference_dct: dict[str, dict[str, float]],
+        feature_combo: str,
+        models: list[str],
+        color_dct: NestedDict,
+        feature_combo_mapping: dict[str, str],
+        fontsizes: dict[str, int],
+        metric: str,
+        row_idx: int,
+        bar_width: float,
+        ref_feature_combo: str = "pl",
+        rel: float = None,
+    ) -> None:
         """
         Plots an incremental bar plot, splitting each bar into the reference "pl" base value and the incremental effect.
 
@@ -572,9 +604,10 @@ class ResultPlotter:
         sd_metric = self.cfg_cv_results_plot["sd_metric"]
 
         for i, model in enumerate(models):
-
             base_value = pl_reference_dct[f"{ref_feature_combo}_{model}"][m_metric]
-            increment = pl_margin_dct[f"{feature_combo}_{model}"][f"incremental_{m_metric}"]
+            increment = pl_margin_dct[f"{feature_combo}_{model}"][
+                f"incremental_{m_metric}"
+            ]
             error = data[f"{feature_combo}_{model}"][sd_metric]
 
             y_position_to_plot = 0 + (1 - 2 * i) * (bar_width / 2)
@@ -583,38 +616,42 @@ class ResultPlotter:
             ref_color = color_dct[ref_feature_combo]
 
             if increment > 0:
-                ax.barh(y_position_to_plot,
-                        base_value,
-                        height=bar_width,
-                        color=ref_color,
-                        align=self.cfg_cv_results_plot["figure_params"]["bar_align"],
-                        edgecolor=None,
-                        alpha=alpha)
-                ax.barh(y_position_to_plot,
-                        increment,
-                        left=base_value,
-                        height=bar_width,
-                        xerr=error,
-                        color=other_feat_color,
-                        align=self.cfg_cv_results_plot["figure_params"]["bar_align"],
-                        edgecolor=None,
-                        alpha=alpha,
-                        capsize=self.cfg_cv_results_plot["figure_params"]["bar_capsize"],
-                        )
+                ax.barh(
+                    y_position_to_plot,
+                    base_value,
+                    height=bar_width,
+                    color=ref_color,
+                    align=self.cfg_cv_results_plot["figure_params"]["bar_align"],
+                    edgecolor=None,
+                    alpha=alpha,
+                )
+                ax.barh(
+                    y_position_to_plot,
+                    increment,
+                    left=base_value,
+                    height=bar_width,
+                    xerr=error,
+                    color=other_feat_color,
+                    align=self.cfg_cv_results_plot["figure_params"]["bar_align"],
+                    edgecolor=None,
+                    alpha=alpha,
+                    capsize=self.cfg_cv_results_plot["figure_params"]["bar_capsize"],
+                )
 
             else:
                 # If there is no incremental performance, only plot the bar for the ref
                 real_value = base_value + increment
-                ax.barh(y_position_to_plot,
-                        real_value,
-                        height=bar_width,
-                        color=ref_color,
-                        xerr=error,
-                        align=self.cfg_cv_results_plot["figure_params"]["bar_align"],
-                        edgecolor=None,
-                        alpha=alpha,
-                        capsize=self.cfg_cv_results_plot["figure_params"]["bar_capsize"],
-                        )
+                ax.barh(
+                    y_position_to_plot,
+                    real_value,
+                    height=bar_width,
+                    color=ref_color,
+                    xerr=error,
+                    align=self.cfg_cv_results_plot["figure_params"]["bar_align"],
+                    edgecolor=None,
+                    alpha=alpha,
+                    capsize=self.cfg_cv_results_plot["figure_params"]["bar_capsize"],
+                )
 
             self.format_bar_plot(
                 ax=ax,
@@ -625,19 +662,21 @@ class ResultPlotter:
                 feature_combo=feature_combo,
                 metric=metric,
                 fontsizes=fontsizes,
-                rel=rel
+                rel=rel,
             )
 
-    def format_bar_plot(self,
-                        ax: Axes,
-                        row_idx: int,
-                        y_position: float,
-                        bar_width: float,
-                        feature_combo_mapping: dict[str, str],
-                        feature_combo: str,
-                        fontsizes: dict[str, int],
-                        metric: str,
-                        rel: float = None) -> None:
+    def format_bar_plot(
+        self,
+        ax: Axes,
+        row_idx: int,
+        y_position: float,
+        bar_width: float,
+        feature_combo_mapping: dict[str, str],
+        feature_combo: str,
+        fontsizes: dict[str, int],
+        metric: str,
+        rel: float = None,
+    ) -> None:
         """
         Formats a bar plot by adjusting y-ticks, x-axis labels, and adding an optional reference line.
 
@@ -664,12 +703,12 @@ class ResultPlotter:
         xlabels_format_cfg = self.cfg_cv_results_plot["format_bar_plot"]["xlabels"]
 
         feature_combo_formatted = self.line_break_strings(
-                feature_combo_mapping[feature_combo],
-                max_char_on_line=xlabels_format_cfg["max_char_on_line"],
-                balance=xlabels_format_cfg["balance"],
-                split_strng=xlabels_format_cfg["split_strng"],
-                force_split_strng=xlabels_format_cfg["force_split_strng"],
-            )
+            feature_combo_mapping[feature_combo],
+            max_char_on_line=xlabels_format_cfg["max_char_on_line"],
+            balance=xlabels_format_cfg["balance"],
+            split_strng=xlabels_format_cfg["split_strng"],
+            force_split_strng=xlabels_format_cfg["force_split_strng"],
+        )
 
         n_samples = self.cfg_cv_results_plot["n_samples"][feature_combo]
         feature_combos_str_format_n = self.add_n_to_title(
@@ -677,37 +716,49 @@ class ResultPlotter:
         )
 
         axes_cfg = self.cfg_cv_results_plot["format_bar_plot"]["axes"]
-        ax.set_yticklabels([feature_combos_str_format_n],
-                           fontsize=fontsizes["tick_params"],
-                           horizontalalignment=axes_cfg["ylabels"]["hor_align"])
+        ax.set_yticklabels(
+            [feature_combos_str_format_n],
+            fontsize=fontsizes["tick_params"],
+            horizontalalignment=axes_cfg["ylabels"]["hor_align"],
+        )
 
-        ax.spines['left'].set_visible(False)
-        xticks_decimals = self.cfg_cv_results_plot["format_bar_plot"]["axes"]["xticks"]["decimals"]
-        ax.xaxis.set_major_formatter(FuncFormatter(lambda x, _: self.format_metric(x, xticks_decimals)))
-        ax.tick_params(axis='x', labelsize=fontsizes["tick_params"])
-        ax.tick_params(axis='y',
-                       which=axes_cfg["yticks"]["which"],
-                       pad=axes_cfg["yticks"]["pad"],
-                       length=axes_cfg["yticks"]["length"]
-                       )
+        ax.spines["left"].set_visible(False)
+        xticks_decimals = self.cfg_cv_results_plot["format_bar_plot"]["axes"]["xticks"][
+            "decimals"
+        ]
+        ax.xaxis.set_major_formatter(
+            FuncFormatter(lambda x, _: self.format_metric(x, xticks_decimals))
+        )
+        ax.tick_params(axis="x", labelsize=fontsizes["tick_params"])
+        ax.tick_params(
+            axis="y",
+            which=axes_cfg["yticks"]["which"],
+            pad=axes_cfg["yticks"]["pad"],
+            length=axes_cfg["yticks"]["length"],
+        )
 
         if row_idx == 3:
             xlabel_pad = axes_cfg["xlabels"]["pad"]
             if metric == "spearman":
-                ax.set_xlabel(r'$\rho$', fontsize=fontsizes["label"], labelpad=xlabel_pad)
+                ax.set_xlabel(
+                    r"$\rho$", fontsize=fontsizes["label"], labelpad=xlabel_pad
+                )
             elif metric == "pearson":
-                ax.set_xlabel(r'$r$', fontsize=fontsizes["label"], labelpad=xlabel_pad)
+                ax.set_xlabel(r"$r$", fontsize=fontsizes["label"], labelpad=xlabel_pad)
             elif metric == "r2":
-                ax.set_xlabel(r'$R^2$', fontsize=fontsizes["label"], labelpad=xlabel_pad)
+                ax.set_xlabel(
+                    r"$R^2$", fontsize=fontsizes["label"], labelpad=xlabel_pad
+                )
 
         if rel:
             rel_cfg = self.cfg_cv_results_plot["rel"]
-            ax.axvline(x=rel,
-                       color=rel_cfg["color"],
-                       linestyle=rel_cfg["linestyle"],
-                       linewidth=rel_cfg["linewidth"],
-                       label=f"{rel_cfg['base_label']}{rel:.2f}"
-                       )
+            ax.axvline(
+                x=rel,
+                color=rel_cfg["color"],
+                linestyle=rel_cfg["linestyle"],
+                linewidth=rel_cfg["linewidth"],
+                label=f"{rel_cfg['base_label']}{rel:.2f}",
+            )
 
     @staticmethod
     def format_metric(metric: float, xticks_decimals: int = 2) -> Union[str, int]:
@@ -733,10 +784,11 @@ class ResultPlotter:
 
     @staticmethod
     def create_grid(
-                    num_rows: int,
-                    num_cols: int,
-                    figsize: tuple[int] = (15, 20),
-                    empty_cells: Collection[tuple[int]] = None) -> tuple[Figure, ndarray[Axes]]:
+        num_rows: int,
+        num_cols: int,
+        figsize: tuple[int] = (15, 20),
+        empty_cells: Collection[tuple[int]] = None,
+    ) -> tuple[Figure, ndarray[Axes]]:
         """
         Creates a flexible grid of subplots with customizable empty cells.
 
@@ -753,19 +805,20 @@ class ResultPlotter:
         fig, axes = plt.subplots(num_rows, num_cols, figsize=figsize, squeeze=False)
 
         if empty_cells:
-            for (row, col) in empty_cells:
+            for row, col in empty_cells:
                 fig.delaxes(axes[row, col])  # Remove the axis for empty cells
 
         return fig, axes
 
     def get_margins(
-            self,
-            cv_results_dct: dict[str, dict[str, float]],
-            ref_dct: dict[str, dict[str, float]],
-            crit: str,
-            samples_to_include: str,
-            metric: str,
-            ref_feature_combo: str = "pl") -> dict[str, dict[str, float]]:
+        self,
+        cv_results_dct: dict[str, dict[str, float]],
+        ref_dct: dict[str, dict[str, float]],
+        crit: str,
+        samples_to_include: str,
+        metric: str,
+        ref_feature_combo: str = "pl",
+    ) -> dict[str, dict[str, float]]:
         """
         Computes the incremental performance difference for all combinations involving 'pl' (e.g., 'pl_srmc')
         compared to the base 'pl' metric for each model.
@@ -796,29 +849,37 @@ class ResultPlotter:
             cv_results_dct=cv_results_dct,
             crit=crit,
             samples_to_include=samples_to_include,
-            metric=metric
+            metric=metric,
         )
 
         for feature_combo, feature_combo_vals in filtered_metrics.items():
             for model, model_vals in feature_combo_vals.items():
-                if feature_combo.startswith(ref) and feature_combo not in ref_dct or feature_combo.startswith("all_in"):
+                if (
+                    feature_combo.startswith(ref)
+                    and feature_combo not in ref_dct
+                    or feature_combo.startswith("all_in")
+                ):
                     ref_key = f"{ref}{model}"
 
                     if ref_key in ref_dct:
-                        incremental_difference = model_vals[m_metric] - ref_dct[ref_key][m_metric]
+                        incremental_difference = (
+                            model_vals[m_metric] - ref_dct[ref_key][m_metric]
+                        )
                         margin_dict[f"{feature_combo}_{model}"] = {
-                            f'incremental_{m_metric}': incremental_difference,
-                            sd_metric: model_vals[sd_metric]
+                            f"incremental_{m_metric}": incremental_difference,
+                            sd_metric: model_vals[sd_metric],
                         }
 
         return margin_dict
 
     @staticmethod
-    def get_refs(cv_results_dct: NestedDict,
-                 crit: str,
-                 metric: str,
-                 samples_to_include: str,
-                 ref_feature_combo: str = "pl") -> NestedDict:
+    def get_refs(
+        cv_results_dct: NestedDict,
+        crit: str,
+        metric: str,
+        samples_to_include: str,
+        ref_feature_combo: str = "pl",
+    ) -> NestedDict:
         """
         Extracts reference values for the two- and three-level analysis in cross-validation result plots.
 
@@ -841,68 +902,74 @@ class ResultPlotter:
                             "pl_randomforestregressor": {"m_metric": 0.85, "sd_metric": 0.06}
                         }
         """
-        enr_subdct = cv_results_dct[crit][samples_to_include][ref_feature_combo]["elasticnet"][metric]
-        rfr_subdct = cv_results_dct[crit][samples_to_include][ref_feature_combo]["randomforestregressor"][metric]
+        enr_subdct = cv_results_dct[crit][samples_to_include][ref_feature_combo][
+            "elasticnet"
+        ][metric]
+        rfr_subdct = cv_results_dct[crit][samples_to_include][ref_feature_combo][
+            "randomforestregressor"
+        ][metric]
 
         return {
-            f"{ref_feature_combo}_elasticnet": {stat: float(val)
-                                                for stat, val in enr_subdct.items()},
-            f"{ref_feature_combo}_randomforestregressor": {stat: float(val)
-                                                           for stat, val in rfr_subdct.items()}
+            f"{ref_feature_combo}_elasticnet": {
+                stat: float(val) for stat, val in enr_subdct.items()
+            },
+            f"{ref_feature_combo}_randomforestregressor": {
+                stat: float(val) for stat, val in rfr_subdct.items()
+            },
         }
 
     def plot_shap_beeswarm_plots(
-            self,
-            prepare_shap_data_func: Callable,
-            prepare_shap_ia_data_func: Callable = None
+        self,
+        prepare_shap_data_func: Callable,
+        prepare_shap_ia_data_func: Callable = None,
     ) -> None:
         """
-        Generates SHAP beeswarm plots for different predictor combinations arranged in a grid layout.
+            Generates SHAP beeswarm plots for different predictor combinations arranged in a grid layout.
 
-        This method visualizes SHAP values, which indicate the contribution of individual features
-        to model predictions. It supports plotting:
-        - Main SHAP values for specified predictor combinations across models and datasets.
-        - Interaction SHAP values (optional) for Random Forest models if configured.
+            This method visualizes SHAP values, which indicate the contribution of individual features
+            to model predictions. It supports plotting:
+            - Main SHAP values for specified predictor combinations across models and datasets.
+            - Interaction SHAP values (optional) for Random Forest models if configured.
 
-        The plots are organized in a grid defined by the `col_assignment` configuration.
-        Subplots for missing data or empty cells are skipped, and customizable color maps
-        and layout adjustments are applied.
+            The plots are organized in a grid defined by the `col_assignment` configuration.
+            Subplots for missing data or empty cells are skipped, and customizable color maps
+            and layout adjustments are applied.
 
-            Method Details:
-    - **Grid Layout and Assignment**:
-        - The `col_assignment` configuration determines the layout of predictor combinations
-          in the grid, assigning each combination to a specific row and column.
-        - Interaction SHAP values, if enabled, are positioned at a specified location
-          within the grid.
+                Method Details:
+        - **Grid Layout and Assignment**:
+            - The `col_assignment` configuration determines the layout of predictor combinations
+              in the grid, assigning each combination to a specific row and column.
+            - Interaction SHAP values, if enabled, are positioned at a specified location
+              within the grid.
 
-    - **Data Retrieval**:
-        - The `prepare_shap_data_func` retrieves SHAP values for the current combination
-          of criterion, dataset, and model.
-        - If interaction SHAP values are enabled, the `prepare_shap_ia_data_func` is invoked
-          to retrieve the interaction SHAP values.
+        - **Data Retrieval**:
+            - The `prepare_shap_data_func` retrieves SHAP values for the current combination
+              of criterion, dataset, and model.
+            - If interaction SHAP values are enabled, the `prepare_shap_ia_data_func` is invoked
+              to retrieve the interaction SHAP values.
 
-    - **Plot Customization**:
-        - Custom color maps and font sizes are applied to each plot.
-        - Titles are added to specific rows and columns to indicate the type of SHAP values
-          being visualized (main or interaction values).
-        - Subplot adjustments (e.g., spacing, margins) are made using the `subplot_adjustments` configuration.
+        - **Plot Customization**:
+            - Custom color maps and font sizes are applied to each plot.
+            - Titles are added to specific rows and columns to indicate the type of SHAP values
+              being visualized (main or interaction values).
+            - Subplot adjustments (e.g., spacing, margins) are made using the `subplot_adjustments` configuration.
 
-    - **Storage and Display**:
-        - Plots are either saved to a file or displayed, based on the configuration in
-          `store_params`. The file format and resolution are also configurable.
+        - **Storage and Display**:
+            - Plots are either saved to a file or displayed, based on the configuration in
+              `store_params`. The file format and resolution are also configurable.
 
-        Args:
-            prepare_shap_data_func: A callable function that retrieves the SHAP values
-                                    for a given combination of criterion, dataset, and model.
-                                    Expected to return a dictionary of SHAP values for all
-                                    predictor combinations in the current configuration.
-            prepare_shap_ia_data_func: A callable function that retrieves
-                                       interaction SHAP values for Random Forest models.
-                                       If provided, interaction SHAP values are added to
-                                       specific subplots based on configuration.
+            Args:
+                prepare_shap_data_func: A callable function that retrieves the SHAP values
+                                        for a given combination of criterion, dataset, and model.
+                                        Expected to return a dictionary of SHAP values for all
+                                        predictor combinations in the current configuration.
+                prepare_shap_ia_data_func: A callable function that retrieves
+                                           interaction SHAP values for Random Forest models.
+                                           If provided, interaction SHAP values are added to
+                                           specific subplots based on configuration.
 
-        Returns:
-            None: The function generates and either saves or displays the SHAP beeswarm plots.
+            Returns:
+                None: The function generates and either saves or displays the SHAP beeswarm plots.
         """
         col_assignment = self.cfg_shap_plot["col_assignment"]
         positions = {}
@@ -911,16 +978,22 @@ class ResultPlotter:
             for row_idx, predictor_combination in enumerate(column):
                 positions[(row_idx, col_idx)] = predictor_combination
 
-        colors = self.cfg_postprocessing["general"]["global_plot_params"]["custom_cmap_colors"]
+        colors = self.cfg_postprocessing["general"]["global_plot_params"][
+            "custom_cmap_colors"
+        ]
         cmap = LinearSegmentedColormap.from_list("custom_cmap", colors)
 
         cfg_ia_values = self.cfg_shap_plot["ia_values"]
 
-        feature_combo_name_mapping = self.cfg_postprocessing["general"]["feature_combinations"]["name_mapping"]["main"]
+        feature_combo_name_mapping = self.cfg_postprocessing["general"][
+            "feature_combinations"
+        ]["name_mapping"]["main"]
         if cfg_ia_values["add"]:
             feature_combo_name_mapping = {
                 **feature_combo_name_mapping,
-                **self.cfg_postprocessing["general"]["feature_combinations"]["name_mapping"]["ia_values"]
+                **self.cfg_postprocessing["general"]["feature_combinations"][
+                    "name_mapping"
+                ]["ia_values"],
             }
 
         num_to_display = self.cfg_shap_plot["num_to_display"]
@@ -933,7 +1006,6 @@ class ResultPlotter:
         for crit in self.cfg_shap_plot["crits"]:
             for samples_to_include in self.cfg_shap_plot["samples_to_include"]:
                 for model in self.cfg_shap_plot["models"]:
-
                     print(f"### Plot combination: {samples_to_include}_{crit}_{model}")
                     data_current = prepare_shap_data_func(
                         crit_to_plot=crit,
@@ -946,15 +1018,19 @@ class ResultPlotter:
                             crit_to_plot=crit,
                             samples_to_include=samples_to_include,
                             model_to_plot=model,
-                            feature_combination_to_plot=cfg_ia_values["feature_combination"],
+                            feature_combination_to_plot=cfg_ia_values[
+                                "feature_combination"
+                            ],
                         )
                         ia_position = tuple(cfg_ia_values["position"])
                         positions[ia_position] = next(iter(ia_data_current))
 
                     figure_params = self.cfg_shap_plot["figure_params"]
-                    empty_cells = ([self.cfg_shap_plot["figure_params"]["empty_cells"][0]]
-                                   if cfg_ia_values["add"]
-                                   else self.cfg_shap_plot["figure_params"]["empty_cells"])
+                    empty_cells = (
+                        [self.cfg_shap_plot["figure_params"]["empty_cells"][0]]
+                        if cfg_ia_values["add"]
+                        else self.cfg_shap_plot["figure_params"]["empty_cells"]
+                    )
                     fig, axes = self.create_grid(
                         num_rows=figure_params["num_rows"],
                         num_cols=figure_params["num_cols"],
@@ -975,12 +1051,16 @@ class ResultPlotter:
                                 cmap=cmap,
                                 feature_combo_name_mapping=feature_combo_name_mapping,
                                 predictor_combination=predictor_combination,
-                                title_line_dct=beeswarm_title_params["line_dct"]
+                                title_line_dct=beeswarm_title_params["line_dct"],
                             )
 
                             if row == 0:
-                                first_row_heading = beeswarm_title_params["shap_values"][col]
-                                shap_values_pos_cfg = beeswarm_title_params["position"]["shap_values"]
+                                first_row_heading = beeswarm_title_params[
+                                    "shap_values"
+                                ][col]
+                                shap_values_pos_cfg = beeswarm_title_params["position"][
+                                    "shap_values"
+                                ]
 
                                 axes[row, col].text(
                                     x=shap_values_pos_cfg["x_pos"],
@@ -990,12 +1070,16 @@ class ResultPlotter:
                                     fontweight=beeswarm_title_params["fontweight"],
                                     ha=shap_values_pos_cfg["ha"],
                                     va=shap_values_pos_cfg["va"],
-                                    transform=axes[row, col].transAxes,  # Use axes-relative coordinates
+                                    transform=axes[
+                                        row, col
+                                    ].transAxes,  # Use axes-relative coordinates
                                 )
                         else:
                             if ia_data_current:
                                 if predictor_combination in ia_data_current:
-                                    shap_ia_data = ia_data_current[predictor_combination]
+                                    shap_ia_data = ia_data_current[
+                                        predictor_combination
+                                    ]
                                     self.plot_shap_beeswarm(
                                         shap_values=shap_ia_data,
                                         ax=axes[row, col],
@@ -1007,11 +1091,17 @@ class ResultPlotter:
                                         feature_combo_name_mapping=feature_combo_name_mapping,
                                         predictor_combination=predictor_combination,
                                         ia_values=True,
-                                        title_line_dct=beeswarm_title_params["line_dct"]
+                                        title_line_dct=beeswarm_title_params[
+                                            "line_dct"
+                                        ],
                                     )
 
-                                    ia_heading = beeswarm_title_params["shap_ia_values"][0]
-                                    shap_ia_values_pos_cfg = beeswarm_title_params["position"]["shap_ia_values"]
+                                    ia_heading = beeswarm_title_params[
+                                        "shap_ia_values"
+                                    ][0]
+                                    shap_ia_values_pos_cfg = beeswarm_title_params[
+                                        "position"
+                                    ]["shap_ia_values"]
                                     axes[row, col].text(
                                         x=shap_ia_values_pos_cfg["x_pos"],
                                         y=shap_ia_values_pos_cfg["y_pos"],
@@ -1023,14 +1113,16 @@ class ResultPlotter:
                                         transform=axes[row, col].transAxes,
                                     )
                             else:
-                                print(f"Predictor combination '{predictor_combination}' not found in shap data or shap ia data")
+                                print(
+                                    f"Predictor combination '{predictor_combination}' not found in shap data or shap ia data"
+                                )
 
                     plt.subplots_adjust(
                         top=beeswarm_subplot_adj["top"],
                         left=beeswarm_subplot_adj["left"],
                         wspace=beeswarm_subplot_adj["wspace"],
                         hspace=beeswarm_subplot_adj["hspace"],
-                        right=beeswarm_subplot_adj["right"]
+                        right=beeswarm_subplot_adj["right"],
                     )
 
                     if self.cfg_shap_plot["store_params"]["store"]:
@@ -1040,7 +1132,7 @@ class ResultPlotter:
                             samples_to_include=samples_to_include,
                             plot_format=self.cfg_shap_plot["store_params"]["format"],
                             dpi=self.cfg_shap_plot["store_params"]["dpi"],
-                            model=model
+                            model=model,
                         )
                     else:
                         plt.show()
@@ -1063,20 +1155,20 @@ class ResultPlotter:
 
         return formatted_title
 
-
-    def plot_shap_beeswarm(self,
-                           shap_values: shap.Explanation,
-                           ax,
-                           row,
-                           beeswarm_fontsizes: dict,
-                           beeswarm_figure_params: dict,
-                           num_to_display: int,
-                           cmap,
-                           feature_combo_name_mapping,
-                           predictor_combination,
-                           title_line_dct: dict = None,
-                           ia_values: bool = False,
-                           ):
+    def plot_shap_beeswarm(
+        self,
+        shap_values: shap.Explanation,
+        ax,
+        row,
+        beeswarm_fontsizes: dict,
+        beeswarm_figure_params: dict,
+        num_to_display: int,
+        cmap,
+        feature_combo_name_mapping,
+        predictor_combination,
+        title_line_dct: dict = None,
+        ia_values: bool = False,
+    ):
         """
         Generates a SHAP beeswarm plot for a given predictor combination.
 
@@ -1107,15 +1199,23 @@ class ResultPlotter:
         plt.sca(ax)
 
         if ia_values:
-            shap_values_to_plot, data_to_plot, feature_names_formatted = self.get_ia_data(shap_values, num_to_display)
+            (
+                shap_values_to_plot,
+                data_to_plot,
+                feature_names_formatted,
+            ) = self.get_ia_data(shap_values, num_to_display)
 
         else:
             max_char_on_line = beeswarm_figure_params["max_char_on_line_y_ticks"]
-            feature_names_formatted = [self.line_break_strings(strng=feature_name,
-                                                               max_char_on_line=max_char_on_line,
-                                                               balance=True,
-                                                               split_strng=None)
-                                       for feature_name in shap_values.feature_names]
+            feature_names_formatted = [
+                self.line_break_strings(
+                    strng=feature_name,
+                    max_char_on_line=max_char_on_line,
+                    balance=True,
+                    split_strng=None,
+                )
+                for feature_name in shap_values.feature_names
+            ]
             shap_values_to_plot = shap_values.values
             data_to_plot = shap_values.data
 
@@ -1143,28 +1243,24 @@ class ResultPlotter:
 
         if self.cfg_shap_plot["titles"]["add_n"]:
             n_samples = shap_values.shape[0]
-            formatted_title = self.add_n_to_title(
-                formatted_title, n_samples
-            )
+            formatted_title = self.add_n_to_title(formatted_title, n_samples)
 
         max_lines_in_row = title_line_dct[f"row_{row}"]
         current_title_line_count = formatted_title.count("\n") + 1
         y_position = 1.0 + 0.05 * (max_lines_in_row - current_title_line_count)
 
         ax.set_title(
-            formatted_title,
-            fontsize=beeswarm_fontsizes["title"],
-            y=y_position
+            formatted_title, fontsize=beeswarm_fontsizes["title"], y=y_position
         )
 
         ax.tick_params(
-            axis='both',
-            which='major',
-            labelsize=beeswarm_fontsizes["tick_params"]
+            axis="both", which="major", labelsize=beeswarm_fontsizes["tick_params"]
         )
         if ia_values:
-            ax.set_xlabel(self.cfg_shap_plot["ia_values"]["xlabel"],
-                          fontsize=beeswarm_fontsizes["x_label"])
+            ax.set_xlabel(
+                self.cfg_shap_plot["ia_values"]["xlabel"],
+                fontsize=beeswarm_fontsizes["x_label"],
+            )
         ax.xaxis.label.set_size(beeswarm_fontsizes["x_label"])
         ax.yaxis.label.set_size(beeswarm_fontsizes["y_label"])
 
@@ -1172,7 +1268,9 @@ class ResultPlotter:
             ax.set_xlim(tuple(self.cfg_shap_plot["figure_params"]["x_lim"]))
 
     @staticmethod
-    def get_ia_data(shap_values: Explanation, num_to_display: int, ia_strng: str = "IA") -> tuple:
+    def get_ia_data(
+        shap_values: Explanation, num_to_display: int, ia_strng: str = "IA"
+    ) -> tuple:
         """
         Extracts and formats the top interaction features and corresponding SHAP values and data for visualization.
 
@@ -1189,8 +1287,9 @@ class ResultPlotter:
                 - "shap_values": SHAP values for the top interaction features.
                 - "data": Original feature data for the top interaction features.
         """
-        feature_names_formatted = [f"{ia_strng}{num_ia}"
-                                   for num_ia in range(1, num_to_display + 1)]
+        feature_names_formatted = [
+            f"{ia_strng}{num_ia}" for num_ia in range(1, num_to_display + 1)
+        ]
 
         mean_abs_shap = np.abs(shap_values.values).mean(axis=0)
         sorted_indices = np.argsort(mean_abs_shap)[::-1][:num_to_display]
@@ -1201,13 +1300,13 @@ class ResultPlotter:
         return shap_values_to_plot, data_to_plot, feature_names_formatted
 
     def plot_pred_true_parity(
-            self,
-            sample_data: NestedDict,
-            samples_to_include: str,
-            crit: str,
-            model: str,
-            store_plot: bool,
-            filename: Optional[str] = None,
+        self,
+        sample_data: NestedDict,
+        samples_to_include: str,
+        crit: str,
+        model: str,
+        store_plot: bool,
+        filename: Optional[str] = None,
     ) -> None:
         """
         Creates a parity plot of predicted vs. true values for all samples.
@@ -1223,8 +1322,12 @@ class ResultPlotter:
             store_plot: Whether to save the plot to a file.
             filename: Filename for saving the plot, if `store_plot` is True. Defaults to None.
         """
-        colors_raw = self.cfg_postprocessing["general"]["global_plot_params"]["custom_cmap_colors"]
-        cfg_pred_true_plot = self.cfg_postprocessing["sanity_check_pred_vs_true"]["plot"]
+        colors_raw = self.cfg_postprocessing["general"]["global_plot_params"][
+            "custom_cmap_colors"
+        ]
+        cfg_pred_true_plot = self.cfg_postprocessing["sanity_check_pred_vs_true"][
+            "plot"
+        ]
 
         width = cfg_pred_true_plot["figure"]["width"]
         height = cfg_pred_true_plot["figure"]["height"]
@@ -1235,31 +1338,42 @@ class ResultPlotter:
 
         for i, sample_name in enumerate(samples):
             color = colors[i % 10]
-            pred_values = sample_data[sample_name]['pred']
-            true_values = sample_data[sample_name]['true']
+            pred_values = sample_data[sample_name]["pred"]
+            true_values = sample_data[sample_name]["true"]
             ax.scatter(true_values, pred_values, color=color, label=sample_name)
 
-        min_val = min([min(sample_data[s]['true'] + sample_data[s]['pred']) for s in samples])
-        max_val = max([max(sample_data[s]['true'] + sample_data[s]['pred']) for s in samples])
-        ax.plot([min_val, max_val], [min_val, max_val], 'k--', label='r = 1')
+        min_val = min(
+            [min(sample_data[s]["true"] + sample_data[s]["pred"]) for s in samples]
+        )
+        max_val = max(
+            [max(sample_data[s]["true"] + sample_data[s]["pred"]) for s in samples]
+        )
+        ax.plot([min_val, max_val], [min_val, max_val], "k--", label="r = 1")
 
         ax.set_xlabel(cfg_pred_true_plot["xlabel"])
         ax.set_ylabel(cfg_pred_true_plot["ylabel"])
-        ax.set_title(f'{cfg_pred_true_plot["base_title"]} - {samples_to_include} - {crit} - {model}')
+        ax.set_title(
+            f'{cfg_pred_true_plot["base_title"]} - {samples_to_include} - {crit} - {model}'
+        )
         ax.legend()
 
         if store_plot:
-            self.store_plot(plot_name=filename, crit=crit, samples_to_include=samples_to_include, model=model)
+            self.store_plot(
+                plot_name=filename,
+                crit=crit,
+                samples_to_include=samples_to_include,
+                model=model,
+            )
         else:
             plt.show()
 
     def line_break_strings(
-            self,
-            strng: str,
-            max_char_on_line: int,
-            split_strng: str = None,
-            balance: bool = False,
-            force_split_strng: bool = False
+        self,
+        strng: str,
+        max_char_on_line: int,
+        split_strng: str = None,
+        balance: bool = False,
+        force_split_strng: bool = False,
     ) -> str:
         """
         Recursively breaks a string into multiple lines to fit within a maximum character limit per line.
@@ -1291,12 +1405,12 @@ class ResultPlotter:
                     first_line = strng[:break_pos].rstrip()
                     remainder = strng[break_pos:].lstrip()
                     if remainder:
-                        return first_line + '\n' + remainder
+                        return first_line + "\n" + remainder
                     else:
                         return first_line
             return strng  # Return as-is if no forced split is needed
 
-        substring = strng[:max_char_on_line + 1]
+        substring = strng[: max_char_on_line + 1]
 
         if split_strng:
             if force_split_strng:
@@ -1306,7 +1420,7 @@ class ResultPlotter:
                     break_pos = split_pos + len(split_strng)
                 else:
                     # If split_strng not found in substring, fallback to space or max_char_on_line
-                    split_pos = substring.rfind(' ')
+                    split_pos = substring.rfind(" ")
                     break_pos = split_pos if split_pos != -1 else max_char_on_line
             else:
                 # If not force_split_strng: prefer split_strng, then space, then max_char_on_line
@@ -1314,11 +1428,11 @@ class ResultPlotter:
                 if split_pos != -1:
                     break_pos = split_pos + len(split_strng)
                 else:
-                    split_pos = substring.rfind(' ')
+                    split_pos = substring.rfind(" ")
                     break_pos = split_pos if split_pos != -1 else max_char_on_line
         else:
             # If no split_strng provided, split at the last space or max_char_on_line
-            split_pos = substring.rfind(' ')
+            split_pos = substring.rfind(" ")
             break_pos = split_pos if split_pos != -1 else max_char_on_line
 
         if balance:
@@ -1337,9 +1451,12 @@ class ResultPlotter:
 
                 for candidate_pos in range(start_search, end_search + 1):
                     if candidate_pos != break_pos and candidate_pos < len(strng):
-                        if strng[candidate_pos] == ' ' or (
-                                split_strng and
-                                strng[candidate_pos - len(split_strng) + 1:candidate_pos + 1] == split_strng
+                        if strng[candidate_pos] == " " or (
+                            split_strng
+                            and strng[
+                                candidate_pos - len(split_strng) + 1 : candidate_pos + 1
+                            ]
+                            == split_strng
                         ):
                             test_first = strng[:candidate_pos].rstrip()
                             test_rem = strng[candidate_pos:].lstrip()
@@ -1357,23 +1474,28 @@ class ResultPlotter:
 
         next_force_split_strng = True
 
-        return first_line + '\n' + self.line_break_strings(
-            remainder,
-            max_char_on_line,
-            split_strng,
-            balance,
-            force_split_strng=next_force_split_strng
+        return (
+            first_line
+            + "\n"
+            + self.line_break_strings(
+                remainder,
+                max_char_on_line,
+                split_strng,
+                balance,
+                force_split_strng=next_force_split_strng,
+            )
         )
 
-    def store_plot(self,
-                   plot_name: str,
-                   plot_format: str = "png",
-                   dpi: int = 450,
-                   feature_combination: str = None,
-                   samples_to_include: str = None,
-                   crit: str = None,
-                   model: str = None,
-                   ):
+    def store_plot(
+        self,
+        plot_name: str,
+        plot_format: str = "png",
+        dpi: int = 450,
+        feature_combination: str = None,
+        samples_to_include: str = None,
+        crit: str = None,
+        model: str = None,
+    ):
         """
         Stores plots in a given directory in a certain format and resolution.
             - If we have single plots for specific model/crit/... combinations, we store the plots in the respective dirs
@@ -1388,10 +1510,12 @@ class ResultPlotter:
             crit: e.g., "state_wb"
             model: e.g., "randomforestregressor"
         """
-        plot_path = self.create_plot_path(feature_combination=feature_combination,
-                                          samples_to_include=samples_to_include,
-                                          crit=crit,
-                                          model=model)
+        plot_path = self.create_plot_path(
+            feature_combination=feature_combination,
+            samples_to_include=samples_to_include,
+            crit=crit,
+            model=model,
+        )
         os.makedirs(plot_path, exist_ok=True)
         filename = f"{plot_name}.{plot_format}"
         file_path = os.path.join(plot_path, filename)
@@ -1405,11 +1529,11 @@ class ResultPlotter:
         plt.close()
 
     def create_plot_path(
-            self,
-            samples_to_include: Optional[str] = None,
-            crit: Optional[str] = None,
-            model: Optional[str] = None,
-            feature_combination: Optional[str] = None,
+        self,
+        samples_to_include: Optional[str] = None,
+        crit: Optional[str] = None,
+        model: Optional[str] = None,
+        feature_combination: Optional[str] = None,
     ) -> str:
         """
         Constructs the file path where plots should be stored based on input parameters.
@@ -1430,9 +1554,13 @@ class ResultPlotter:
         """
         path_components = [None, None, None, None]
 
-        for path_idx, var in enumerate([samples_to_include, crit, model, feature_combination]):
+        for path_idx, var in enumerate(
+            [samples_to_include, crit, model, feature_combination]
+        ):
             if var is not None:
                 path_components[path_idx] = var
         filtered_path_components = [comp for comp in path_components if comp]
 
-        return os.path.normpath(os.path.join(self.plot_base_dir, *filtered_path_components))
+        return os.path.normpath(
+            os.path.join(self.plot_base_dir, *filtered_path_components)
+        )
