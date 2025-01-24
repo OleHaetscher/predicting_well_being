@@ -181,6 +181,7 @@ class BaseMLAnalyzer(ABC):
     def __init__(
         self,
         var_cfg: NestedDict,
+        cfg_analysis: NestedDict,
         spec_output_path: str,
         df: pd.DataFrame,
         rep: int = None,
@@ -197,6 +198,7 @@ class BaseMLAnalyzer(ABC):
             rank: Rank for multi-node parallelism. None if not multi-node parallelism is used.
         """
         self.var_cfg = var_cfg
+        self.cfg_analysis = cfg_analysis
         self.spec_output_path = spec_output_path
 
         # Cluster and parallelization params
@@ -242,7 +244,7 @@ class BaseMLAnalyzer(ABC):
         )
         self.timer = Timer(self.logger)
         self.data_selector = DataSelector(
-            var_cfg=self.var_cfg,
+            cfg_analysis=self.cfg_analysis,
             df=self.df,
             feature_combination=self.feature_combination,
             crit=self.crit,

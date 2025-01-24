@@ -130,6 +130,7 @@ if __name__ == "__main__":
         if prediction_model == "elasticnet":
             enr_analyzer = ENRAnalyzer(
                 var_cfg=var_cfg_updated,
+                cfg_analysis=cfg_analysis,
                 output_dir=output_dir,
                 df=df,
                 rank=rank,
@@ -139,6 +140,7 @@ if __name__ == "__main__":
         elif prediction_model == "randomforestregressor":
             rfr_analyzer = RFRAnalyzer(
                 var_cfg=var_cfg_updated,
+                cfg_analysis=cfg_analysis,
                 output_dir=output_dir,
                 df=df,
                 rank=rank,

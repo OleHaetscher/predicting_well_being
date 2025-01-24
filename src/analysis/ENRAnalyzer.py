@@ -26,6 +26,7 @@ class ENRAnalyzer(BaseMLAnalyzer):
     def __init__(
         self,
         var_cfg: NestedDict,
+        cfg_analysis: NestedDict,
         output_dir: str,
         df: pd.DataFrame,
         rep: Optional[int],
@@ -41,7 +42,7 @@ class ENRAnalyzer(BaseMLAnalyzer):
             rep: Repetition index for cross-validation splits.
             rank: Rank identifier for multi-node parallelism.
         """
-        super().__init__(var_cfg, output_dir, df, rep, rank)
+        super().__init__(var_cfg, cfg_analysis, output_dir, df, rep, rank)
         self.model = ElasticNet(random_state=self.var_cfg["analysis"]["random_state"])
 
     def get_average_coefficients(self) -> None:
