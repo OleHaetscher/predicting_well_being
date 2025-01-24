@@ -1,104 +1,155 @@
 import json
 import os
-import pickle
-from collections import defaultdict
 
-import numpy as np
 import pandas as pd
-from scipy.stats import spearmanr
-from sklearn.metrics import r2_score
 
+from src.postprocessing.CVResultProcessor import CVResultProcessor
 from src.postprocessing.DescriptiveStatistics import DescriptiveStatistics
 from src.postprocessing.LinearRegressor import LinearRegressor
 from src.postprocessing.ResultPlotter import ResultPlotter
-from src.postprocessing.ResultTableCreator import ResultTableCreator
 from src.postprocessing.ShapProcessor import ShapProcessor
 from src.postprocessing.SignificanceTesting import SignificanceTesting
+from src.postprocessing.SuppFileCreator import SuppFileCreator
 from src.utils.DataLoader import DataLoader
 from src.utils.DataSaver import DataSaver
-from src.utils.DataSelector import DataSelector
 from src.utils.Logger import Logger
 from src.utils.SanityChecker import SanityChecker
-from src.utils.utilfuncs import custom_round, apply_name_mapping, defaultdict_to_dict, merge_M_SD_in_dct
+from src.utils.utilfuncs import merge_M_SD_in_dct, NestedDict
 
 
-class Postprocessor:
+class Postprocessor:  # TODO adjust class / init doc at the end
     """
-    This class executes the different postprocessing steps. This includes
-        - conducting tests of significance to compare prediction results
-        - calculate and display descriptive statistics
-        - creates plots (results, SHAP, SHAP interaction values)
+    Executes postprocessing steps for analyzing machine learning results and generating insights.
+
+    Responsibilities include:
+    - Conducting tests of significance to compare prediction results.
+    - Calculating and displaying descriptive statistics.
+    - Generating plots for results, SHAP values, SHAP interaction values and pred vs. true parity.
+    - Preparing supplemental files for reports
+
+    Attributes:
+        cfg_preprocessing (NestedDict): Yaml config specifying details on preprocessing (e.g., scales, items).
+        cfg_analysis (NestedDict): Yaml config specifying details on the ML analysis (e.g., CV, models).
+        cfg_postprocessing (NestedDict): Yaml config specifying details on postprocessing (e.g., tables, plots).
+        name_mapping (NestedDict): Mapping of feature names for presentation purposes.
+        data_base_path: Path to the preprocessed data directory.
+        base_result_path: Path to the base directory for storing results.
+        cv_shap_results_path: Path to the main result directory containing cross-validation results and SHAP values.
+        methods_to_apply: List of postprocessing methods to apply.
+        datasets: List of datasets included in the analysis.
+        meta_vars: List of meta variables to exclude from SHAP processing.
+        data_loader: Instance of `DataLoader` for loading data.
+        data_saver: Instance of `DataSaver` for saving data.
+        raw_results_filenames: Filenames for raw analysis output.
+        processed_results_filenames: Filenames for processed postprocessing results.
+        full_data: The full dataset loaded from preprocessed data.
+        logger: Instance of `Logger` for logging.
+        descriptives_creator: Instance of `DescriptiveStatistics` for creating descriptive statistics.
+        cv_result_processor: Instance of `CVResultProcessor` for processing cross-validation results.
+        significance_testing: Instance of `SignificanceTesting` for conducting statistical tests.
+        shap_processor: Instance of `ShapProcessor` for processing SHAP values.
+        plotter: Instance of `ResultPlotter` for generating plots.
+        supp_file_creator: Instance of `SuppFileCreator` for creating supplemental files.
+        sanity_checker: Instance of `SanityChecker` for validating preprocessing and results.
     """
-    # TODO: Adjust config stuff -> var_cfg and fix_cfg should be replaced
-    def __init__(self, fix_cfg, var_cfg, cfg_postprocessing, name_mapping):
-        self.fix_cfg = fix_cfg
-        self.var_cfg = var_cfg
+    def __init__(self,
+                 cfg_preprocessing: NestedDict,
+                 cfg_analysis: NestedDict,
+                 cfg_postprocessing: NestedDict,
+                 name_mapping: NestedDict
+                 ):
+        """
+        Initializes the Postprocessor with configuration settings, paths, and analysis components.
+
+        Args:
+            cfg_preprocessing: Configuration dictionary for preprocessing settings,
+                               including paths to data and logs.
+            cfg_analysis: Configuration dictionary for analysis settings, such as cross-validation
+                          and imputation parameters.
+            cfg_postprocessing: Configuration dictionary for postprocessing settings,
+                                including result paths, methods to apply, and filenames.
+            name_mapping: Dictionary mapping feature combination keys to human-readable names.
+        """
+        self.cfg_preprocessing = cfg_preprocessing
+        self.cfg_analysis = cfg_analysis
         self.cfg_postprocessing = cfg_postprocessing
         self.name_mapping = name_mapping
 
-        self.result_filenames = self.var_cfg["analysis"]["output_filenames"]
-        self.processed_output_path = self.var_cfg["postprocessing"]["processed_results_path"]
-        self.data_base_path = self.var_cfg["preprocessing"]["path_to_preprocessed_data"]
+        self.data_base_path = self.cfg_preprocessing["general"]["path_to_preprocessed_data"]
 
-        self.cv_results_dct = {}
-        self.metrics = self.var_cfg["postprocessing"]["metrics"]
-        self.methods_to_apply = self.var_cfg["postprocessing"]["methods"]
-        self.datasets = self.var_cfg["general"]["datasets_to_be_included"]
+        result_paths_cfg = self.cfg_postprocessing["general"]["data_paths"]
+        self.base_result_path = result_paths_cfg["base_path"]
+        self.cv_shap_results_path = os.path.join(
+            self.base_result_path,
+            result_paths_cfg["main_results"]
+        )
+
+        self.methods_to_apply = self.cfg_postprocessing["methods_to_apply"]
+        self.datasets = self.cfg_preprocessing["general"]["datasets_to_be_included"]
         self.meta_vars = [
-            self.var_cfg["analysis"]["cv"]["id_grouping_col"],
-            self.var_cfg["analysis"]["imputation"]["country_grouping_col"],
-            self.var_cfg["analysis"]["imputation"]["years_col"]
+            self.cfg_analysis["cv"]["id_grouping_col"],
+            self.cfg_analysis["imputation"]["country_grouping_col"],
+            self.cfg_analysis["imputation"]["years_col"]
         ]
-        self.n_samples_dct = None
 
         self.data_loader = DataLoader()
         self.data_saver = DataSaver()
-
-        # Extract some variables that we need frequently in the more specialized classes
-
-
-
-        self.logger = Logger(
-            log_dir=self.var_cfg["general"]["log_dir"],
-            log_file=self.var_cfg["general"]["log_name"]
-        )
+        self.raw_results_filenames = self.cfg_analysis["output_filenames"]
+        self.processed_results_filenames = self.cfg_postprocessing["general"]["processed_filenames"]
 
         self.full_data = self.data_loader.read_pkl(
-            os.path.join(self.data_base_path, "full_data")
+            os.path.join(
+                self.data_base_path,
+                self.cfg_preprocessing["general"]["full_data_filename"]
+            )
+        )
+
+        self.logger = Logger(
+            log_dir=self.cfg_preprocessing["general"]["log_dir"],
+            log_file=self.cfg_preprocessing["general"]["log_name"]
         )
 
         self.descriptives_creator = DescriptiveStatistics(
-            fix_cfg=self.fix_cfg,
-            var_cfg=self.var_cfg,
+            cfg_preprocessing=self.cfg_preprocessing,
+            cfg_analysis=self.cfg_analysis,
             cfg_postprocessing=self.cfg_postprocessing,
             name_mapping=name_mapping,
+            base_result_path=self.base_result_path,
             full_data=self.full_data,
         )
-        self.result_table_creator = ResultTableCreator(
-            fix_cfg=self.fix_cfg,
-            var_cfg=self.var_cfg,
+
+        self.cv_result_processor = CVResultProcessor(
             cfg_postprocessing=self.cfg_postprocessing,
-            name_mapping=name_mapping
         )
 
         self.significance_testing = SignificanceTesting(
-            base_result_dir=self.processed_output_path,
+            base_result_path=self.base_result_path,
             cfg_postprocessing=self.cfg_postprocessing,
         )
+
         self.shap_processor = ShapProcessor(
-            var_cfg=self.var_cfg,
-            processed_output_path=self.processed_output_path,
-            name_mapping=self.name_mapping,
-        )
-        self.plotter = ResultPlotter(
-            var_cfg=self.var_cfg,
             cfg_postprocessing=self.cfg_postprocessing,
-            plot_base_dir=self.processed_output_path
+            base_result_path=self.base_result_path,
+            cv_shap_results_path=self.cv_shap_results_path,
+            processed_results_filenames=self.processed_results_filenames,
+            name_mapping=self.name_mapping,
+            meta_vars=self.meta_vars
         )
+
+        self.plotter = ResultPlotter(
+            cfg_postprocessing=self.cfg_postprocessing,
+            base_result_path=self.base_result_path,
+        )
+
+        self.supp_file_creator = SuppFileCreator(
+            cfg_postprocessing=self.cfg_postprocessing,
+            name_mapping=self.name_mapping,
+            meta_vars=self.meta_vars,
+        )
+
         self.sanity_checker = SanityChecker(
             logger=self.logger,
-            fix_cfg=self.fix_cfg,
-            var_cfg=self.var_cfg,
+            cfg_preprocessing=self.cfg_preprocessing,
             cfg_postprocessing=self.cfg_postprocessing,
             plotter=self.plotter,
         )
@@ -110,66 +161,57 @@ class Postprocessor:
         Raises:
             ValueError: If a specified method does not exist in the class.
         """
-        for method_name in self.cfg_postprocessing["method_to_apply"]:
+        for method_name in self.cfg_postprocessing["methods_to_apply"]:
             if not hasattr(self, method_name):
                 raise ValueError(f"Method '{method_name}' is not implemented.")
 
+            print(f">>>Executing postprocessing method: {method_name}<<<")
             getattr(self, method_name)()
 
     def condense_cv_results(self) -> None:
-        """
+        """Summarizes the CV results for all analysis and stores the results in tables."""
 
-        Returns:
-
-        """
-        cv_results_filename = self.cfg_postprocessing["general"]["filenames"]["cv_results_summarized"]
+        cv_results_filename = self.cfg_postprocessing["general"]["processed_filenames"]["cv_results_summarized"]
 
         cfg_condense_results = self.cfg_postprocessing["condense_cv_results"]
-        metrics = cfg_condense_results["metrics"]
         store_all_results = cfg_condense_results["all_results"]["store"]
         all_results_filename = cfg_condense_results["all_results"]["filename"]
 
-        cv_results_dct = self.data_loader.extract_cv_results(
-            base_dir=self.processed_output_path,
-            metrics=metrics,
-            cv_results_filename=cv_results_filename
+        cv_results_dct = self.cv_result_processor.extract_cv_results(
+            base_dir=self.cv_shap_results_path,
+            metrics=cfg_condense_results["metrics"],
+            cv_results_filename=cv_results_filename,
+            negate_mse=cfg_condense_results["negate_mse"],
+            decimals=cfg_condense_results["decimals"],
         )
         if store_all_results:
-            all_result_path = os.path.join(self.processed_output_path, all_results_filename)
+            all_result_path = os.path.join(self.cv_shap_results_path, all_results_filename)
             self.data_saver.save_json(cv_results_dct, all_result_path)
 
         for crit, crit_vals in cv_results_dct.items():
             for samples_to_include, samples_to_include_vals in crit_vals.items():
                 for nnse_analysis in [True, False]:
 
-                    # Skip certain combinations that do not exist
                     if nnse_analysis and samples_to_include == "control":
                         continue
 
                     data_for_table = merge_M_SD_in_dct(samples_to_include_vals)
 
-                    self.result_table_creator.create_cv_results_table(
+                    self.cv_result_processor.create_cv_results_table(
                         crit=crit,
                         samples_to_include=samples_to_include,
                         data=data_for_table,
-                        output_dir=self.processed_output_path,
-                        nnse_analysis=nnse_analysis
+                        output_dir=self.cv_shap_results_path,
+                        nnse_analysis=nnse_analysis,
+                        include_empty_col_between_models=True
                     )
                     
     def sanity_check_pred_vs_true(self) -> None:
-        """
-
-        Returns:
-
-        """
+        """Sanity checks the predictions vs. the true values for selected analysis and plots the results."""
         self.sanity_checker.sanity_check_pred_vs_true()
         
     def create_descriptives(self) -> None:
-        """
-
-        Returns:
-
-        """
+        """Creates tables containing descriptives (e.g., M, SD, correlations, reliability) for the datasets."""
         desc_cfg = self.cfg_postprocessing["create_descriptives"]
         var_table_cfg = desc_cfg["m_sd_table"]
 
@@ -193,8 +235,8 @@ class Postprocessor:
             states_base_filename = self.cfg_postprocessing["create_descriptives"]["states_base_filename"]
             path_to_state_df = os.path.join(self.data_base_path, f"{states_base_filename}_{dataset}")
             state_df = self.data_loader.read_pkl(path_to_state_df) if os.path.exists(path_to_state_df) else None
-            esm_id_col = self.var_cfg["preprocessing"]["esm_id_col"][dataset]
-            esm_tp_col = self.var_cfg["preprocessing"]["esm_timestamp_col"][dataset]
+            esm_id_col = self.cfg_preprocessing["general"]["esm_id_col"][dataset]
+            esm_tp_col = self.cfg_preprocessing["general"]["esm_timestamp_col"][dataset]
 
             rel_dct[dataset] = self.descriptives_creator.compute_rel(
                 state_df=state_df,
@@ -231,23 +273,18 @@ class Postprocessor:
             self.data_saver.save_json(rel_dct, file_path)
 
     def conduct_significance_tests(self) -> None:
-        """
+        """Conducts significance tests to compare models and compare predictor classes."""
 
-        Returns:
-
-        """
         self.significance_testing.significance_testing()
 
-    def create_cv_results_plot(self) -> None:
-        """
+    def create_cv_results_plots(self) -> None:
+        """Creates a bar plot summarizing CV results for the analyses specified."""
 
-        Returns:
-
-        """
-        # TODO adjust
-        all_results_file_path = os.path.join(self.processed_output_path, "all_cv_results")
-        with open(all_results_file_path, 'r') as infile:
-            all_cv_results_dct = json.load(infile)
+        all_results_file_path = os.path.join(
+            self.cv_shap_results_path,
+            self.cfg_postprocessing["condense_cv_results"]["all_results"]["filename"]
+        )
+        all_cv_results_dct = self.data_loader.read_json(all_results_file_path)
 
         if all_cv_results_dct:
             self.plotter.plot_cv_results_plots_wrapper(
@@ -256,34 +293,31 @@ class Postprocessor:
             )
 
     def create_shap_plots(self) -> None:
-        """
+        """Creates SHAP beeswarm plots for all analyses specified in the cfg."""
 
-        Returns:
-
-        """
-        # TODO Adjust
         self.plotter.plot_shap_beeswarm_plots(
             prepare_shap_data_func=self.shap_processor.prepare_shap_data,
             prepare_shap_ia_data_func=self.shap_processor.prepare_shap_ia_data,
         )
 
     def calculate_exp_lin_models(self) -> None:
-        """
+        """Calculates explanatory linear models with the x best features for selected analyses."""
 
-        Returns:
+        linear_regressor_cfg = self.cfg_postprocessing["calculate_exp_lin_models"]
 
-        """
-        # TODO: Adjust -> Set full_data and all_cv_results as postprocessor attributes!
-        df = pd.read_pickle(os.path.join(self.var_cfg["preprocessing"]["path_to_preprocessed_data"], "full_data"))
+        for feature_combination in self.cfg_postprocessing["general"]["feature_combinations"][
+            "name_mapping"]["main"].keys():
+            for samples_to_include in linear_regressor_cfg["samples_to_include"]:
+                for crit in linear_regressor_cfg["crits"]:
+                    for model_for_features in linear_regressor_cfg["model_for_features"]:
 
-        for feature_combination in self.var_cfg["postprocessing"]["linear_regressor"]["feature_combinations"]:
-            for samples_to_include in self.var_cfg["postprocessing"]["linear_regressor"]["samples_to_include"]:
-                for crit in self.var_cfg["postprocessing"]["linear_regressor"]["crits"]:
-                    for model_for_features in self.var_cfg["postprocessing"]["linear_regressor"]["models"]:
-                        linearregressor = LinearRegressor(
-                            var_cfg=self.var_cfg,
-                            processed_output_path=self.processed_output_path,
-                            df=df,
+                        linear_regressor = LinearRegressor(
+                            cfg_preprocessing=self.cfg_preprocessing,
+                            cfg_analysis=self.cfg_analysis,
+                            cfg_postprocessing=self.cfg_postprocessing,
+                            name_mapping=self.name_mapping,
+                            cv_shap_results_path=self.cv_shap_results_path,
+                            df=self.full_data.copy(),
                             feature_combination=feature_combination,
                             crit=crit,
                             samples_to_include=samples_to_include,
@@ -291,178 +325,56 @@ class Postprocessor:
                             meta_vars=self.meta_vars
                         )
 
-                        linearregressor.get_regression_data()
-                        lin_model = linearregressor.compute_regression_models()
+                        linear_regressor.get_regression_data()
+                        lin_model = linear_regressor.compute_regression_models()
 
-                        self.result_table_creator.create_coefficients_table(
+                        linear_regressor.create_coefficients_table(
                             model=lin_model,
                             feature_combination=feature_combination,
-                            output_dir=os.path.join(self.processed_output_path, "tables")
+                            output_dir=self.cv_shap_results_path,
                         )
+
     def create_lin_model_coefs_supp(self) -> None:
-        """
+        """Creates a new dir containing JSON files with the coefficients of the linear models for each analysis."""
 
-        Returns:
+        filename = self.processed_results_filenames["lin_model_coefs_summarized"]
+        output_dir = os.path.join(
+            self.base_result_path,
+            self.cfg_postprocessing["create_supp_files"]["lin_coefs_output_filename"],
+        )
 
-        """
-        # TODO Adjust
-        self.create_mirrored_dir_with_files(
-            base_dir="../results/run_2012",
-            file_name="lin_model_coefs_summary.json",
-            output_base_dir="../results/run_2012_lin_model_coefs",
+        self.supp_file_creator.create_mirrored_dir_with_files(
+            base_dir=self.cv_shap_results_path,
+            file_name=filename,
+            output_base_dir=output_dir,
         )
 
     def create_shap_values_supp(self) -> None:
-        """
+        """Creates a new dir containing JSON files with the shap_values for each analysis."""
 
-        Returns:
+        filename = self.processed_results_filenames["shap_values_summarized"]
+        output_dir = os.path.join(
+            self.base_result_path,
+            self.cfg_postprocessing["create_supp_files"]["shap_output_filename"],
+        )
 
-        """
-        # TODO Adjust
-        self.create_mirrored_dir_with_files(
-            base_dir="../results/run_2012",
-            file_name="shap_values_summary.pkl",
-            output_base_dir="../results/run_2012_shap_values"
+        self.supp_file_creator.create_mirrored_dir_with_files(
+            base_dir=self.cv_shap_results_path,
+            file_name=filename,
+            output_base_dir=output_dir,
         )
 
     def create_shap_ia_values_supp(self) -> None:
-        """
+        """Creates a new dir containing JSON files with the shap_ia_values for some selected analysis."""
 
-        Returns:
-
-        """
-        # TODO Adjust
-        self.create_mirrored_dir_with_files(
-            base_dir="../results/ia_values_0912",
-            file_name="shap_ia_values_summary.pkl",
-            output_base_dir="../results/run_2012_shap_ia_values"
+        filename = self.processed_results_filenames["shap_ia_values_summarized"]
+        output_dir = os.path.join(
+            self.base_result_path,
+            self.cfg_postprocessing["create_supp_files"]["shap_ia_output_filename"],  # "run_2012_shap_ia_values"
         )
 
-    def create_mirrored_dir_with_files(
-            self,
-            base_dir: str,
-            file_name: str,
-            output_base_dir: str,
-    ) -> None:
-        """
-        """
-        for root, _, files in os.walk(base_dir):
-            if file_name in files:
-                relative_path = os.path.relpath(root, base_dir)
-                target_dir = os.path.join(output_base_dir, relative_path)
-                os.makedirs(target_dir, exist_ok=True)
-
-                input_file_path = os.path.join(root, file_name)
-                output_file_path = os.path.join(target_dir, file_name)
-
-                if file_name.startswith("lin_model_coefs"):
-                    self.process_lin_model_coefs_for_supp(input_file_path, output_file_path)
-                elif file_name.startswith("shap_values"):
-                    self.process_shap_values_for_supp(input_file_path, output_file_path)
-                elif file_name.startswith("shap_ia_values"):
-                    self.process_shap_ia_values_for_supp(input_file_path, output_file_path)
-                else:
-                    raise ValueError(f"Input file {file_name} not supported yet")
-
-    def process_lin_model_coefs_for_supp(self, input_file_path: str, output_file_path: str):
-        """
-        Updates the feature names in the linear model coefficients with the names used in the paper.
-        """
-        lin_model_coefs = self.data_loader.read_json(input_file_path)
-
-        for stat, vals in lin_model_coefs.items():
-            new_feature_names = apply_name_mapping(
-                features=list(vals.keys()),
-                name_mapping=self.name_mapping,
-                prefix=True
-            )
-            # Replace old names with new_feature_names while maintaining the values
-            updated_vals = {new_name: vals[old_name] for old_name, new_name in zip(vals.keys(), new_feature_names)}
-
-            lin_model_coefs[stat] = updated_vals
-
-        # Save the transformed content back to a file
-        with open(output_file_path, 'w') as outfile:
-            json.dump(lin_model_coefs, outfile, indent=4)
-
-    def process_shap_values_for_supp(self, input_file_path: str, output_file_path: str):
-        """
-
-        Args:
-            input_file_path:
-            output_file_path:
-
-        Returns:
-
-        """
-        shap_values = self.data_loader.read_pkl(input_file_path)
-        feature_names_copy = shap_values["feature_names"].copy()
-        feature_names_copy = [feature for feature in feature_names_copy if feature not in self.meta_vars]
-        formatted_feature_names = apply_name_mapping(
-                features=feature_names_copy,
-                name_mapping=self.name_mapping,
-                prefix=True,
-            )
-        shap_values["feature_names"] = formatted_feature_names
-
-        with open(output_file_path, "wb") as f:
-            pickle.dump(shap_values, f)
-
-    def process_shap_ia_values_for_supp(self, input_file_path: str, output_file_path: str):
-        """
-
-        Args:
-            input_file_path:
-            output_file_path:
-
-        Returns:
-
-        """
-        shap_ia_values = self.data_loader.read_pkl(input_file_path)
-        srmc_name_mapping = {f"srmc_{feature}": feature_formatted for feature, feature_formatted
-                             in self.name_mapping["srmc"].items()}
-        renamed_ia_values = self.rename_srmc_keys(shap_ia_values, srmc_name_mapping)
-
-        with open(output_file_path, "wb") as f:
-            pickle.dump(renamed_ia_values, f)
-
-    def rename_srmc_keys(self, data, srmc_name_mapping):
-        """
-        Recursively traverse a nested dictionary and rename:
-          - single string keys that start with 'srmc'
-          - tuple-of-string keys if any string within starts with 'srmc'
-        using the given srmc_name_mapping.
-        """
-        if isinstance(data, dict):
-            new_dict = {}
-            for key, value in data.items():
-
-                # --- Determine the "new_key" based on whether key is string or tuple ---
-                if isinstance(key, str) and key.startswith("srmc"):
-                    # Single string key
-                    new_key = srmc_name_mapping.get(key, key)
-
-                elif isinstance(key, tuple):
-                    # Tuple of keys
-                    replaced_tuple = []
-                    for part in key:
-                        if isinstance(part, str) and part.startswith("srmc"):
-                            replaced_tuple.append(srmc_name_mapping.get(part, part))
-                        else:
-                            replaced_tuple.append(part)
-                    new_key = tuple(replaced_tuple)
-
-                else:
-                    # For any other kind of key, or non-srmc string
-                    new_key = key
-
-                # Recursively process the value
-                new_dict[new_key] = self.rename_srmc_keys(value, srmc_name_mapping)
-
-            return new_dict
-
-        # If `data` is not a dict, just return it as-is (e.g., int, str, list, etc.)
-        return data
-
-
-
+        self.supp_file_creator.create_mirrored_dir_with_files(
+            base_dir=self.shap_ia_results_path,
+            file_name=filename,
+            output_base_dir=output_dir,
+        )

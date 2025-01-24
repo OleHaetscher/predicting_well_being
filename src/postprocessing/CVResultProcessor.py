@@ -50,6 +50,9 @@ class CVResultProcessor:
         self.model_name_mapping = self.cfg_postprocessing["general"]["models"]["name_mapping"]
         self.metric_name_mapping = self.cfg_postprocessing["general"]["metrics"]["name_mapping"]
 
+        self.result_table_cfg = self.cfg_postprocessing["condense_cv_results"]["result_table"]
+        self.table_cat_name_mapping = self.result_table_cfg["mapping"]
+
     @property
     def cat_mapping(self) -> dict[str, list[str]]:
         """
@@ -167,20 +170,18 @@ class CVResultProcessor:
             include_empty_col_between_models: Whether to include an empty column between models for visual separation.
             nnse_analysis: Whether to include only the supplementary (nnse) analysis. Defaults to False.
         """
-        cfg = self.cfg_postprocessing["condense_cv_results"]["result_table"]
-
         if nnse_analysis:
             feature_combo_mapping = self.feature_combo_name_mapping_supp
-            result_str = cfg["result_strs"]["nnse"]
+            result_str = self.result_table_cfg["result_strs"]["nnse"]
         else:
             feature_combo_mapping = self.feature_combo_name_mapping_main
-            result_str = cfg["result_strs"]["main"]
+            result_str = self.result_table_cfg["result_strs"]["main"]
 
         rows = [
             {
-                "feature_combination": feature_combo_mapping[feature_combination],
-                "model": self.model_name_mapping.get(model, model),
-                "metric": self.metric_name_mapping.get(metric, metric),
+                self.table_cat_name_mapping["feature_combination"]: feature_combo_mapping[feature_combination],
+                self.table_cat_name_mapping["model"]: self.model_name_mapping.get(model, model),
+                self.table_cat_name_mapping["metric"]: self.metric_name_mapping.get(metric, metric),
                 "M (SD)": stats.get("M (SD)", "N/A"),
             }
             for feature_combination, models in data.items()
@@ -190,7 +191,12 @@ class CVResultProcessor:
         ]
 
         df = pd.DataFrame(rows)
-        df_pivot = df.pivot(index="feature_combination", columns=["model", "metric"], values="M (SD)")
+        df_pivot = df.pivot(index=self.table_cat_name_mapping["feature_combination"],
+                            columns=[
+                                self.table_cat_name_mapping["model"],
+                                self.table_cat_name_mapping["metric"]
+                            ],
+                            values="M (SD)")
 
         # Custom order for metrics
         metric_order = list(self.metric_name_mapping.values())
@@ -201,7 +207,7 @@ class CVResultProcessor:
                 key=lambda col: (
                     col[0],  metric_order.index(col[1])
                     if col[1] in metric_order
-                    else len(metric_order)  # Custom metric order
+                    else len(metric_order)
                 )
             )
         )
@@ -213,19 +219,11 @@ class CVResultProcessor:
         custom_order = [feature_combo_mapping[k] for k in feature_combo_mapping]
         df_pivot = df_pivot.reindex(custom_order, fill_value="N/A")
 
-        if cfg["store"]:
+        if self.result_table_cfg["store"]:
             output_path = os.path.join(
                 output_dir,
-                f"{cfg['file_base_name']}_{crit}_{samples_to_include}_{result_str}.xlsx",
+                f"{self.result_table_cfg['file_base_name']}_{crit}_{samples_to_include}_{result_str}.xlsx",
             )
             self.data_saver.save_excel(df_pivot, output_path)
 
         print(f"Processed {crit}_{samples_to_include}_{result_str}")
-
-
-
-
-
-
-
-

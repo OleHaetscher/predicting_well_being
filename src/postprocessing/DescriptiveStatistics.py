@@ -8,7 +8,8 @@ import openpyxl
 import pingouin as pg
 
 from src.utils.DataSaver import DataSaver
-from src.utils.utilfuncs import apply_name_mapping, format_df, separate_binary_continuous_cols, NestedDict, remove_leading_zero
+from src.utils.utilfuncs import apply_name_mapping, format_df, separate_binary_continuous_cols, NestedDict, remove_leading_zero, \
+    inverse_code
 
 
 class DescriptiveStatistics:
@@ -27,14 +28,14 @@ class DescriptiveStatistics:
     for the descriptive analysis.
 
     Attributes:
-        var_cfg (dict): Variable configuration specifying preprocessing and postprocessing details.
-        desc_cfg (dict): Specific configuration for generating descriptives.
-        cfg_postprocessing (dict): Configuration for the postprocessing steps.
-        data_loader (DataLoader): Utility for loading datasets.
+        cfg_preprocessing (NestedDict): Yaml config specifying details on preprocessing (e.g., scales, items).
+        cfg_analysis (NestedDict): Yaml config specifying details on the ML analysis (e.g., CV, models).
+        cfg_postprocessing (NestedDict): Yaml config specifying details on postprocessing (e.g., tables, plots).
+        desc_cfg (NestedDict): Config for generating descriptives, part of cfg_postprocessing.
+        name_mapping (NestedDict): Mapping of feature names for presentation purposes.
+        data_loader (DataLoader): Utility for loading different data formats.
         data_saver (DataSaver): Utility for saving results in various formats.
-        fix_cfg (dict): Fixed configuration details for features and criteria.
-        name_mapping (dict): Mapping of feature names to descriptive names.
-        datasets (list): List of datasets to include in the analysis.
+        datasets (list[str]): List of datasets to include in the analysis.
         esm_id_col_dct (dict): Dictionary mapping datasets to their unique ID column for ESM data.
         esm_tp_col_dct (dict): Dictionary mapping datasets to their time-point column for ESM data.
         data_base_path (str): Path to the preprocessed data used for analysis.
@@ -43,39 +44,43 @@ class DescriptiveStatistics:
     """
     def __init__(
         self,
-        fix_cfg: NestedDict,
-        var_cfg: NestedDict,
+        cfg_preprocessing: NestedDict,
+        cfg_analysis: NestedDict,
         cfg_postprocessing: NestedDict,
         name_mapping: NestedDict,
         full_data: pd.DataFrame,
+        base_result_path: str,
     ) -> None:
         """
          Initializes the DescriptiveStatistics class.
 
          Args:
-             fix_cfg: Fixed configuration details for features and criteria (e.g., scales, endpoints).
-             var_cfg: Variable configuration specifying preprocessing and postprocessing details.
-             cfg_postprocessing: Configuration dictionary for the postprocessing steps.
-             name_mapping: Mapping of feature names to descriptive names.
-             full_data: Full dataset containing all features and criteria used in the analysis.
-
+            cfg_preprocessing: Yaml config specifying details on preprocessing (e.g., scales, items).
+            cfg_analysis: Yaml config specifying details on the ML analysis (e.g., CV, models)
+            cfg_postprocessing: Yaml config specifying details on postprocessing (e.g., tables, plots)
+            name_mapping: Mapping of feature names in code to features names in paper.
+            full_data: Full dataset containing all features and criteria used in the analysis.
+            base_result_path: Base paths of all results.
          """
-        self.var_cfg = var_cfg
-        self.desc_cfg = self.var_cfg["postprocessing"]["descriptives"]  # TODO fix at the end
+        self.cfg_preprocessing = cfg_preprocessing
+        self.cfg_analysis = cfg_analysis
         self.cfg_postprocessing = cfg_postprocessing
+        self.desc_cfg = self.cfg_postprocessing["create_descriptives"]
+        self.name_mapping = name_mapping
 
         self.data_loader = DataLoader()
         self.data_saver = DataSaver()
+        self.datasets = self.cfg_preprocessing["general"]["datasets_to_be_included"]
 
-        self.fix_cfg = fix_cfg
-        self.name_mapping = name_mapping
-        self.datasets = self.var_cfg["general"]["datasets_to_be_included"]
+        self.esm_id_col_dct = self.cfg_preprocessing["general"]["esm_id_col"]
+        self.esm_tp_col_dct = self.cfg_preprocessing["general"]["esm_timestamp_col"]
 
-        self.esm_id_col_dct = self.var_cfg["preprocessing"]["esm_id_col"]
-        self.esm_tp_col_dct = self.var_cfg["preprocessing"]["esm_timestamp_col"]
-
-        self.data_base_path = self.var_cfg['analysis']["path_to_preprocessed_data"]
-        self.desc_results_base_path = self.var_cfg['postprocessing']["descriptives"]["base_path"]
+        self.data_base_path = self.cfg_preprocessing['general']["path_to_preprocessed_data"]
+        self.base_result_path = base_result_path
+        self.desc_results_base_path = os.path.join(
+            self.base_result_path,
+            self.cfg_postprocessing["general"]["data_paths"]["descriptives"]
+        )
 
         self.full_data = full_data
 
@@ -118,7 +123,6 @@ class DescriptiveStatistics:
             df_subset = full_df[prefixed_cols]
             binary_vars, continuous_vars = separate_binary_continuous_cols(df_subset)
 
-            # Compute statistics for continuous variables
             if continuous_vars:
                 cont_stats = self.calculate_cont_stats(
                     df=df_subset,
@@ -129,7 +133,6 @@ class DescriptiveStatistics:
                 )
                 results.append(cont_stats)
 
-            # Compute statistics for binary variables
             if binary_vars:
                 bin_stats = self.calculate_bin_stats(
                     df=df_subset,
@@ -156,7 +159,7 @@ class DescriptiveStatistics:
         final_table = final_table.drop(columns=["M", "%"])
 
         final_table["scale_endpoints"] = final_table["Variable"].apply(
-            lambda feat: self.get_scale_endpoints(self.fix_cfg.copy(), feat)
+            lambda feat: self.get_scale_endpoints(self.cfg_preprocessing.copy(), feat)
         )
 
         # reorder columns
@@ -177,20 +180,27 @@ class DescriptiveStatistics:
             file_path = os.path.join(self.desc_results_base_path, filename)
             self.data_saver.save_excel(final_table, file_path, index=store_index)
 
-    def get_scale_endpoints(self, data: dict, feature_name: str) -> Union[np.nan, tuple[float, float]]:
+    def get_scale_endpoints(self,
+                            data: Union[NestedDict, dict, list],
+                            feature_name: str) -> Union[np.nan, tuple[float, float]]:
         """
-        Recursively searches a nested dictionary/list structure to find an entry
-        where "name" == target_name and returns the "scale_endpoints" as a (min, max) tuple.
+        Searches a nested dictionary or list structure to locate an entry where the "name" key matches the given feature name.
+        If found, it extracts and returns the "scale_endpoints" as a tuple of (min, max). Handles feature names with specific prefixes.
 
         Args:
-            data:
-            feature_name:
+            data (Union[dict, list]): The nested structure (dictionary or list) to search.
+            feature_name (str): The name of the feature to search for.
+                If the name starts with a prefix ("pl_", "srmc_", "mac_", "sens:"), the prefix is stripped before matching.
 
         Returns:
-            np.nan if no match is found, or the scale endpoints as a tuple (min, max).
+            Union[np.nan, Tuple[float, float]]:
+                - A tuple (min, max) if the feature is found and has scale endpoints.
+                - None if the feature is not found or does not have scale endpoints.
 
+        Notes:
+            - Supported prefixes for feature names include: "pl_", "srmc_", "mac_", and "sens:".
+            - The method supports recursive search through both dictionary values and list elements.
         """
-        # Remove prefix
         if any(feature_name.startswith(prefix) for prefix in ["pl_", "srmc_", "mac_", "sens:"]):
             feature_name_no_prefix = feature_name.split('_', 1)[-1]
         else:
@@ -201,22 +211,19 @@ class DescriptiveStatistics:
             if data.get("name") == feature_name_no_prefix:
                 scale_endpoints = data.get("scale_endpoints")
                 if scale_endpoints is not None:
-                    return (scale_endpoints["min"], scale_endpoints["max"])
+                    return scale_endpoints["min"], scale_endpoints["max"]
 
-            # If not matched at this level, recursively search all values
             for key, value in data.items():
                 result = self.get_scale_endpoints(value, feature_name_no_prefix)
                 if result is not None:
                     return result
 
         elif isinstance(data, list):
-            # If data is a list, search each element
             for item in data:
                 result = self.get_scale_endpoints(item, feature_name_no_prefix)
                 if result is not None:
                     return result
 
-        # If we reach here, no match was found in this branch
         return None
 
     @staticmethod
@@ -241,10 +248,7 @@ class DescriptiveStatistics:
         Returns:
             pd.DataFrame: A DataFrame containing the calculated statistics with descriptive column names.
         """
-        # Aggregate statistics
         aggregated = df[continuous_vars].agg(list(stats.keys())).transpose()
-
-        # Rename columns to match desired output names
         aggregated.columns = [stats[func] for func in stats.keys()]
 
         if not var_as_index:
@@ -299,7 +303,7 @@ class DescriptiveStatistics:
         Computes well-being item statistics for a given dataset.
 
         This function:
-        - Loads state and trait data for the specified dataset.
+        - Takes state and trait data for the specified dataset as input.
         - Applies name mapping, reorders columns, and renames them with "state_" or "trait_" prefixes.
         - Calculates descriptive statistics for well-being items (M, SD).
         - Optionally computes between-person (BP) and within-person (WP) correlations, and ICC1/ICC2 for state items.
@@ -308,6 +312,9 @@ class DescriptiveStatistics:
         Args:
             dataset: Name of the dataset for which statistics are computed.
             state_df: pd.DataFrame containing state data for the given dataset.
+            trait_df: pd.DataFrame containing trait data for the given dataset.
+            esm_id_col: Column name identifying unique IDs in the ESM data.
+            esm_tp_col: Column name identifying time points in the ESM data.
 
         Returns:
             dict: A dictionary containing:
@@ -318,17 +325,8 @@ class DescriptiveStatistics:
                 - "icc2": ICC2 (if applicable).
                 - "trait_corr": Correlation matrix for trait items (if applicable).
         """
-        # Configurations and paths
-        #traits_base_filename = self.cfg_postprocessing["create_descriptives"]["traits_base_filename"]
-        #states_base_filename = self.cfg_postprocessing["create_descriptives"]["states_base_filename"]
-        #esm_id_col = self.var_cfg["preprocessing"]["esm_id_col"][dataset]
-        #esm_tp_col = self.var_cfg["preprocessing"]["esm_timestamp_col"][dataset]
-        #path_to_state_df = os.path.join(self.data_base_path, f"{states_base_filename}_{dataset}")
-        #path_to_trait_df = os.path.join(self.data_base_path, f"{traits_base_filename}_{dataset}")
         result_dct = {}
 
-        # Load and process state data
-        #state_df = self.data_loader.read_pkl(path_to_state_df) if os.path.exists(path_to_state_df) else None  # TODO DRY!
         if state_df is not None:
             state_df = state_df.drop(columns=["wb_state", "pa_state", "na_state"], errors="ignore")
 
@@ -343,8 +341,6 @@ class DescriptiveStatistics:
                 ]
             state_df.columns = [f"state_{col}" if col not in [esm_id_col, esm_tp_col] else col for col in state_df.columns]
 
-        # Load and process trait data
-        #trait_df = self.data_loader.read_pkl(path_to_trait_df) if os.path.exists(path_to_trait_df) else None
         if trait_df is not None:
             trait_df = trait_df.drop(columns=["wb_trait", "pa_trait", "na_trait"], errors="ignore")
 
@@ -367,7 +363,7 @@ class DescriptiveStatistics:
             m_sd_df_wb_items = self.calculate_cont_stats(
                 df=df_filtered,
                 continuous_vars=cols_filtered,
-                stats=self.desc_cfg["cont_agg_dct"],
+                stats=self.desc_cfg["m_sd_table"]["cont_agg_dct"],
                 var_as_index=True,
             )
             result_dct["m_sd"] = m_sd_df_wb_items
@@ -419,6 +415,7 @@ class DescriptiveStatistics:
         merged_df = state_df.copy()
         for suffix in common_suffixes:
             col_a, col_b = prefix_a + suffix, prefix_b + suffix
+
             merged_df[suffix] = state_df[[col_a, col_b]].mean(axis=1)
             merged_df.drop([col_a, col_b], axis=1, inplace=True)
 
@@ -534,14 +531,17 @@ class DescriptiveStatistics:
 
         Args:
             dataset: The dataset for which to compute reliability.
+            state_df: pd.DataFrame containing state data for the given dataset.
+            trait_df: pd.DataFrame containing trait data for the given dataset.
+            decimals: decimals to round the rel values to.
 
         Returns:
             Dict[str, float]: A dictionary with criteria as keys and their reliabilities as values.
         """
         state_rel_series = pd.Series(dtype=float)
         trait_rel_series = pd.Series(dtype=float)
-        crit_cols = self.fix_cfg["var_assignments"]["crit"]  # cfg_preprocessing
-        crit_avail_dct = self.var_cfg["analysis"]["crit_available"]  # cfg_analysis
+        crit_cols = self.cfg_preprocessing["var_assignments"]["crit"]
+        crit_avail_dct = self.cfg_analysis["crit_available"]
 
         for crit in crit_cols:
             if dataset not in crit_avail_dct[crit]:
@@ -588,7 +588,6 @@ class DescriptiveStatistics:
             else:
                 raise ValueError("Unknown criterion")
 
-        # Map indices to descriptive names
         trait_rel_series.index = apply_name_mapping(
             features=list(trait_rel_series.index),
             name_mapping=self.name_mapping,
@@ -607,7 +606,6 @@ class DescriptiveStatistics:
             df: pd.DataFrame,
             dataset: str,
             crit_type: str,
-            # base_filename: str,
             state_cols_to_select: Optional[list[str]] = None,
             n_measures_person_col: Optional[str] = None,
             person_id_col: Optional[str] = None,
@@ -620,8 +618,8 @@ class DescriptiveStatistics:
 
         Args:
             dataset: The dataset identifier.
+            df: DataFrame containing the data to process.
             crit_type: Type of criterion ("trait" or "state").
-            base_filename: Base filename used to locate the data.
             state_cols_to_select: List of state columns to retain (used for "state" data).
             n_measures_person_col: Column name for the number of measures per person (used for "state" data).
             person_id_col: Column name for the unique person identifier (used for "state" data).
@@ -629,12 +627,9 @@ class DescriptiveStatistics:
         Returns:
             pd.DataFrame: Processed data ready for reliability analysis.
         """
-        #data_path = os.path.join(self.data_base_path, f"{base_filename}_{dataset}")
-        #df = self.data_loader.read_pkl(data_path)
-
         if crit_type == "state":
-            timestamp_col = self.var_cfg["preprocessing"]["esm_timestamp_col"][dataset]
-            id_col = self.var_cfg["preprocessing"]["esm_id_col"][dataset]
+            timestamp_col = self.cfg_preprocessing["general"]["esm_timestamp_col"][dataset]
+            id_col = self.cfg_preprocessing["general"]["esm_id_col"][dataset]
 
             df[timestamp_col] = pd.to_datetime(df[timestamp_col])
             df[n_measures_person_col] = df.sort_values(by=timestamp_col).groupby(id_col).cumcount()
@@ -665,8 +660,7 @@ class DescriptiveStatistics:
         Returns:
             float or None: Cronbach's alpha value if the conditions are met, otherwise None.
         """
-        # Retrieve item configurations
-        item_cfg = self.fix_cfg["person_level"]["criterion"]
+        item_cfg = self.cfg_preprocessing["person_level"]["criterion"]
 
         pa_trait_items = item_cfg[0]["item_names"].get(dataset, [])
         na_trait_items = item_cfg[1]["item_names"].get(dataset, [])
@@ -679,11 +673,9 @@ class DescriptiveStatistics:
 
         selected_items = item_dct[construct]
 
-        # Inverse code for 'wb_trait'
-        if construct == "wb_trait" and selected_items:  # TODO CONFIG
-            df[na_trait_items] = self.inverse_code(df[na_trait_items], min_scale=1, max_scale=6)
+        if construct == "wb_trait" and selected_items:
+            df[na_trait_items] = inverse_code(df[na_trait_items], min_scale=1, max_scale=6)
 
-        # Compute Cronbach's alpha if there are enough items
         df_filtered = df[selected_items] if selected_items else pd.DataFrame()
         if not df_filtered.empty and len(df_filtered.columns) > 1:
             alpha = pg.cronbach_alpha(data=df_filtered)[0]
@@ -692,23 +684,8 @@ class DescriptiveStatistics:
 
         return alpha
 
-    @staticmethod  # TODO move to utilfuncs?
-    def inverse_code(df: pd.DataFrame, min_scale: int, max_scale: int) -> pd.DataFrame:
-        """
-        Inverse codes the negative affect items by subtracting each value from the maximum value of the scale.
-
-        Args:
-            df: The DataFrame containing the negative affect items.
-            min_scale: The minimum value of the scale.
-            max_scale: The maximum value of the scale.
-
-        Returns:
-            pd.DataFrame: DataFrame with inverse-coded negative affect items.
-        """
-        return max_scale + min_scale - df
-
+    @staticmethod
     def compute_split_half_rel(
-            self,
             df: pd.DataFrame,
             dataset: str,
             construct: str,
@@ -736,15 +713,9 @@ class DescriptiveStatistics:
         Returns:
             Optional[float]: Estimated split-half reliability or NaN if insufficient data.
         """
-        # Check if data is present
         if construct not in df.columns:  # This may happen
             print(f"The construct '{construct}' is not a column in the DataFrame for dataset {dataset}.")
-        if user_id_col not in df.columns:
-            raise ValueError(f"The column '{user_id_col}' is not in the DataFrame for dataset {dataset}.")
-        if measurement_idx_col not in df.columns:
-            raise ValueError(f"The DataFrame for dataset {dataset} must have the column '{measurement_idx_col}'.")
 
-        # Compute means for the two halves
         first_half_means, second_half_means = [], []
         for user_id, group in df.groupby(user_id_col):
             group = group.sort_values(by=measurement_idx_col)
@@ -754,19 +725,19 @@ class DescriptiveStatistics:
                 even_mean = group[group[measurement_idx_col] % 2 == 0][construct].mean()
                 first_half_means.append(odd_mean)
                 second_half_means.append(even_mean)
+
             elif method == "individual_halves":
                 half = len(group) // 2
                 first_half_means.append(group.iloc[:half][construct].mean())
                 second_half_means.append(group.iloc[half:][construct].mean())
+
             else:
                 raise ValueError(f"Unknown method '{method}'. Use 'odd_even' or 'individual_halves'.")
 
-        # Convert to Series and remove NaN pairs
         first_half_series, second_half_series = pd.Series(first_half_means), pd.Series(second_half_means)
         valid_idx = (~first_half_series.isna()) & (~second_half_series.isna())
         first_half_series, second_half_series = first_half_series[valid_idx], second_half_series[valid_idx]
 
-        # Calculate correlation and reliability
         if len(first_half_series) < 2:
             print(f"Not enough data to compute correlation for dataset '{dataset}'.")
             return np.nan
@@ -796,15 +767,15 @@ class DescriptiveStatistics:
         Args:
             dataset: Dataset name for saving the table.
             m_sd_df: DataFrame with M (SD) statistics indexed by item names.
+            decimals: Number of decimals to round in the item table.
+            store: If true, table is stored
+            base_filename: Base filename for saving the table that is equal for all datasets.
             icc1: Optional Series of ICC1 values indexed by item names.
             icc2: Optional Series of ICC2 values indexed by item names.
             rel: Optional Series of reliability values indexed by item names.
             bp_corr: Optional DataFrame of between-person correlations.
             wp_corr: Optional DataFrame of within-person correlations.
             trait_corr: Optional DataFrame of trait correlations.
-
-        Returns:
-            None
         """
         unified_index = m_sd_df.index
         table = m_sd_df.reindex(unified_index)
@@ -834,10 +805,8 @@ class DescriptiveStatistics:
         table = format_df(df=table.dropna(axis=1, how="all"), capitalize=False, decimals=decimals)
         excluded_cols = ["M", "SD"]
         for col in table.columns:
-            # For each column NOT in excluded_cols, convert to string then remove leading zeros
             if col not in excluded_cols:
                 table[col] = table[col].astype(str).apply(remove_leading_zero)
-        print()
 
         if store:
             file_path = os.path.join(self.desc_results_base_path, f"{dataset}_{base_filename}")

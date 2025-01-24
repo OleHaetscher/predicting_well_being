@@ -40,6 +40,7 @@ class SignificanceTesting:
         models (list[str]): List of models to compare (e.g., `elasticnet`, `randomforestregressor`).
         samples_to_include (list[str]): List of sample subsets (e.g., `selected`, `control`).
         decimals (int): Number of decimal places for rounding results.
+        delta_r2_strng (str): String representation for the delta R² value.
         t_strng (str): String representation for the t-value.
         p_strng (str): String representation for the p-value.
         p_fdr_strng (str): String representation for the FDR-corrected p-value.
@@ -47,14 +48,14 @@ class SignificanceTesting:
 
     def __init__(
         self,
-        base_result_dir: str,
+        base_result_path: str,
         cfg_postprocessing: NestedDict,
     ) -> None:
         """
         Initializes the SignificanceTesting class.
 
         Args:
-            base_result_dir: Path to the directory containing CV results.
+            base_result_path: Base path containing all results
             cfg_postprocessing: Configuration dictionary for postprocessing.
 
         Attributes Initialized:
@@ -65,9 +66,9 @@ class SignificanceTesting:
         self.cfg_postprocessing = cfg_postprocessing
         self.cfg_sig = self.cfg_postprocessing["conduct_significance_tests"]
 
-        self.sig_result_dir = os.path.join(  # TODO Do in other functions, too
-            base_result_dir,
-            self.cfg_postprocessing["general"]["data_paths"]["sig_test_output_path"]
+        self.sig_result_dir = os.path.join(
+            base_result_path,
+            self.cfg_postprocessing["general"]["data_paths"]["sig_tests"]
         )
 
         self.data_loader = DataLoader()
@@ -85,9 +86,11 @@ class SignificanceTesting:
         self.models = list(self.cfg_postprocessing["general"]["models"]["name_mapping"].keys())
         self.samples_to_include = list(self.cfg_postprocessing["general"]["samples_to_include"]["name_mapping"].keys())
         self.decimals = self.cfg_sig["decimals"]
-        self.t_strng = "t"
-        self.p_strng = "p"
-        self.p_fdr_strng = "p (FDR-corrected)"
+
+        self.delta_r2_str = self.cfg_sig["delta_r2_str"]
+        self.t_strng = self.cfg_sig["t_strng"]
+        self.p_strng = self.cfg_sig["p_strng"]
+        self.p_fdr_strng = self.cfg_sig["p_fdr_strng"]
 
     def significance_testing(self):
         """
@@ -628,7 +631,7 @@ class SignificanceTesting:
                 sig_results_dct[fc][sti] = {
                     f"M (SD) {self.model_name_mapping[model1_name]}": f"{mean1:.{self.decimals}f} ({sd1:.{self.decimals}f})",
                     f"M (SD) {self.model_name_mapping[model2_name]}": f"{mean2:.{self.decimals}f} ({sd2:.{self.decimals}f})",
-                    "delta_R2": f"{delta_R2:.{self.decimals}f}",
+                    self.delta_r2_str: f"{delta_R2:.{self.decimals}f}",
                     self.t_strng: f"{t_val:.{self.decimals}f}",
                     self.p_strng: p_val,  # Kept as is, assuming p-value formatting is handled elsewhere
                 }
@@ -702,7 +705,7 @@ class SignificanceTesting:
                         sig_results_dct[model][samples_to_include][list(comparison.keys())[1]] = {
                             f"M (SD) Personal": f"{mean_pl:.{self.decimals}f} ({sd_pl:.{self.decimals}f})",
                             f"M (SD) Other": f"{mean_combo:.{self.decimals}f} ({sd_combo:.{self.decimals}f})",
-                            f"delta_R2": f"{delta_R2:.{self.decimals}f}",
+                            self.delta_r2_str: f"{delta_R2:.{self.decimals}f}",
                             self.p_strng: p_val,  # Kept as is, assuming p-value formatting is handled elsewhere
                             self.t_strng: f"{t_val:.{self.decimals}f}"
                         }

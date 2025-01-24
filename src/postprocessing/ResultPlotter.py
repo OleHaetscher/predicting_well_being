@@ -43,7 +43,7 @@ class ResultPlotter:
         plot_base_dir (str): Path where all generated plots will be saved.
     """
 
-    def __init__(self, cfg_postprocessing: NestedDict, base_result_path: str):
+    def __init__(self, cfg_postprocessing: NestedDict, base_result_path: str) -> None:
         self.cfg_postprocessing = cfg_postprocessing
 
         self.cfg_cv_results_plot = self.cfg_postprocessing["create_cv_results_plots"]
@@ -1433,7 +1433,6 @@ class ResultPlotter:
         for path_idx, var in enumerate([samples_to_include, crit, model, feature_combination]):
             if var is not None:
                 path_components[path_idx] = var
-                print(path_components)
         filtered_path_components = [comp for comp in path_components if comp]
 
         return os.path.normpath(os.path.join(self.plot_base_dir, *filtered_path_components))
