@@ -1,12 +1,12 @@
 general:
   datasets_to_be_included: [cocoesm, cocoms, cocout, emotions, pia, zpid ] # cocoesm, cocoms, cocout, emotions, pia, zpid
-  log_dir: "../logs/TEST_PRETTY_0701"  # only for preprocessing, analysis logs are stored in the result folders
+  log_dir: "../logs/TEST_PRETTY"  # only for preprocessing, analysis logs are stored in the result folders
   log_name: x
 
   steps:
     preprocessing: false
-    analysis: false
-    postprocessing: true
+    analysis: true
+    postprocessing: false
 
 preprocessing:
   path_to_raw_data: "../data/raw"
@@ -105,8 +105,8 @@ analysis:
   store_pred_and_true: true
 
   tests:
-    sample: false
-    sample_size: 100
+    sample: true
+    sample_size: 120
 
   methods_to_apply:
     #- select_samples
@@ -171,9 +171,9 @@ analysis:
   no_control_lst: ["pl", "srmc", "sens", "mac", "all_in"] # we do not run control analyses for these combinations
 
   params: # adjusted by SLURM
-    prediction_model: elasticnet  # elasticnet, randomforestregressor
+    prediction_model: randomforestregressor  # elasticnet, randomforestregressor
     crit: wb_state  # wb_state, wb_trait, etc
-    feature_combination: pl_srmc_mac_nnse # pl, srmc, sens, mac, pl_srmc, pl_sens, pl_srmc_sens, pl_mac, pl_srmc_mac, all_in
+    feature_combination: srmc # pl, srmc, sens, mac, pl_srmc, pl_sens, pl_srmc_sens, pl_mac, pl_srmc_mac, all_in
     samples_to_include: all  # all, selected, control
 
   cv:
@@ -235,9 +235,9 @@ analysis:
 
   parallelize:
     parallelize_shap: true
-    shap_n_jobs: 1
+    shap_n_jobs: 3
     parallelize_inner_cv: true
-    inner_cv_n_jobs: 1
+    inner_cv_n_jobs: 3
     parallelize_shap_ia_values: true
     shap_ia_values_n_jobs: 1
     parallelize_imputation_runs: true # Cannot parallelize columns
@@ -251,7 +251,7 @@ analysis:
     max_order: 2  # 3; max interaction order, one correspond to the normal SHAP values
     num_samples: 100  # 100
 
-  output_path: "../results/local_tests"
+  output_path: "../results/local_tests_newbranch"
 
   output_filenames:
     performance: 'cv_results'  # .json
@@ -259,359 +259,3 @@ analysis:
     shap_ia_values_for_local: 'shap_ia_values_for_local' #.pkl
     shap_ia_values_for_cluster: 'shap_ia_values_for_cluster' #.pkl
     lin_model_coefs: 'lin_model_coefficients' # .pkl
-
-postprocessing:
-  methods:
-    - condense_cv_results
-    #- sanity_check_pred_vs_true
-
-    #- create_lin_model_coefs_supp
-    #- create_shap_values_supp
-    #- create_shap_ia_values_supp
-
-    #- create_descriptives
-    #- conduct_significance_tests
-    #- create_cv_results_plots
-    #- create_shap_plots
-
-    #- calculate_exp_lin_models
-
-  # We do merging on the cluster, thus, we have only one result path with the processed results
-  processed_results_path: "../results/run_2012"
-  shap_ia_values_path: "../results/ia_values_0912"
-
-  summarized_file_names:
-    cv_results: "cv_results_summary.json"
-    lin_model_coefs: "lin_model_coefs_summary.json"
-    shap_values: "shap_values_summary.pkl"
-    shap_ia_values: "shap_ia_values_summary.pkl"
-
-  cv_results:
-    table_feature_combo_order:
-      - pl
-      - pl_nnse
-      - srmc
-      - sens
-      - mac
-      - pl_srmc
-      - pl_srmc_nnse
-      - pl_sens
-      - pl_sens_nnse
-      - pl_srmc_sens
-      - pl_srmc_sens_nnse
-      - srmc_control
-      - pl_srmc_control
-      - pl_mac
-      - pl_mac_nnse
-      - pl_srmc_mac
-      - pl_srmc_mac_nnse
-      - all_in
-      - all_in_nnse
-
-  descriptives:
-    base_path: "../results/descriptives"
-    store: true
-    cont_agg_dct: {mean: M, std: SD}
-    bin_agg_lst: ["%"]
-    wb_items:
-      state_order:
-        - Enthusiastic
-        - Excited
-        - Happy
-        - Relaxed
-        - Valence
-        - Angry
-        - Anxious
-        - Sad
-        - Worried
-      trait_order:
-        - Enthusiastic
-        - Excited
-        - Happy
-        - Relaxed
-        - Valence
-        - Angry
-        - Anxious
-        - Sad
-        - Worried
-
-
-  check_pred_vs_true:
-    path: "../results/mac_pred_true/"
-    reps_to_check: [0, 1]  # attention, may overshoot memory
-    store: true
-
-  metrics:
-    - spearman
-    - r2
-    - pearson
-    - neg_mean_squared_error
-
-  significance_tests:
-    base_result_path: "../results/sig_tests_1312"  # this contains only the results necessary for testing
-    alpha: 0.05 # .05
-    metric: r2 # r2
-    crit: wb_state  # do this only for wb_state
-    store: true  # TODO Change order
-    stat_order_compare_models:
-      - "M (ENR)"
-      - "SD (ENR)"
-      - "M (RFR)"
-      - "SD (RFR)"
-      - "delta_R2"
-      - "t"
-      - "p"
-      - "p (FDR-corrected)"
-    stat_order_compare_predictor_classes:
-      - "M (Personal)"
-      - "SD (Personal)"
-      - "M (Other)"
-      - "SD (Other)"
-      - "delta_R2"
-      - "t"
-      - "p"
-      - "p (FDR-corrected)"
-
-    stat_mapping:
-      t_val: "t"
-      p_val: "p"
-      p_val_fdr: "p (FDR-corrected)"
-      #"elasticnet M (SD)": "MSD ENR"  # TODO DO I still need this?
-      #"randomforestregressor M (SD)": "MSD RFR"
-
-    compare_models: true
-    compare_predictor_classes: true
-
-    model_comparison_data:
-      feature_combinations:
-        - pl
-        - srmc
-        - sens
-        - mac
-        - pl_srmc
-        - pl_sens
-        - pl_srmc_sens
-        - pl_mac
-        - pl_srmc_mac
-        - all_in
-      samples_to_include:
-        - all
-        - selected
-        - control
-    predictor_class_comparison_data:
-      feature_combinations:
-        - pl
-        - pl_srmc
-        - pl_sens
-        - pl_srmc_sens
-        - pl_mac
-        - pl_srmc_mac
-      samples_to_include:
-        - all
-        - selected
-        - control
-  linear_regressor:  # TODO To excel
-    feature_combinations:
-      #- pl
-      #- srmc
-      #- sens
-      #- mac
-      #- pl_srmc
-      #- pl_sens
-      #- pl_srmc_sens
-      #- pl_mac
-      #- pl_srmc_mac
-      - all_in
-    samples_to_include:
-      - all #- selected  # selected
-    crits:
-      - wb_state
-    models:
-      - randomforestregressor
-    num_features: 6
-
-  plots:  # TODO: Adhere to NHB Style
-    store_plots: true
-    plots:
-      # - importance_plot  # not used right now
-      - beeswarm_plot
-    custom_cmap_colors:  # for a linear colormap, used e.g. in the beeswarm plots
-      - "#5E9ACC"  # Blue
-      - "#4F84B1"  # Deep blue
-      - "#9DB9BF"  # Soft gray-blue
-      - "#7DA5A9"  # Muted teal
-      - "#B9D1B9"  # Light green
-      - "#A3C7A1"  # Green
-      - "#E3EEE5"  # Very pale green
-      - "#CEE7CF"  # Light mint
-    feature_combo_name_mapping:
-      # Main analyses
-      pl: "Personal"
-      srmc: "Situational (ESM)"  # self-reported
-      sens: "Situational (Sensing)"
-      mac: "Societal" # "Macro-level"
-      pl_srmc: "Personal + Situational (ESM)"
-      pl_sens: "Personal + Situational (Sensing)"
-      pl_srmc_sens: "Personal + Situational (ESM) + Situational (Sensing)"
-      pl_mac: "Personal + Societal"
-      pl_srmc_mac: "Personal + Situational (ESM) + Societal"
-      all_in: "Personal + Situational (ESM) + Situational (Sensing) + Societal"
-      srmc_ia_values: "Situational (ESM): Interaction Values"
-
-      # Additional analyses
-      pl_nnse: "Personal without neuroticism facets and self-esteem"
-      pl_srmc_nnse: "Personal + Situational (ESM) without neuroticism facets and self-esteem"
-      pl_sens_nnse: "Personal + Situational (Sensing) without neuroticism facets and self-esteem"
-      pl_mac_nnse: "Personal + Societal without neuroticism facets and self-esteem"
-      pl_srmc_mac_nnse: "Personal + Situational (ESM) + Societal without neuroticism facets and self-esteem"
-      pl_srmc_sens_nnse: "Personal + Situational (ESM) + Situational (Sensing) without neuroticism facets and self-esteem"
-      all_in_nnse: "Personal + Situational (ESM) + Situational (Sensing) + Societal without neuroticism facets and self-esteem"
-      pl_srmc_control: "Personal + ESM only for CoCoMS samples that contain Sensing data"
-      srmc_control: "ESM only for CoCoMS samples that contain Sensing data"
-
-    cv_results_plot:
-      crits: [ wb_state ]
-      samples_to_include: [ combo ]  # combo
-      metrics: [ pearson ]  # must be iterable
-      models:
-        - elasticnet
-        - randomforestregressor
-      figure_params:  # 18122024
-        num_rows: 4
-        num_cols: 3
-        width: 20
-        height: 10
-        x_min: 0
-        x_max: 0.70
-        bar_width: 0.15
-        title_pad: 30
-        legend_pos: [0.955, 0.18]
-        y_axis_x_pos: [0.09, 0.4073, 0.725]
-        y_axis_y_pos: [[0.10, 0.908], [0.10, 0.908], [0.5202, 0.908]]
-        title_pos: [0.365, 1]
-        empty_cells:  # TODO: Add for SHAP beeswarm plot as well
-          - [ 3, 2 ]
-          - [ 2, 2 ]
-        tight_layout: [0.02, 0.02, 0.98, 0.98]  # [0, 0.05, 1, 0.95]
-      fontsizes:
-        title: 22  # 20
-        tick_params: 15  # 15
-        legend: 15  # 15
-        label: 15  # 15
-      color_dct:  # only differ pl and the rest
-        pl: "#5E9ACC"
-        other: "#A3C7A1"
-        #srmc: "#A3C7A1"
-        #sens: "#A3C7A1"
-        #mac: "#A3C7A1"
-        bar_saturation:
-          elasticnet: 0.7
-          randomforestregressor: 1
-      store_params:
-        dpi: 450
-        format: "png"
-        name: "cv_results"
-      col_assignment:
-        first_col: ["pl", "srmc", "sens", "mac"]
-        second_col: ["pl_srmc", "pl_sens", "pl_srmc_sens", "pl_mac"]
-        third_col: ["pl_srmc_mac", "all_in"]
-      titles:
-        - "a) One-level predictions"  # "a) Within Predictor Levels"
-        - "b) Two-level predictions" # "b) Across Two Predictor Levels"
-        - "c) Three-level predictions" # "c) Across Three Predictor Levels"
-      feature_combo_name_mapping:  # TODO remove
-        pl: "Personal; n = 9,118"
-        srmc: "Situational (ESM); n = 9,118"
-        sens: "Situational (Sensing); n = 1,338"
-        mac: "Societal; n = 4,460"
-        pl_srmc: "Personal + Situational (ESM); n = 10,015"
-        pl_sens: "Personal + Situational (Sensing); n = 10,015"
-        pl_srmc_sens: "Personal + Situational (ESM) + Situational (Sensing); n = 10,015"
-        pl_mac: "Personal + Societal; n = 10,015"
-        pl_srmc_mac: "Personal + Situational (ESM) + Societal; n = 10,015"
-        all_in: "Personal + Situational (ESM) + Situational (Sensing) + Societal; n = 10,015"
-
-
-
-    shap_beeswarm_plot:  # could define dpi, etc as well here
-
-      prediction_model: [ randomforestregressor, elasticnet ]  # must be iterable
-      crit: [wb_trait, wb_state]  # must be iterable
-      samples_to_include: [selected, all]  # must be iterable
-      num_to_display: 6
-      shap_ia_values:
-        add: false
-        position: [3, 2]  # below the "all_in"
-        feature_combination: srmc
-        short_feature_names: False
-        meta_stat_to_extract: "top_interactions"
-        stat_to_extract: "top_abs_interactions"
-        order_to_extract: 2
-        num_to_extract: 6
-        title_split_strng: ":"
-        abbreviation: "IA"
-
-      n_samples_mapping:  # TODO: Remove
-        pl: "n = 9,118"
-        srmc: "n = 9,118"
-        sens: "n = 1,338"
-        mac: "n = 4,460"
-        pl_srmc: "n = 9,118"
-        pl_sens: "n = 1,338"
-        pl_srmc_sens: "n = 751"
-        pl_mac: "n = 4,460"
-        pl_srmc_mac: "n = 4,460"
-        all_in: "n = 10,015"
-        srmc_ia_values: "n = 9,118"
-
-      figure:  # Plot from 18122024
-        num_rows: 4
-        num_cols: 3
-        width: 30
-        height: 42
-        fix_x_lim: true
-        x_lim: [-0.8, 0.8]
-        max_char_on_line_y_ticks: 25
-      fontsizes:  # Plot from 18122024
-        main_title: 28
-        title: 26
-        tick_params: 22
-        x_label: 22
-        y_label: 22
-      subplot_adjustments:  # Plot from 18122024
-        top: 0.92
-        left: 0.17
-        wspace: 1.25
-        hspace: 0.6
-        right: 0.94
-      titles:
-        shap_values:
-          - "a) One-level predictions"
-          - "b) Two-level predictions"
-          - "c) Three-level predictions"
-        shap_ia_values:
-          - "d) Predictor interactions"
-        line_dct:
-          row_0: 4
-          row_1: 5
-          row_2: 4
-          row_3: 3
-        max_char_on_line: 26
-        split_strng: "+"
-        add_n: True
-      col_assignment:
-        first_col: [ "pl", "srmc", "sens", "mac" ]
-        second_col: [ "pl_srmc", "pl_sens", "pl_srmc_sens", "pl_mac" ]
-        third_col: [ "pl_srmc_mac", "all_in" ]
-
-    #pred_true_parity_plot:
-    #  figure:
-    #    width: 8
-    #    height: 8
-
-
-
-
-
-
-
