@@ -31,11 +31,12 @@ class SanityChecker:
         apply_to_full_df (bool): Indicates whether to apply checks to the full DataFrame.
         plotter: (ResultPlotter): Class that creates plots.
     """
+
     def __init__(
         self,
         logger: Logger,
         cfg_preprocessing: NestedDict,
-        cfg_postprocessing: NestedDict,
+        cfg_postprocessing: NestedDict = None,
         config_parser_class: ConfigParser = None,
         apply_to_full_df: bool = None,
         plotter: Any = None,
@@ -550,77 +551,94 @@ class SanityChecker:
             - Repetitions to check (`reps_to_check`).
             - Output paths and filenames (`data_paths`, `plot`, `summary_stats`).
         """
-        cfg_pred_vs_true = self.cfg_postprocessing["sanity_check_pred_vs_true"]
-        root_dir = os.path.join(
-            self.cfg_postprocessing["general"]["data_paths"]["base_path"],
-            self.cfg_postprocessing["general"]["data_paths"]["pred_vs_true"]
-        )
-        reps_to_check = cfg_pred_vs_true["reps_to_check"]
-        stats_decimals = cfg_pred_vs_true["summary_stats"]["decimals"]
-
-        for dirpath, _, filenames in os.walk(root_dir):
-            if not filenames:
-                continue
-
-            index_data = {}
-            for filename in filenames:
-                if filename.startswith("pred_vs_true_rep_") and filename.endswith(".json"):
-                    rep_number = filename.removeprefix("pred_vs_true_rep_").removesuffix(".json")
-                    if not (rep_number.isdigit() and int(rep_number) in reps_to_check):
-                        continue
-
-                    file_path = os.path.join(dirpath, filename)
-                    with open(file_path, "r") as f:
-                        data = json.load(f)
-
-                    for outer_fold_data in data.values():
-                        for imp_data in outer_fold_data.values():
-                            for index, pred_true in imp_data.items():
-                                index_data.setdefault(index, []).append(pred_true)
-
-            if not index_data:
-                continue
-
-            # Process sample data
-            sample_data = {}
-            for index, pred_true_list in index_data.items():
-                sample_name = index.split("_")[0]
-                sample_data.setdefault(sample_name, {"pred": [], "true": [], "diff": []})
-
-                for pred, true in pred_true_list:
-                    sample_data[sample_name]["pred"].append(pred)
-                    sample_data[sample_name]["true"].append(true)
-                    sample_data[sample_name]["diff"].append(true - pred)
-
-            # Generate parity plot
-            dir_components = os.path.normpath(dirpath).split(os.sep)
-            self.plotter.plot_pred_true_parity(
-                sample_data=sample_data,
-                samples_to_include=dir_components[-3],
-                crit=dir_components[-2],
-                model=dir_components[-1],
-                store_plot=cfg_pred_vs_true["plot"]["store"],
-                filename=cfg_pred_vs_true["plot"]["filename"]
+        if self.cfg_postprocessing:
+            cfg_pred_vs_true = self.cfg_postprocessing["sanity_check_pred_vs_true"]
+            root_dir = os.path.join(
+                self.cfg_postprocessing["general"]["data_paths"]["base_path"],
+                self.cfg_postprocessing["general"]["data_paths"]["pred_vs_true"],
             )
+            reps_to_check = cfg_pred_vs_true["reps_to_check"]
+            stats_decimals = cfg_pred_vs_true["summary_stats"]["decimals"]
 
-            # Compute summary statistics
-            summary_statistics = {
-                sample_name: {
-                    "pred_mean": np.round(np.mean(values["pred"]), stats_decimals),
-                    "pred_std": np.round(np.std(values["pred"]), stats_decimals),
-                    "true_mean": np.round(np.mean(values["true"]), stats_decimals),
-                    "true_std": np.round(np.std(values["true"]), stats_decimals),
-                    "diff_mean": np.round(np.mean(values["diff"]), stats_decimals),
-                    "diff_std": np.round(np.std(values["diff"]), stats_decimals),
-                    "r2_score": np.round(r2_score(values["true"], values["pred"]),
-                                         stats_decimals) if len(values["pred"]) > 1 else None,
-                    "spearman_rho": np.round(spearmanr(values["true"], values["pred"])[0],
-                                             stats_decimals) if len(values["pred"]) > 1 else None,
+            for dirpath, _, filenames in os.walk(root_dir):
+                if not filenames:
+                    continue
+
+                index_data = {}
+                for filename in filenames:
+                    if filename.startswith("pred_vs_true_rep_") and filename.endswith(
+                        ".json"
+                    ):
+                        rep_number = filename.removeprefix(
+                            "pred_vs_true_rep_"
+                        ).removesuffix(".json")
+                        if not (
+                            rep_number.isdigit() and int(rep_number) in reps_to_check
+                        ):
+                            continue
+
+                        file_path = os.path.join(dirpath, filename)
+                        with open(file_path, "r") as f:
+                            data = json.load(f)
+
+                        for outer_fold_data in data.values():
+                            for imp_data in outer_fold_data.values():
+                                for index, pred_true in imp_data.items():
+                                    index_data.setdefault(index, []).append(pred_true)
+
+                if not index_data:
+                    continue
+
+                # Process sample data
+                sample_data = {}
+                for index, pred_true_list in index_data.items():
+                    sample_name = index.split("_")[0]
+                    sample_data.setdefault(
+                        sample_name, {"pred": [], "true": [], "diff": []}
+                    )
+
+                    for pred, true in pred_true_list:
+                        sample_data[sample_name]["pred"].append(pred)
+                        sample_data[sample_name]["true"].append(true)
+                        sample_data[sample_name]["diff"].append(true - pred)
+
+                # Generate parity plot
+                dir_components = os.path.normpath(dirpath).split(os.sep)
+                self.plotter.plot_pred_true_parity(
+                    sample_data=sample_data,
+                    samples_to_include=dir_components[-3],
+                    crit=dir_components[-2],
+                    model=dir_components[-1],
+                    store_plot=cfg_pred_vs_true["plot"]["store"],
+                    filename=cfg_pred_vs_true["plot"]["filename"],
+                )
+
+                # Compute summary statistics
+                summary_statistics = {
+                    sample_name: {
+                        "pred_mean": np.round(np.mean(values["pred"]), stats_decimals),
+                        "pred_std": np.round(np.std(values["pred"]), stats_decimals),
+                        "true_mean": np.round(np.mean(values["true"]), stats_decimals),
+                        "true_std": np.round(np.std(values["true"]), stats_decimals),
+                        "diff_mean": np.round(np.mean(values["diff"]), stats_decimals),
+                        "diff_std": np.round(np.std(values["diff"]), stats_decimals),
+                        "r2_score": np.round(
+                            r2_score(values["true"], values["pred"]), stats_decimals
+                        )
+                        if len(values["pred"]) > 1
+                        else None,
+                        "spearman_rho": np.round(
+                            spearmanr(values["true"], values["pred"])[0], stats_decimals
+                        )
+                        if len(values["pred"]) > 1
+                        else None,
+                    }
+                    for sample_name, values in sample_data.items()
                 }
-                for sample_name, values in sample_data.items()
-            }
 
-            # Save summary statistics
-            if cfg_pred_vs_true["summary_stats"]["store"]:
-                output_file = os.path.join(dirpath, cfg_pred_vs_true["summary_stats"]["filename"])
-                self.data_saver.save_json(summary_statistics, output_file)
+                # Save summary statistics
+                if cfg_pred_vs_true["summary_stats"]["store"]:
+                    output_file = os.path.join(
+                        dirpath, cfg_pred_vs_true["summary_stats"]["filename"]
+                    )
+                    self.data_saver.save_json(summary_statistics, output_file)

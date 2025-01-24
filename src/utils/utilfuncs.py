@@ -70,7 +70,9 @@ def format_df(
 
     for column in columns:
         if column in df:
-            df[column] = df[column].apply(lambda x: custom_round(x, decimals))  # TODO: use normal round?
+            df[column] = df[column].apply(
+                lambda x: custom_round(x, decimals)
+            )  # TODO: use normal round?
 
     if capitalize:
         df.columns = df.columns.str.capitalize()
@@ -126,7 +128,11 @@ def create_defaultdict(n_nesting: int, default_factory: Any = int) -> defaultdic
         raise ValueError("n_nesting must be at least 1")
 
     def nested_factory():
-        return default_factory if n_nesting == 1 else create_defaultdict(n_nesting - 1, default_factory)
+        return (
+            default_factory
+            if n_nesting == 1
+            else create_defaultdict(n_nesting - 1, default_factory)
+        )
 
     return defaultdict(nested_factory)
 
@@ -167,7 +173,7 @@ def separate_binary_continuous_cols(df: pd.DataFrame) -> tuple[list[str], list[s
     binary_cols = list(df.columns[(df.isin([0, 1]) | df.isna()).all(axis=0)])
 
     # Move columns with specific suffixes to continuous
-    suffixes = ('_mean', '_sd', '_min', '_max')
+    suffixes = ("_mean", "_sd", "_min", "_max")
     reclassified_cols = [col for col in binary_cols if col.endswith(suffixes)]
     binary_cols = [col for col in binary_cols if col not in reclassified_cols]
 
@@ -311,7 +317,9 @@ def rearrange_path_parts(
     try:
         rearranged_key = "_".join(categorized_parts[cat] for cat in order_mapping)
     except KeyError:
-        print("Key Error indicating that we try to process analyses we do not include in the tables")
+        print(
+            "Key Error indicating that we try to process analyses we do not include in the tables"
+        )
         return None
 
     return (
@@ -321,6 +329,7 @@ def rearrange_path_parts(
         categorized_parts["feature_combination"],
         categorized_parts["model"],
     )
+
 
 def inverse_code(df: pd.DataFrame, min_scale: int, max_scale: int) -> pd.DataFrame:
     """
@@ -339,4 +348,3 @@ def inverse_code(df: pd.DataFrame, min_scale: int, max_scale: int) -> pd.DataFra
         pd.DataFrame: A DataFrame with inverse-coded values.
     """
     return max_scale + min_scale - df
-

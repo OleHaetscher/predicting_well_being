@@ -14,6 +14,7 @@ class DataSaver:
     A utility class to store datasets in various formats (CSV, RData, pickle, JSON, png, pdf, etc).
 
     """
+
     @staticmethod
     def save_csv(df: pd.DataFrame, output_path: str) -> None:
         """
@@ -45,7 +46,9 @@ class DataSaver:
         print(f"Pickle file saved to {output_path}")
 
     @staticmethod
-    def save_json(data: Union[dict, NestedDict], output_path: str, indent: int = 4) -> None:
+    def save_json(
+        data: Union[dict, NestedDict], output_path: str, indent: int = 4
+    ) -> None:
         """
         Saves a dictionary as a JSON file.
 
@@ -90,11 +93,12 @@ class DataSaver:
         print(f"PDF saved to {output_path}")
 
     @staticmethod
-    def save_excel(df: pd.DataFrame,
-                   output_path: str,
-                   merge_cells: bool = True,
-                   index: bool = True,
-                   ) -> None:
+    def save_excel(
+        df: pd.DataFrame,
+        output_path: str,
+        merge_cells: bool = True,
+        index: bool = True,
+    ) -> None:
         """
         Saves a DataFrame as an Excel file.
 
@@ -105,7 +109,9 @@ class DataSaver:
             index:
         """
         os.makedirs(os.path.dirname(output_path), exist_ok=True)
-        df.to_excel(output_path, index=index, merge_cells=merge_cells, engine="openpyxl")
+        df.to_excel(
+            output_path, index=index, merge_cells=merge_cells, engine="openpyxl"
+        )
 
         print(f"Excel file saved to {output_path}")
 
@@ -118,6 +124,6 @@ class DataSaver:
             output_file: The path to the output text file.
             data: The list of strings to be written to the file.
         """
-        with open(output_file, 'w') as f:
+        with open(output_file, "w") as f:
             for item in data:
-                f.write(item + '\n')
+                f.write(item + "\n")

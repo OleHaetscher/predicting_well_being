@@ -1,8 +1,12 @@
 import json
 import os
+from typing import Union
 
 import pandas as pd
 import pyreadr
+import yaml
+
+from src.utils.utilfuncs import NestedDict
 
 
 class DataLoader:
@@ -149,3 +153,19 @@ class DataLoader:
         with open(file_path, "r") as file:
             feature_lst = [line.strip() for line in file]
         return feature_lst
+
+    @staticmethod
+    def read_yaml(path_to_config: str) -> Union[dict, NestedDict]:
+        """
+        Loads a YAML configuration file from a given path and returns its content as a dictionary.
+
+        Args:
+            path_to_config: The path to the YAML file to be loaded.
+
+        Returns:
+            dict: A dictionary containing the parsed YAML data.
+        """
+        with open(path_to_config, "r") as f:
+            data = yaml.safe_load(f)
+
+        return data

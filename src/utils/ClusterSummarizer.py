@@ -25,7 +25,7 @@ class ClusterSummarizer:
 
     Attributes:
         base_result_dir (str): The base directory where results are stored.
-        var_cfg (dict): Configuration dictionary loaded from the variable configuration YAML file.
+        cfg_analysis (NestedDict): Configuration dictionary loaded from the variable configuration YAML file.
         num_reps (int): Number of repetitions expected for the results.
         rng_ (np.random.RandomState): Random number generator seeded for reproducibility.
     """
@@ -33,7 +33,7 @@ class ClusterSummarizer:
     def __init__(
         self,
         base_result_dir: str,
-        var_config_path: str = "../../configs/config_var.yaml",
+        cfg_analysis_path: str = "../../configs/cfg_analysis.yaml",
         num_reps: int = 10,
     ) -> None:
         """
@@ -41,15 +41,16 @@ class ClusterSummarizer:
 
         Args:
             base_result_dir: Directory containing the result files to be aggregated.
-            var_config_path: Path to the variable configuration YAML file.
+            cfg_analysis_path: Path to the variable configuration YAML file.
             num_reps: Number of repetitions expected for the results.
         """
         self.base_result_dir = base_result_dir
-        with open(var_config_path, "r") as f:
-            var_cfg = yaml.safe_load(f)
-        self.var_cfg = var_cfg
+        with open(cfg_analysis_path, "r") as f:
+            cfg_analysis = yaml.safe_load(f)
+
+        self.cfg_analysis = cfg_analysis
         self.num_reps = num_reps
-        self.rng_ = np.random.RandomState(self.var_cfg["analysis"]["random_state"])
+        self.rng_ = np.random.RandomState(self.cfg_analysis["random_state"])
 
     def aggregate(self) -> None:
         """
@@ -463,7 +464,7 @@ class ClusterSummarizer:
             combo_index_mapping=combo_index_mapping,
         )
         # Sample aggregated results
-        num_samples = self.var_cfg["analysis"]["shap_ia_values"]["num_samples"]
+        num_samples = self.cfg_analysis["shap_ia_values"]["num_samples"]
         ia_values_sample, base_values_sample = self.sample_aggregated_results(
             ia_values_agg_reps_imps, base_value_agg_reps_imps, num_samples=num_samples
         )
@@ -704,8 +705,8 @@ class ClusterSummarizer:
                 )
         return result
 
+    @staticmethod
     def get_top_interactions(
-        self,
         abs_mapped_results_agg_samples: NestedDict,
         mapped_results_agg_samples: NestedDict,
         mapped_results_no_agg_samples: NestedDict,
