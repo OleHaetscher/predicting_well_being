@@ -22,14 +22,13 @@ class RFRAnalyzer(BaseMLAnalyzer):
     methods for calculating SHAP interaction values (SHAP-IA) and aggregating
     results across imputations and repetitions.
 
-    Attributes:
+    Additional Attributes (for other Attributes, see BaseMLAnalyzer):
         model (RandomForestRegressor): The Random Forest Regressor used for prediction.
         rng_ (np.random.RandomState): Local random number generator for reproducibility.
     """
 
     def __init__(
         self,
-        var_cfg: NestedDict,
         cfg_analysis: NestedDict,
         output_dir: str,
         df: pd.DataFrame,
@@ -40,18 +39,18 @@ class RFRAnalyzer(BaseMLAnalyzer):
         Initializes the RFRAnalyzer instance with the specified configuration and data.
 
         Args:
-            var_cfg: Configuration dictionary specifying analysis parameters.
+            cfg_analysis: Configuration dictionary specifying analysis parameters.
             output_dir: Directory where the analysis results will be stored.
             df: Input DataFrame containing features and labels for the analysis.
             rep: Repetition index for cross-validation splits.
             rank: Rank identifier for multi-node parallelism.
         """
-        super().__init__(var_cfg, cfg_analysis, output_dir, df, rep, rank)
+        super().__init__(cfg_analysis, output_dir, df, rep, rank)
         self.model = RandomForestRegressor(
-            random_state=self.var_cfg["analysis"]["random_state"]
+            random_state=self.cfg_analysis["random_state"]
         )
         self.rng_ = np.random.RandomState(
-            self.var_cfg["analysis"]["random_state"]
+            self.cfg_analysis["random_state"]
         )  # Local RNG
 
     def calculate_shap_ia_values(
@@ -77,7 +76,7 @@ class RFRAnalyzer(BaseMLAnalyzer):
                 combination (columns).
             base_values_arr: 1D array containing base values for each sample.
         """
-        n_jobs = self.var_cfg["analysis"]["parallelize"]["shap_ia_values_n_jobs"]
+        n_jobs = self.cfg_analysis["parallelize"]["shap_ia_values_n_jobs"]
         chunk_size = X_scaled.shape[0] // n_jobs + (X_scaled.shape[0] % n_jobs > 0)
 
         results = Parallel(n_jobs=n_jobs, verbose=1, backend=self.joblib_backend)(
@@ -161,9 +160,9 @@ class RFRAnalyzer(BaseMLAnalyzer):
 
         explainer = shapiq.TreeExplainer(
             model=model,
-            index=self.var_cfg["analysis"]["shap_ia_values"]["interaction_index"],
-            min_order=self.var_cfg["analysis"]["shap_ia_values"]["min_order"],
-            max_order=self.var_cfg["analysis"]["shap_ia_values"]["max_order"],
+            index=self.cfg_analysis["shap_ia_values"]["interaction_index"],
+            min_order=self.cfg_analysis["shap_ia_values"]["min_order"],
+            max_order=self.cfg_analysis["shap_ia_values"]["max_order"],
         )
 
         ia_value_lst = []

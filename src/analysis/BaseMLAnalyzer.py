@@ -64,7 +64,7 @@ class BaseMLAnalyzer(ABC):
         - Store analysis results in the specified output directory
 
     Attributes:
-        var_cfg (NestedDict): YAML configuration object specifying analysis parameters.
+        cfg_analysis (NestedDict): YAML configuration object specifying analysis parameters.
             Dynamically updated based on conditions (e.g., number of folds set to 10 when running on a cluster).
 
         ## Cluster and parallelization params
@@ -180,7 +180,6 @@ class BaseMLAnalyzer(ABC):
     @abstractmethod
     def __init__(
         self,
-        var_cfg: NestedDict,
         cfg_analysis: NestedDict,
         spec_output_path: str,
         df: pd.DataFrame,
@@ -191,28 +190,27 @@ class BaseMLAnalyzer(ABC):
         Initializes the BaseMLAnalyzer ABC class with configuration and analysis details.
 
         Args:
-            var_cfg: Configuration dictionary specifying analysis parameters.
+            cfg_analysis: Configuration dictionary specifying analysis parameters.
             spec_output_path: Analysis specific directory path for the storing results.
             df: DataFrame containing features and criteria for analysis.
             rep: If split_reps is True, rep represents the current repetition number (e.g., 5). Otherwise, it is None.
             rank: Rank for multi-node parallelism. None if not multi-node parallelism is used.
         """
-        self.var_cfg = var_cfg
         self.cfg_analysis = cfg_analysis
         self.spec_output_path = spec_output_path
 
         # Cluster and parallelization params
         self.rank = rank
-        self.joblib_backend = self.var_cfg["analysis"]["parallelize"]["joblib_backend"]
+        self.joblib_backend = self.cfg_analysis["parallelize"]["joblib_backend"]
         self.rep = rep
-        self.split_reps = self.var_cfg["analysis"]["split_reps"]
+        self.split_reps = self.cfg_analysis["split_reps"]
 
         # Analysis params
-        self.crit = self.var_cfg["analysis"]["params"]["crit"]
-        self.feature_combination = self.var_cfg["analysis"]["params"][
+        self.crit = self.cfg_analysis["params"]["crit"]
+        self.feature_combination = self.cfg_analysis["params"][
             "feature_combination"
         ]
-        self.samples_to_include = self.var_cfg["analysis"]["params"][
+        self.samples_to_include = self.cfg_analysis["params"][
             "samples_to_include"
         ]
         self.model = None
@@ -223,11 +221,11 @@ class BaseMLAnalyzer(ABC):
         self.y = None
         self.datasets_included = None
         self.rows_dropped_crit_na = None
-        self.id_grouping_col = self.var_cfg["analysis"]["cv"]["id_grouping_col"]
-        self.country_grouping_col = self.var_cfg["analysis"]["imputation"][
+        self.id_grouping_col = self.cfg_analysis["cv"]["id_grouping_col"]
+        self.country_grouping_col = self.cfg_analysis["imputation"][
             "country_grouping_col"
         ]
-        self.years_col = self.var_cfg["analysis"]["imputation"]["years_col"]
+        self.years_col = self.cfg_analysis["imputation"]["years_col"]
         self.meta_vars = [
             self.id_grouping_col,
             self.country_grouping_col,
@@ -238,7 +236,7 @@ class BaseMLAnalyzer(ABC):
         # Util instances
         self.logger = Logger(
             log_dir=self.spec_output_path,
-            log_file=self.var_cfg["general"]["log_name"],
+            log_file="logs",
             rank=self.rank,
             rep=self.rep,
         )
@@ -273,10 +271,10 @@ class BaseMLAnalyzer(ABC):
         self.lin_model_coefs = {}
 
         # CV parameters
-        self.num_inner_cv = self.var_cfg["analysis"]["cv"]["num_inner_cv"]
-        self.num_outer_cv = self.var_cfg["analysis"]["cv"]["num_outer_cv"]
-        self.num_reps = self.var_cfg["analysis"]["cv"]["num_reps"]
-        self.num_imputations = self.var_cfg["analysis"]["imputation"]["num_imputations"]
+        self.num_inner_cv = self.cfg_analysis["cv"]["num_inner_cv"]
+        self.num_outer_cv = self.cfg_analysis["cv"]["num_outer_cv"]
+        self.num_reps = self.cfg_analysis["cv"]["num_reps"]
+        self.num_imputations = self.cfg_analysis["imputation"]["num_imputations"]
 
         # Attributes for shap_ia_values
         self.combo_index_mapping = None
@@ -284,23 +282,23 @@ class BaseMLAnalyzer(ABC):
         self.num_combos = None
 
         # Output
-        self.performance_name = self.var_cfg["analysis"]["output_filenames"][
+        self.performance_name = self.cfg_analysis["output_filenames"][
             "performance"
         ]  # .json
-        self.shap_value_name = self.var_cfg["analysis"]["output_filenames"][
+        self.shap_value_name = self.cfg_analysis["output_filenames"][
             "shap_values"
         ]  # .pkl
-        self.shap_ia_values_for_local_name = self.var_cfg["analysis"][
+        self.shap_ia_values_for_local_name = self.cfg_analysis[
             "output_filenames"
         ][
             "shap_ia_values_for_local"
         ]  # .pkl
-        self.shap_ia_values_for_cluster_name = self.var_cfg["analysis"][
+        self.shap_ia_values_for_cluster_name = self.cfg_analysis[
             "output_filenames"
         ][
             "shap_ia_values_for_cluster"
         ]  # .pkl
-        self.lin_model_coefs_name = self.var_cfg["analysis"]["output_filenames"][
+        self.lin_model_coefs_name = self.cfg_analysis["output_filenames"][
             "lin_model_coefs"
         ]  # .json
 
@@ -322,7 +320,7 @@ class BaseMLAnalyzer(ABC):
         """
         Creates and returns an instance of the Imputer class configured for the current analysis.
 
-        The Imputer is initialized with settings derived from the configuration (`var_cfg`) and includes:
+        The Imputer is initialized with settings derived from the configuration (`cfg_analysis`) and includes:
         - Logging through the logger instance.
         - Model-specific configurations like random state, convergence threshold, and imputation parameters.
         - Columns for grouping data (e.g., by country or year).
@@ -334,19 +332,19 @@ class BaseMLAnalyzer(ABC):
         return Imputer(
             logger=self.logger,
             model=self.model_name,
-            fix_rs=self.var_cfg["analysis"]["random_state"],
-            max_iter=self.var_cfg["analysis"]["imputation"]["max_iter"],
-            num_imputations=self.var_cfg["analysis"]["imputation"]["num_imputations"],
-            conv_thresh=self.var_cfg["analysis"]["imputation"]["conv_thresh"],
-            tree_max_depth=self.var_cfg["analysis"]["imputation"]["tree_max_depth"],
-            percentage_of_features=self.var_cfg["analysis"]["imputation"][
+            fix_rs=self.cfg_analysis["random_state"],
+            max_iter=self.cfg_analysis["imputation"]["max_iter"],
+            num_imputations=self.cfg_analysis["imputation"]["num_imputations"],
+            conv_thresh=self.cfg_analysis["imputation"]["conv_thresh"],
+            tree_max_depth=self.cfg_analysis["imputation"]["tree_max_depth"],
+            percentage_of_features=self.cfg_analysis["imputation"][
                 "percentage_of_features"
             ],
-            n_features_thresh=self.var_cfg["analysis"]["imputation"][
+            n_features_thresh=self.cfg_analysis["imputation"][
                 "n_features_thresh"
             ],
-            sample_posterior=self.var_cfg["analysis"]["imputation"]["sample_posterior"],
-            pmm_k=self.var_cfg["analysis"]["imputation"]["pmm_k"],
+            sample_posterior=self.cfg_analysis["imputation"]["sample_posterior"],
+            pmm_k=self.cfg_analysis["imputation"]["pmm_k"],
             country_group_by=self.country_grouping_col,
             years_col=self.years_col,
         )
@@ -359,13 +357,13 @@ class BaseMLAnalyzer(ABC):
         Returns:
             dict: The hyperparameter grid for the specified model, as defined in the configuration.
         """
-        return self.var_cfg["analysis"]["model_hyperparameters"][self.model_name]
+        return self.cfg_analysis["model_hyperparameters"][self.model_name]
 
     def apply_methods(self, comm: Optional[object] = None) -> None:
         """
         Executes the analysis methods specified in the configuration.
 
-        Methods to execute are defined in `var_cfg["analysis"]["methods_to_apply"]`. The method dynamically checks for
+        Methods to execute are defined in `cfg_analysis["methods_to_apply"]`. The method dynamically checks for
         their existence in the class and calls them. If `split_reps` is enabled, methods that depend on the results
         from all repetitions are skipped.
 
@@ -376,7 +374,7 @@ class BaseMLAnalyzer(ABC):
         Raises:
             ValueError: If a method specified in `methods_to_apply` is not implemented.
         """
-        for method_name in self.var_cfg["analysis"]["methods_to_apply"]:
+        for method_name in self.cfg_analysis["methods_to_apply"]:
             if not hasattr(self, method_name):
                 raise ValueError(f"Method '{method_name}' is not implemented yet.")
 
@@ -449,33 +447,33 @@ class BaseMLAnalyzer(ABC):
             f"    N hyperparameter combinations: {len(list(product(*self.hyperparameter_grid.values())))}"
         )
         self.logger.log(
-            f'    Optimization metric: {self.var_cfg["analysis"]["scoring_metric"]["inner_cv_loop"]["name"]}'
+            f'    Optimization metric: {self.cfg_analysis["scoring_metric"]["inner_cv_loop"]["name"]}'
         )
         self.logger.log(
-            f'    Max iter imputations: {self.var_cfg["analysis"]["imputation"]["max_iter"]}'
+            f'    Max iter imputations: {self.cfg_analysis["imputation"]["max_iter"]}'
         )
 
         self.logger.log("Parallelization params")
         self.logger.log(
-            f'    Use mpi4py to parallelize across nodes: {self.var_cfg["analysis"]["use_mpi4py"]}'
+            f'    Use mpi4py to parallelize across nodes: {self.cfg_analysis["use_mpi4py"]}'
         )
         self.logger.log(f"    Split reps: {self.split_reps}")
         self.logger.log(f"    Current rank: {self.rank}")
         self.logger.log(
-            f'    N jobs inner_cv: {self.var_cfg["analysis"]["parallelize"]["inner_cv_n_jobs"]}'
+            f'    N jobs inner_cv: {self.cfg_analysis["parallelize"]["inner_cv_n_jobs"]}'
         )
         self.logger.log(
-            f'    N jobs shap: {self.var_cfg["analysis"]["parallelize"]["shap_n_jobs"]}'
+            f'    N jobs shap: {self.cfg_analysis["parallelize"]["shap_n_jobs"]}'
         )
         self.logger.log(
-            f'    N jobs imputation runs: {self.var_cfg["analysis"]["parallelize"]["imputation_runs_n_jobs"]}'
+            f'    N jobs imputation runs: {self.cfg_analysis["parallelize"]["imputation_runs_n_jobs"]}'
         )
         self.logger.log(
-            f'    Compute shap IA values: {self.var_cfg["analysis"]["shap_ia_values"]["comp_shap_ia_values"]}'
+            f'    Compute shap IA values: {self.cfg_analysis["shap_ia_values"]["comp_shap_ia_values"]}'
         )
-        if self.var_cfg["analysis"]["shap_ia_values"]["comp_shap_ia_values"]:
+        if self.cfg_analysis["shap_ia_values"]["comp_shap_ia_values"]:
             self.logger.log(
-                f'    N jobs shap_ia_values: {self.var_cfg["analysis"]["parallelize"]["shap_ia_values_n_jobs"]}'
+                f'    N jobs shap_ia_values: {self.cfg_analysis["parallelize"]["shap_ia_values_n_jobs"]}'
             )
 
         self.logger.log("Data params")
@@ -576,10 +574,10 @@ class BaseMLAnalyzer(ABC):
         model_wrapped = TransformedTargetRegressor(
             regressor=self.model, transformer=target_scaler
         )
-        if self.var_cfg["analysis"]["cv"]["warm_start"]:
+        if self.cfg_analysis["cv"]["warm_start"]:
             model_wrapped.regressor.set_params(warm_start=True)
 
-        if self.var_cfg["analysis"]["cv"]["cache_pipe"]:
+        if self.cfg_analysis["cv"]["cache_pipe"]:
             cache_folder = "./cache_directory"
             memory = Memory(cache_folder, verbose=0)
         else:
@@ -588,7 +586,7 @@ class BaseMLAnalyzer(ABC):
         if "_fs" in self.feature_combination:
             self.logger.log("    -> Include feature selection for sensing features")
             feature_selector = PearsonFeatureSelector(
-                num_features=self.var_cfg["analysis"]["feature_selection"][
+                num_features=self.cfg_analysis["feature_selection"][
                     "num_sensing_features"
                 ],
                 target_prefix="sens_",
@@ -761,7 +759,7 @@ class BaseMLAnalyzer(ABC):
                 inner_cv=inner_cv,
                 num_imputations=self.num_imputations,
                 groups=X_train[self.id_grouping_col],
-                n_jobs=self.var_cfg["analysis"]["parallelize"][
+                n_jobs=self.cfg_analysis["parallelize"][
                     "imputation_runs_n_jobs"
                 ],
             )
@@ -777,7 +775,7 @@ class BaseMLAnalyzer(ABC):
             X_test_imputed_lst.append(X_test_imputed_lst_for_fold)
 
             scoring_inner_cv = get_scorer(
-                self.var_cfg["analysis"]["scoring_metric"]["inner_cv_loop"]["name"]
+                self.cfg_analysis["scoring_metric"]["inner_cv_loop"]["name"]
             )
             param_grid = list(ParameterGrid(self.hyperparameter_grid))
             for num_imp in range(self.num_imputations):
@@ -788,7 +786,7 @@ class BaseMLAnalyzer(ABC):
                     param_grid=param_grid,
                     scorer=scoring_inner_cv,
                     inner_cv=inner_cv,
-                    n_jobs=self.var_cfg["analysis"]["parallelize"]["inner_cv_n_jobs"],
+                    n_jobs=self.cfg_analysis["parallelize"]["inner_cv_n_jobs"],
                 )
                 best_model = grid_search_results["best_model"]
 
@@ -821,7 +819,7 @@ class BaseMLAnalyzer(ABC):
                         metric
                     ] = score
 
-                if self.var_cfg["analysis"]["store_pred_and_true"]:
+                if self.cfg_analysis["store_pred_and_true"]:
                     pred_vs_true_rep[f"outer_fold_{cv_idx}"][
                         f"imp_{num_imp}"
                     ] = self.get_pred_and_true_crit(
@@ -1243,7 +1241,7 @@ class BaseMLAnalyzer(ABC):
 
         scorers = {
             metric: scoring_functions[metric]
-            for metric in self.var_cfg["analysis"]["scoring_metric"]["outer_cv_loop"]
+            for metric in self.cfg_analysis["scoring_metric"]["outer_cv_loop"]
         }
 
         scores = {
@@ -1360,7 +1358,7 @@ class BaseMLAnalyzer(ABC):
 
         if (
             self.model_name == "randomforestregressor"
-            and self.var_cfg["analysis"]["shap_ia_values"]["comp_shap_ia_values"]
+            and self.cfg_analysis["shap_ia_values"]["comp_shap_ia_values"]
         ):
             if self.combo_index_mapping is None:
                 (
@@ -1450,7 +1448,7 @@ class BaseMLAnalyzer(ABC):
            - Store SHAP values in the corresponding array positions, distinguishing by fold and imputation.
            - If feature selection is applied, ensure only selected features are aggregated.
         4. **SHAP Interaction Values**:
-           - If SHAP interaction values are enabled (`self.var_cfg["analysis"]["shap_ia_values"]["comp_shap_ia_values"]`),
+           - If SHAP interaction values are enabled (`self.cfg_analysis["shap_ia_values"]["comp_shap_ia_values"]`),
              compute and aggregate these values similarly to SHAP values.
         5. **Aggregation**:
            - Divide base values by the number of outer CV folds to normalize repeated calculations.
@@ -1551,7 +1549,7 @@ class BaseMLAnalyzer(ABC):
 
         if (
             self.model_name == "randomforestregressor"
-            and self.var_cfg["analysis"]["shap_ia_values"]["comp_shap_ia_values"]
+            and self.cfg_analysis["shap_ia_values"]["comp_shap_ia_values"]
         ):
             ia_test_shap_values = np.zeros(
                 (X.shape[0], self.num_combos, self.num_imputations), dtype=np.float32
@@ -1614,8 +1612,8 @@ class BaseMLAnalyzer(ABC):
                 - feature_to_index (dict): Mapping of feature indices to feature names.
                 - num_combinations (int): Total number of feature combinations generated.
         """
-        min_order_shap = self.var_cfg["analysis"]["shap_ia_values"]["min_order"]
-        max_order_shap = self.var_cfg["analysis"]["shap_ia_values"]["max_order"]
+        min_order_shap = self.cfg_analysis["shap_ia_values"]["min_order"]
+        max_order_shap = self.cfg_analysis["shap_ia_values"]["max_order"]
 
         num_features = X.shape[1]
         feature_indices = range(num_features)
@@ -1703,7 +1701,7 @@ class BaseMLAnalyzer(ABC):
 
         X = self.X.copy()
         y = self.y.copy()
-        fix_random_state = self.var_cfg["analysis"]["random_state"]
+        fix_random_state = self.cfg_analysis["random_state"]
 
         if comm:
             all_reps = list(range(self.num_reps))
@@ -1766,7 +1764,7 @@ class BaseMLAnalyzer(ABC):
             print(f"    [Rank {rank}] Finished repetition {rep}")
             self.logger.log(f"    Rank {rank}: Finished repetition {rep}")
 
-            if self.var_cfg["analysis"]["shap_ia_values"]["comp_shap_ia_values"]:
+            if self.cfg_analysis["shap_ia_values"]["comp_shap_ia_values"]:
                 file_name_ia_values = os.path.join(
                     self.spec_output_path, f"shap_ia_values_rep_{rep}.pkl"
                 )
@@ -1851,7 +1849,7 @@ class BaseMLAnalyzer(ABC):
                 self.repeated_nested_scores[f"rep_{rep}"] = nested_scores_rep
                 self.pred_vs_true[f"rep_{rep}"] = pred_vs_true_rep
 
-            if self.var_cfg["analysis"]["shap_ia_values"]["comp_shap_ia_values"]:
+            if self.cfg_analysis["shap_ia_values"]["comp_shap_ia_values"]:
                 for rep, ia_values_path, ia_base_values_path in all_file_paths:
                     with open(ia_values_path, "rb") as f:
                         rep_shap_ia_values_test = pickle.load(f)
@@ -1973,7 +1971,7 @@ class BaseMLAnalyzer(ABC):
         else:
             raise ValueError(f"Model {self.model_name} not implemented")
 
-        n_jobs = self.var_cfg["analysis"]["parallelize"]["shap_n_jobs"]
+        n_jobs = self.cfg_analysis["parallelize"]["shap_n_jobs"]
         chunk_size = X_test_scaled.shape[0] // n_jobs + (
             X_test_scaled.shape[0] % n_jobs > 0
         )

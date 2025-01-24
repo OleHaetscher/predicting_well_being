@@ -19,13 +19,12 @@ class ENRAnalyzer(BaseMLAnalyzer):
     aggregation across cross-validation loops while leveraging the functionality
     defined in the base class.
 
-    Attributes:
+    Additional Attributes (for other Attributes, see BaseMLAnalyzer):
         model (ElasticNet): The linear model used for prediction and analysis.
     """
 
     def __init__(
         self,
-        var_cfg: NestedDict,
         cfg_analysis: NestedDict,
         output_dir: str,
         df: pd.DataFrame,
@@ -36,14 +35,14 @@ class ENRAnalyzer(BaseMLAnalyzer):
         Initializes the ENRAnalyzer instance with the specified configuration and data.
 
         Args:
-            var_cfg: YAML configuration object specifying the analysis parameters.
+            cfg_analysis: YAML configuration object specifying the analysis parameters.
             output_dir: Directory where the analysis results will be stored.
             df: Input DataFrame containing features and labels for the analysis.
             rep: Repetition index for cross-validation splits.
             rank: Rank identifier for multi-node parallelism.
         """
-        super().__init__(var_cfg, cfg_analysis, output_dir, df, rep, rank)
-        self.model = ElasticNet(random_state=self.var_cfg["analysis"]["random_state"])
+        super().__init__(cfg_analysis, output_dir, df, rep, rank)
+        self.model = ElasticNet(random_state=self.cfg_analysis["random_state"])
 
     def get_average_coefficients(self) -> None:
         """
