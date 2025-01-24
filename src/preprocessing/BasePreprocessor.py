@@ -14,7 +14,7 @@ from src.utils.Logger import *
 from src.utils.SanityChecker import SanityChecker
 from src.utils.Timer import *
 from src.utils.SanityChecker import *
-from src.utils.utilfuncs import NestedDict
+from src.utils.utilfuncs import NestedDict, inverse_code
 
 
 class BasePreprocessor(ABC):
@@ -73,7 +73,8 @@ class BasePreprocessor(ABC):
             logger=self.logger,
             fix_cfg=self.fix_cfg,
             var_cfg=self.var_cfg,
-            cfg_sanity_checks=self.var_cfg["preprocessing"]["sanity_checking"],
+            cfg_postprocessing=self.cfg_postprocessing,
+            # cfg_sanity_checks=self.var_cfg["preprocessing"]["sanity_checking"],
             config_parser_class=ConfigParser(),
             apply_to_full_df=False,
         )
@@ -1675,7 +1676,7 @@ class BasePreprocessor(ABC):
             df_wb_items[f"pa_state"] = df_wb_items[pa_items].mean(axis=1)
             df_wb_items[f"na_state"] = df_wb_items[na_items].mean(axis=1)
 
-            df_wb_items[f"state_na_inv"] = self._inverse_code(
+            df_wb_items[f"state_na_inv"] = inverse_code(
                 df_wb_items[na_items], min_scale=1, max_scale=6
             ).mean(axis=1)
             new_columns = pd.DataFrame(
@@ -2065,7 +2066,7 @@ class BasePreprocessor(ABC):
             scale_min = wb_items[1]["scale_endpoints"]["min"]
             scale_max = wb_items[1]["scale_endpoints"]["max"]
             if na_items:
-                df[f"{criterion_type}_na_tmp"] = self._inverse_code(
+                df[f"{criterion_type}_na_tmp"] = inverse_code(
                     df[na_items], min_scale=scale_min, max_scale=scale_max
                 ).mean(axis=1)
                 new_columns = pd.DataFrame(
@@ -2089,25 +2090,6 @@ class BasePreprocessor(ABC):
             )
 
         return df
-
-    @staticmethod
-    def _inverse_code(df: pd.DataFrame, min_scale: int, max_scale: int) -> pd.DataFrame:
-        """
-        Performs inverse coding for items in a DataFrame.
-
-        This method recodes items by subtracting each value from the sum of the scale's minimum
-        and maximum values (`max_scale + min_scale`). It is typically used to reverse-code
-        negative affect items.
-
-        Args:
-            df: A pandas DataFrame containing the items to be inverse-coded.
-            min_scale: The minimum value of the scale.
-            max_scale: The maximum value of the scale.
-
-        Returns:
-            pd.DataFrame: A DataFrame with inverse-coded values.
-        """
-        return max_scale + min_scale - df
 
     def sanity_checking(self, df: pd.DataFrame) -> pd.DataFrame:
         """
