@@ -13,7 +13,10 @@ This repository contains the complete analysis code.
    - [Installing Requirements](#installing-requirements)
 3. [Usage](#usage)
    - [Main Function](#main-function)
-   - [Main Config](#main-config)
+   - [Preprocessing Config](#preprocessing-config)
+   - [Analysis Config](#analysis-config)
+   - [Postprocessing Config](#postprocessing-config)
+   - [Recommended Execution Workflow](#recommended-execution-workflow)
    - [Computation of SHAP Interaction Values](#computation-of-shap-interaction-values)
    - [Speed up Computations](#speed-up-computations)
    - [Troubleshooting](#troubleshooting)
@@ -131,7 +134,7 @@ Following these steps will prepare your environment for running the project with
 
 ## Usage
 
-This repository contains several scripts to perform a sequence of analyses. Main tasks are 'preprocessing', 'analysis', and 'postprocessing'. The `main.py` script coordinates all the tasks, while the configurations in `configs` directory determine which specific analyses are executed with which parameters. Thus, the configs are the only files that need to be changed when using this repository. 
+This repository contains several scripts to perform a sequence of analyses. Main tasks are 'preprocessing', 'analysis', and 'postprocessing'. The `main.py` script coordinates all the tasks, while the configurations in the `configs` directory determine which specific analyses are executed with which parameters. Thus, the config files are the only files that need to be changed when using this repository. 
 
 ### Main Function
 
@@ -143,39 +146,80 @@ Tu run the main function, do the following
 
 ### Preprocessing Config 
 
-The `cfg_preprocessing.yaml` is the user interface for the preprocessing of the data. It contains information on the datasets
-(e.g., item_names and scale endpoints of variables, mappings between categories) and all steps to preprocess the raw data 
-files to the format needed for the machine learning-based analysis. Preprocessing steps are monitored and logged in the `logs` folder.
-The data were generated with the current configurations and are stored in the `data/preprocessed` folder under the name `full_data`.
+The `cfg_preprocessing.yaml` file is the user interface for the preprocessing of the data. It contains information about:
+- The datasets (e.g., item names, scale endpoints of variables, mappings between categories).
+- All steps needed to preprocess the raw data files into the format required for the machine-learning-based analysis.
 
-To conduct the preprocessing analysis, set `execute_preprocessing` to `True` at the top of the configuration file.
+Preprocessing steps are logged in the `logs/` folder. The resulting preprocessed data is stored in the `data/preprocessed/` folder under the name `full_data`.
+
+To conduct preprocessing, set the following parameter in the `cfg_preprocessing.yaml` file:
+```yaml
+execute_preprocessing: true
+```
 
 ### Analysis Config 
 
-The `cfg_analysis.yaml` is the user interface for the machine-learning based analysis of this repository. Results were generated
-with the current configurations and are stored in the `results` folder.
+The `cfg_analysis.yaml` file is the user interface for the machine-learning-based analysis in this repository. Results are generated based on the current configuration and stored in the `results/` folder.
+To perform the analysis, set the following parameter in the `cfg_analysis.yaml` file:
+```yaml
+execute_analysis: true
+```
+One run of the main.py function corresponds to one analysis (10x10x10 cross-validation) for a specific configuration:
+- **Criterion** [`e.g., wb_state`]
+- **Samples to include** [`e.g., all`]
+- **Feature configuration** [`e.g., pl_srmc`]
+- **Prediction model** [`e.g., elasticnet`]
+These defining parameters can be adjusted in lines 7-10 in `cfg_analysis.yaml` to specify the analysis setting. Available settings include:
 
-To conduct the machine-learning-based analysis, set `execute_analysis` to `True` at the top of the configuration file.
-One run of the main function corresponds to one analysis (10x10x10 CV) of the ml-based analysis
-(1 criterion (e.g., wb_state) x 1 samples inclusion strategy (e.g., all datasets) x 1 feature_combination (e.g., pl_srmc) x 1 prediction model (e.g., ENR))
-These defining parameters can be adjusted in lines 7-10 in `cfg_analysis.yaml` to specify the analysis setting.
+### Types of Predictors:
+- **Personal** [`pl`]
+- **Situational ESM** [`srmc`]
+- **Situation Sensing** [`sens`]
+- **Societal** [`mac`]
+- **Combined feature combinations** (e.g., [`pl_srmc`]) are listed in lines 39-57 of the configuration file.
 
-Types of predictors: Personal [pl], Situational ESM [srmc], Situation Sensing [sens], Societal [mac], all available feature_combinations are in lines 39-57 in `cfg_analysis.yaml` (e.g., [pl_srmc])
-Possible prediction models: (Elastic Net Regression [elasticnet],  Random Forest Regression [randomforestregressor])
-Possible samples inclusion strategies: (all datasets [all], reduced datasets [selected], control [control])
-Possible criteria: (experienced well-being[wb_state], experienced positive affect [pa_state], experienced negative affect [na_state], remembered well-being [wb_trait], remembered positive affect [pa_trait], remembered negative affect [na_trait])
+---
+
+### Possible Prediction Models:
+- **Elastic Net Regression** [`elasticnet`]
+- **Random Forest Regression** [`randomforestregressor`]
+
+---
+
+### Samples Inclusion Strategies:
+- **All datasets** [`all`]
+- **Reduced datasets** [`selected`]
+- **Control** [`control`]
+
+---
+
+### Possible Criteria:
+- **Experienced well-being** [`wb_state`]
+- **Experienced positive affect** [`pa_state`]
+- **Experienced negative affect** [`na_state`]
+- **Remembered well-being** [`wb_trait`]
+- **Remembered positive affect** [`pa_trait`]
+- **Remembered negative affect** [`na_trait`]
 
 To reproduce the results, please don't change any parameters except parameters in lines 7-10.
 
 ### Postprocessing Config
 
-The `cfg_postprocessing.yaml` is the user interface for the postprocessing of the ML-based results. This includes creating tables, 
-plots, and conducting significance tests. Results were generated with the current configurations and are stored in the `results` folder.
-The `methods_to_apply` in lines 7-16 could be adjusted to run only specific postprocessing steps.
-To reproduce the results, please don't change any other parameters. 
+The `cfg_postprocessing.yaml` file is the user interface for postprocessing the machine-learning-based results. This includes:
+- **Creating tables and plots**
+- **Conducting significance tests**
 
+Results generated during postprocessing are stored in the `results/` folder.
 
-**Recommended Execution Workflow:**
+To conduct postprocessing, adjust the `methods_to_apply` section (lines 7-16) in the `cfg_postprocessing.yaml` file to specify which postprocessing steps to execute. For example:
+```yaml
+methods_to_apply:
+  - create_plots
+  - significance_tests
+  - generate_tables
+```
+
+### Recommended Execution Workflow
 
 1. Preprocess the raw data (or use the preprocessed file "full_data").
 2. Run the machine learning analysis (for most analyses, this may be heavily time-consuming on a local computer).
@@ -238,7 +282,7 @@ Modify the top lines in the configuration files to execute preprocessing
 
 Run the main function after setting up the above parameters.
 
-#### Step 2: Analysis Configuration
+#### Step 2: Run analysis 
 Modify the top lines in the configuration files to conduct the analysis. 
 - `execute_preprocessing: false`
 - `execute_analysis: true`
@@ -252,14 +296,14 @@ Set the parameters in lines 7-10 in `cfg_analysis.yaml` to specify the analysis 
 
 Run the main function after setting up the above parameters (this may take a while)
 
-#### Step 3: Summarize results 
+#### Step 3: Summarize analysis results 
 
 Modify the result_dir in `utils/ClusterSummarizer.py` to the directory where the results are stored.
 In this case, this would be `../../results/analysis/elasticnet/wb_state/srmc/all/`.
 
 Run the ClusterSummarizer.py script to summarize the results. This produces e.g., M and SD of prediction results as reported in the paper. 
 
-#### Step 4: Postprocessing
+#### Step 4: Run postprocessing
 Note: Some steps only make sense if all results are calculated. 
 
 Modify the top lines in the configuration files to conduct postprocessing. 
