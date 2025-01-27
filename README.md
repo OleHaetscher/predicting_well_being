@@ -159,7 +159,7 @@ execute_preprocessing: true
 
 ### Analysis Config 
 
-The `cfg_analysis.yaml` file is the user interface for the machine-learning-based analysis in this repository. Results are generated based on the current configuration and stored in the `results/` folder.
+The `cfg_analysis.yaml` file is the user interface for the machine-learning-based analysis in this repository. Results are generated based on the current configuration and stored in the `results/` folder. \
 To perform the analysis, set the following parameter in the `cfg_analysis.yaml` file:
 ```yaml
 execute_analysis: true
@@ -168,7 +168,7 @@ One run of the main.py function corresponds to one analysis (10x10x10 cross-vali
 - **Criterion** [`e.g., wb_state`]
 - **Samples to include** [`e.g., all`]
 - **Feature configuration** [`e.g., pl_srmc`]
-- **Prediction model** [`e.g., elasticnet`]
+- **Prediction model** [`e.g., elasticnet`] \
 These defining parameters can be adjusted in lines 7-10 in `cfg_analysis.yaml` to specify the analysis setting. Available settings include:
 
 ### Types of Predictors:
@@ -211,13 +211,7 @@ The `cfg_postprocessing.yaml` file is the user interface for postprocessing the 
 
 Results generated during postprocessing are stored in the `results/` folder.
 
-To conduct postprocessing, adjust the `methods_to_apply` section (lines 7-16) in the `cfg_postprocessing.yaml` file to specify which postprocessing steps to execute. For example:
-```yaml
-methods_to_apply:
-  - create_plots
-  - significance_tests
-  - generate_tables
-```
+To conduct postprocessing, adjust the `methods_to_apply` section (lines 7-16) in the `cfg_postprocessing.yaml` file to specify which postprocessing steps to execute.
 
 ### Recommended Execution Workflow
 
