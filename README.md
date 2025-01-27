@@ -180,23 +180,23 @@ One run of the main.py function corresponds to one analysis (10x10x10 cross-vali
 
 These defining parameters can be adjusted in lines 7-10 in `cfg_analysis.yaml` to specify the analysis setting. Available settings include:
 
-## Types of Predictors:
+#### Types of Predictors:
 - **Personal** [`pl`]
 - **Situational ESM** [`srmc`]
 - **Situation Sensing** [`sens`]
 - **Societal** [`mac`]
 - **Combined feature combinations** (e.g., [`pl_srmc`]) are listed in lines 39-57 of the configuration file.
 
-## Possible Prediction Models:
+#### Possible Prediction Models:
 - **Elastic Net Regression** [`elasticnet`]
 - **Random Forest Regression** [`randomforestregressor`]
 
-## Samples Inclusion Strategies:
+#### Samples Inclusion Strategies:
 - **All datasets** [`all`]
 - **Reduced datasets** [`selected`]
 - **Control** [`control`]
 
-## Possible Criteria:
+#### Possible Criteria:
 - **Experienced well-being** [`wb_state`]
 - **Experienced positive affect** [`pa_state`]
 - **Experienced negative affect** [`na_state`]
@@ -387,6 +387,8 @@ predicting_well_being/
 └── README.md
 └── requirements.txt
 ```
+
+---
 
 ## License
 
