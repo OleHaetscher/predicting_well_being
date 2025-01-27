@@ -166,6 +166,7 @@ cython_debug/
 
 # data
 data/raw
+data/preprocessed
 
 # results
 results/
