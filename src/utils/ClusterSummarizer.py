@@ -861,6 +861,6 @@ if __name__ == "__main__":
     print("Hello")
     # adjust the path and num_reps as needed here
     summarizer = ClusterSummarizer(
-        base_result_dir="../../results/local_tests/srmc/all/wb_state/", num_reps=3
+        base_result_dir="../../results/local_tests/srmc/all/wb_state/", num_reps=10
     )
     summarizer.aggregate()

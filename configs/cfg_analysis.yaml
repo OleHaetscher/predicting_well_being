@@ -3,6 +3,12 @@
 
 execute_analysis: false
 
+params: # adjusted by SLURM, change to run a certain analysis locally
+  prediction_model: elasticnet
+  crit: wb_state
+  feature_combination: mac
+  samples_to_include: all
+
 methods_to_apply:
   - select_data
   - initial_info_log
@@ -60,12 +66,6 @@ feature_sample_combinations:
 
 # No control analyses needed for these combinations
 no_control_lst: [pl, srmc, sens, mac, all_in]
-
-params: # adjusted by SLURM, change to run a certain analysis locally
-  prediction_model: elasticnet
-  crit: wb_state
-  feature_combination: mac
-  samples_to_include: all
 
 cv:  # 10x10x10 CV in all reported analyses, can be adjusted for testing
   num_inner_cv: 10  # 10

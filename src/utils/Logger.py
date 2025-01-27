@@ -23,7 +23,7 @@ class Logger:
         log_dir: str = "tests",
         log_file: str = "log",
         rank: int = 0,
-        rep: str = "all",
+        rep: int = 0,
     ) -> "Logger":
         """
         Creates or retrieves a singleton instance of Logger based on the combination of `rank` and `rep`.

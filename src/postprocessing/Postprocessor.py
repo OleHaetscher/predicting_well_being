@@ -396,15 +396,12 @@ class Postprocessor:  # TODO adjust class / init doc at the end
         filename = self.processed_results_filenames["shap_ia_values_summarized"]
         output_dir = os.path.join(
             self.base_result_path,
-            self.cfg_postprocessing["create_supp_files"][
-                "shap_ia_output_filename"
-            ],
+            self.cfg_postprocessing["create_supp_files"]["shap_ia_output_filename"],
         )
 
         input_dir = os.path.join(
             self.base_result_path,
             self.cfg_postprocessing["general"]["data_paths"]["ia_values"],
-
         )
         self.supp_file_creator.create_mirrored_dir_with_files(
             base_dir=input_dir,

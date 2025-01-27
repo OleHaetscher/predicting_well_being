@@ -207,12 +207,8 @@ class BaseMLAnalyzer(ABC):
 
         # Analysis params
         self.crit = self.cfg_analysis["params"]["crit"]
-        self.feature_combination = self.cfg_analysis["params"][
-            "feature_combination"
-        ]
-        self.samples_to_include = self.cfg_analysis["params"][
-            "samples_to_include"
-        ]
+        self.feature_combination = self.cfg_analysis["params"]["feature_combination"]
+        self.samples_to_include = self.cfg_analysis["params"]["samples_to_include"]
         self.model = None
 
         # Data preparation
@@ -247,7 +243,7 @@ class BaseMLAnalyzer(ABC):
             feature_combination=self.feature_combination,
             crit=self.crit,
             samples_to_include=self.samples_to_include,
-            meta_vars=self.meta_vars
+            meta_vars=self.meta_vars,
         )
 
         # Methods that get clocked
@@ -288,14 +284,10 @@ class BaseMLAnalyzer(ABC):
         self.shap_value_name = self.cfg_analysis["output_filenames"][
             "shap_values"
         ]  # .pkl
-        self.shap_ia_values_for_local_name = self.cfg_analysis[
-            "output_filenames"
-        ][
+        self.shap_ia_values_for_local_name = self.cfg_analysis["output_filenames"][
             "shap_ia_values_for_local"
         ]  # .pkl
-        self.shap_ia_values_for_cluster_name = self.cfg_analysis[
-            "output_filenames"
-        ][
+        self.shap_ia_values_for_cluster_name = self.cfg_analysis["output_filenames"][
             "shap_ia_values_for_cluster"
         ]  # .pkl
         self.lin_model_coefs_name = self.cfg_analysis["output_filenames"][
@@ -340,9 +332,7 @@ class BaseMLAnalyzer(ABC):
             percentage_of_features=self.cfg_analysis["imputation"][
                 "percentage_of_features"
             ],
-            n_features_thresh=self.cfg_analysis["imputation"][
-                "n_features_thresh"
-            ],
+            n_features_thresh=self.cfg_analysis["imputation"]["n_features_thresh"],
             sample_posterior=self.cfg_analysis["imputation"]["sample_posterior"],
             pmm_k=self.cfg_analysis["imputation"]["pmm_k"],
             country_group_by=self.country_grouping_col,
@@ -759,9 +749,7 @@ class BaseMLAnalyzer(ABC):
                 inner_cv=inner_cv,
                 num_imputations=self.num_imputations,
                 groups=X_train[self.id_grouping_col],
-                n_jobs=self.cfg_analysis["parallelize"][
-                    "imputation_runs_n_jobs"
-                ],
+                n_jobs=self.cfg_analysis["parallelize"]["imputation_runs_n_jobs"],
             )
             X_train_imputed_lst_for_fold = [
                 imputed_datasets[num_imp]["outer_fold"]["X_train_for_test_full"]
