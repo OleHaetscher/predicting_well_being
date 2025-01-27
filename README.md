@@ -33,6 +33,8 @@ To reproduce the results, please execute the following steps:
 - Install the requirements 
 - Run the analyses as described below
 
+---
+
 ## Installation
 
 ### Cloning the Repository
@@ -75,7 +77,7 @@ This method does not require any special software and is perfect for those unfam
 3. **Paste the data in the repository**:
    - Paste the unzipped **data** folder in the repository. Ensure that the data folder is placed directly within the main repository directory as shown below. 
 ```plaintext
-prediction_of_reactivities_code/
+predicting_well_being/
 │
 ├── configs/
 ├── data/
@@ -132,9 +134,15 @@ To ensure your setup is correctly configured to run the code, follow these steps
 
 Following these steps will prepare your environment for running the project without any issues related to dependencies.
 
+---
+
 ## Usage
 
-This repository contains several scripts to perform a sequence of analyses. Main tasks are 'preprocessing', 'analysis', and 'postprocessing'. The `main.py` script coordinates all the tasks, while the configurations in the `configs` directory determine which specific analyses are executed with which parameters. Thus, the config files are the only files that need to be changed when using this repository. 
+This repository contains several scripts to perform a sequence of analyses. Main tasks are 
+- 'preprocessing'
+- 'analysis' 
+- 'postprocessing'. \
+- The `main.py` script coordinates all the tasks, while the configurations in the `configs` directory determine which specific analyses are executed with which parameters. Thus, the config files are the only files that need to be changed when using this repository. 
 
 ### Main Function
 
@@ -168,32 +176,27 @@ One run of the main.py function corresponds to one analysis (10x10x10 cross-vali
 - **Criterion** [`e.g., wb_state`]
 - **Samples to include** [`e.g., all`]
 - **Feature configuration** [`e.g., pl_srmc`]
-- **Prediction model** [`e.g., elasticnet`] \
+- **Prediction model** [`e.g., elasticnet`] 
+
 These defining parameters can be adjusted in lines 7-10 in `cfg_analysis.yaml` to specify the analysis setting. Available settings include:
 
-### Types of Predictors:
+## Types of Predictors:
 - **Personal** [`pl`]
 - **Situational ESM** [`srmc`]
 - **Situation Sensing** [`sens`]
 - **Societal** [`mac`]
 - **Combined feature combinations** (e.g., [`pl_srmc`]) are listed in lines 39-57 of the configuration file.
 
----
-
-### Possible Prediction Models:
+## Possible Prediction Models:
 - **Elastic Net Regression** [`elasticnet`]
 - **Random Forest Regression** [`randomforestregressor`]
 
----
-
-### Samples Inclusion Strategies:
+## Samples Inclusion Strategies:
 - **All datasets** [`all`]
 - **Reduced datasets** [`selected`]
 - **Control** [`control`]
 
----
-
-### Possible Criteria:
+## Possible Criteria:
 - **Experienced well-being** [`wb_state`]
 - **Experienced positive affect** [`pa_state`]
 - **Experienced negative affect** [`na_state`]
@@ -254,6 +257,8 @@ If main.py is not running as expected, consider the following steps
 - Check the python version and the python path
 - Check if you accidentally changed any settings in the config files. 
 
+---
+
 ## Reproducing Results 
 
 ### General Description 
@@ -309,6 +314,7 @@ One may adjust the specific postprocessing methods to apply in lines 7-16 in `cf
 
 Run the main function once these settings are adjusted.
 
+---
 
 ## Project Structure
 
