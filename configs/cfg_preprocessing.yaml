@@ -11,7 +11,7 @@ general:
 
   path_to_raw_data: "../data/raw"
   store_data: true  # store the full preprocessed df
-  store_wb_items: false  # store the wb_items for calculating descriptives
+  store_wb_items: true  # store the wb_items for calculating descriptives
 
   path_to_preprocessed_data: "../data/preprocessed"
   full_data_filename: full_data  # data used for ML-based analysis

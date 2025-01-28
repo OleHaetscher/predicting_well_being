@@ -4,14 +4,14 @@
 execute_postprocessing: true
 
 methods_to_apply:
-  #- condense_cv_results
-  #- sanity_check_pred_vs_true
-  #- create_descriptives
-  #- conduct_significance_tests
-  #- create_cv_results_plots
-  #- create_shap_plots
-  #- calculate_exp_lin_models
-  #- create_lin_model_coefs_supp
+  - condense_cv_results
+  - sanity_check_pred_vs_true
+  - create_descriptives
+  - conduct_significance_tests
+  - create_cv_results_plots
+  - create_shap_plots
+  - calculate_exp_lin_models
+  - create_lin_model_coefs_supp
   #- create_shap_values_supp  # this may take a while
   - create_shap_ia_values_supp
 
@@ -106,10 +106,10 @@ condense_cv_results:
     - spearman
     - neg_mean_squared_error
   all_results:
-    store: false
+    store: true
     filename: "all_cv_results.json"
   result_table:
-    store: false
+    store: true
     file_base_name: cv_results
     result_strs:
       main: main
@@ -123,7 +123,7 @@ sanity_check_pred_vs_true:
   reps_to_check: [0, 1]
 
   plot:
-    store: false
+    store: true
     filename: pred_true_parity_plot
     figure:
       width: 8
@@ -133,7 +133,7 @@ sanity_check_pred_vs_true:
     base_title: "Pred vs True"
 
   summary_stats:
-    store: false
+    store: true
     filename: "pred_true_parity_summary.json"
     decimals: 4
 
@@ -142,7 +142,7 @@ create_descriptives:
   traits_base_filename: trait_wb_items
 
   m_sd_table:
-    store: false
+    store: true
     filename: "vars_m_sd_table.xlsx"
     decimals: 2
     store_index: false
@@ -155,7 +155,7 @@ create_descriptives:
       - mac
       - crit
   wb_items:  # to ensure consistent tables
-    store: false
+    store: true
     filename: "wb_items_descriptive_table.xlsx"
     decimals: 2
 
@@ -182,7 +182,7 @@ create_descriptives:
       - Worried
 
   rel:
-    store: false
+    store: true
     filename: "crit_rel_per_sample.json"
     decimals: 2
     state:
@@ -204,7 +204,7 @@ conduct_significance_tests:
   p_fdr_strng: "p (FDR-corrected)"
 
   compare_models:
-    store: false
+    store: true
     filename_compare_models_main: "sig_tests_compare_models_main.xlsx"
     filename_compare_models_control: "sig_tests_compare_models_control.xlsx"
     stat_order:
@@ -216,7 +216,7 @@ conduct_significance_tests:
       - "p (FDR-corrected)"
 
   compare_predictor_classes:
-    store: false
+    store: true
     filename_compare_predictor_classes: "sig_tests_compare_predictor_classes.xlsx"
     ref_predictor_class: "pl"
     stat_order:
@@ -245,7 +245,7 @@ create_cv_results_plots:
     - randomforestregressor
 
   store_params:
-    store: false
+    store: true
     dpi: 450
     format: png  # pdf for NHB
     name: cv_results
@@ -353,13 +353,13 @@ create_cv_results_plots:
     all_in: 10015
 
 create_shap_plots:
-  models: [ randomforestregressor ]  # must be iterable
-  crits: [ wb_state]  # must be iterable
-  samples_to_include: [ selected]  # must be iterable
+  models: [ randomforestregressor, elasticnet ]  # must be iterable
+  crits: [ wb_state, wb_trait]  # must be iterable
+  samples_to_include: [ all, selected]  # must be iterable
   num_to_display: 6
 
   store_params:
-    store: false
+    store: true
     dpi: 450
     format: png # pdf, png
     name: beeswarm
@@ -388,7 +388,7 @@ create_shap_plots:
       - [ 3, 2 ]
 
   ia_values:
-    add: true
+    add: false
     position: [ 3, 2 ]
     feature_combination: srmc
     short_feature_names: False
@@ -438,7 +438,7 @@ create_shap_plots:
 calculate_exp_lin_models:
   num_features: 6
   decimals: 3
-  store: false
+  store: true
   base_filename: reg_table
   samples_to_include: [ selected ]  # must be iterable
   crits: [ wb_state ]  # must be iterable
