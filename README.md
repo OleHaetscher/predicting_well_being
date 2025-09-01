@@ -1,4 +1,5 @@
-# Predicting Well-Being Across Personal, Situational, and Societal Factors 
+# Predicting Well-Being Across Person-, Situation-, and Country-Level Variables
+
 
 This repository contains the complete analysis code. 
 
@@ -181,10 +182,10 @@ One run of the main.py function corresponds to one analysis (10x10x10 cross-vali
 These defining parameters can be adjusted in lines 7-10 in `cfg_analysis.yaml` to specify the analysis setting. Available settings include:
 
 #### Types of Predictors:
-- **Personal** [`pl`]
-- **Situational ESM** [`srmc`]
-- **Situational Sensing** [`sens`]
-- **Societal** [`mac`]
+- **Person-Level** [`pl`]
+- **Situation-Level (ESM)** [`srmc`]
+- **Situation-Level (Sensing)** [`sens`]
+- **Country-Level** [`mac`]
 - **Combined feature combinations** (e.g., [`pl_srmc`]) are listed in lines 39-57 of the configuration file.
 
 #### Possible Prediction Models:
