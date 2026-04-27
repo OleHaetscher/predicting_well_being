@@ -664,6 +664,7 @@ class ResultPlotter:
             metric=metric,
             fontsizes=fontsizes,
             rel=rel,
+            add_n=self.cfg_cv_results_plot["figure_params"]["add_n"],
         )
 
     def plot_incremental_bar_plot(
@@ -802,6 +803,7 @@ class ResultPlotter:
                 metric=metric,
                 fontsizes=fontsizes,
                 rel=rel,
+                add_n=self.cfg_cv_results_plot["figure_params"]["add_n"]
             )
 
     @staticmethod
@@ -939,6 +941,7 @@ class ResultPlotter:
         fontsizes: dict[str, int],
         metric: str,
         rel: float = None,
+        add_n: bool = True,
     ) -> None:
         """
         Formats a bar plot by adjusting y-ticks, x-axis labels, and adding an optional reference line.
@@ -960,6 +963,7 @@ class ResultPlotter:
             fontsizes: A dictionary containing font sizes for various plot elements.
             metric: The metric being plotted (e.g., "spearman", "pearson", "r2").
             rel: Optional float for a vertical reference line to indicate a threshold or baseline. If `None`, no line is added.
+            add_n: If the sample sizes are added in the y-axes ticks
         """
         y_arr = np.array([y_position])
         ax.set_yticks(y_arr + bar_width / 2)
@@ -974,13 +978,15 @@ class ResultPlotter:
         )
 
         n_samples = self.cfg_cv_results_plot["n_samples"][feature_combo]
-        feature_combos_str_format_n = self.add_n_to_title(
-            feature_combo_formatted, n_samples
-        )
+
+        if add_n:
+            feature_combo_formatted = self.add_n_to_title(
+                feature_combo_formatted, n_samples
+            )
 
         axes_cfg = self.cfg_cv_results_plot["format_bar_plot"]["axes"]
         ax.set_yticklabels(
-            [feature_combos_str_format_n],
+            [feature_combo_formatted],
             fontsize=fontsizes["tick_params"],
             horizontalalignment=axes_cfg["ylabels"]["hor_align"],
         )
