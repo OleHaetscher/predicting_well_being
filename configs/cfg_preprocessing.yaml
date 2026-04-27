@@ -5,7 +5,7 @@
 execute_preprocessing: false
 
 general:
-  datasets_to_be_included: [ cocoesm, cocoms, cocout, emotions, pia, zpid ] # cocoesm, cocoms, cocout, emotions, pia,
+  datasets_to_be_included: [   emotions, cocout, cocoesm, cocoms, zpid]  # also for postprocessing
   log_dir: "../logs/x"  # only for relevant preprocessing
   log_name: x
 

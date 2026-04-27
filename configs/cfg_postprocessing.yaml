@@ -6,9 +6,9 @@ execute_postprocessing: true
 methods_to_apply:
   #- condense_cv_results
   #- prediction_sanity_checks
-  - create_descriptives
+  # - create_descriptives
   #- conduct_significance_tests
-  #- create_cv_results_plots
+  - create_cv_results_plots
   #- create_shap_plots
   #- calculate_exp_lin_models
   #- create_lin_model_coefs_supp
@@ -192,6 +192,12 @@ sanity_check_pred_vs_true:
 create_descriptives:
   states_base_filename: wb_items
   traits_base_filename: trait_wb_items
+  store_predictor_rel: true
+
+  compute_predictor_rel:
+    store: true
+    filename: "predictor_reliabilities.xlsx"
+    decimals: 2
 
   m_sd_table:
     store: false
@@ -305,7 +311,7 @@ conduct_significance_tests:
 
 create_cv_results_plots:
   crits: [ wb_state ] # must be iterable
-  samples_to_include: [ combo ]  # all / selected / combo, must be iterable
+  samples_to_include: [ all, selected ]  # all / selected / combo, must be iterable
   metrics: [ pearson ]  # must be iterable
   m_metric: M
   sd_metric: SD
@@ -316,7 +322,7 @@ create_cv_results_plots:
   store_params:
     store: true
     dpi: 600
-    format: pdf  # png, pdf
+    format: png  # png, pdf
     name: cv_results
 
   titles:

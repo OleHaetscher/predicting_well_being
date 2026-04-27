@@ -253,6 +253,7 @@ class BasePreprocessor(ABC):
             (self.check_scale_endpoints, {"df": None, "df_type": "esm_based"}),
             (self.filter_min_num_esm_measures, {"df_states": None}),
             (self.store_wb_items, {"df_states": None}),
+            (self.store_state_df_before_selection, {"df_states": None}),
             (self.create_person_level_vars_from_esm, {"df_states": None}),
             (self.collapse_df, {"df": None, "df_type": "esm_based"}),
         ]
@@ -294,6 +295,7 @@ class BasePreprocessor(ABC):
             (self.store_trait_wb_items, {"df": None}),
             (self.create_criteria, {"df": None}),
             (self.set_full_col_df_as_attr, {"df": None}),
+            (self.store_trait_df_before_selection, {"df": None}),
             (self.fill_unique_id_col, {"df": None}),
             (self.select_final_columns, {"df": None}),
             (self.sanity_checking, {"df": None}),
@@ -1724,6 +1726,28 @@ class BasePreprocessor(ABC):
         self.df_before_final_selection = deepcopy(df)
         return df
 
+    def store_trait_df_before_selection(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Saves the full state DataFrame as a class attribute for later reference.
+
+        This method creates a deep copy of the state DataFrame and assigns it to a class attribute
+        (`df_before_final_selection`) to facilitate later sanity checks, such as calculating scale reliabilities.
+
+        Args:
+            df: A pandas DataFrame representing the state-level data.
+
+        Returns:
+            pd.DataFrame: The original DataFrame, unchanged.
+        """
+        df = deepcopy(self.df_before_final_selection)
+        filename = os.path.join(
+            self.cfg_preprocessing["general"]["path_to_preprocessed_data"],
+            f"full_trait_df_{self.dataset}",
+        )
+        with open(filename, "wb") as f:
+            pickle.dump(df, f)
+        return df
+
     def dataset_specific_post_processing(self, df: pd.DataFrame) -> pd.DataFrame:
         """
         Applies dataset-specific post-processing logic.
@@ -2310,6 +2334,10 @@ class BasePreprocessor(ABC):
                 {"df_sensing": None, "dataset": self.dataset},
             ),
             (
+                self.store_sensing_df_before_selection,
+                {"df_sensing": None, "dataset": self.dataset},
+            ),
+            (
                 self.create_person_level_desc_stats,
                 {"df": None, "feature_category": "sensing_based"},
             ),
@@ -2560,3 +2588,428 @@ class BasePreprocessor(ABC):
         df[selected_cols] = df.apply(process_row, axis=1)
 
         return df
+
+    def store_state_df_before_selection(self, df_states: pd.DataFrame) -> pd.DataFrame:
+        """
+        Creates and stores a day-level version of the ESM dataframe before the ESM data are
+        collapsed to person-level variables.
+
+        The stored dataframe contains one row per person and ESM day and includes the
+        ESM-derived variables needed for odd-even-day reliability checks. Importantly,
+        this method returns the original df_states unchanged so that the existing
+        preprocessing pipeline is not affected.
+        """
+        # New day-level dataframe for odd-even-day reliability analyses
+        day_level_state_df = self.create_day_level_vars_from_esm(deepcopy(df_states))
+        day_level_filename = os.path.join(
+            self.cfg_preprocessing["general"]["path_to_preprocessed_data"],
+            f"day_level_state_df_{self.dataset}",
+        )
+        with open(day_level_filename, "wb") as f:
+            pickle.dump(day_level_state_df, f)
+
+        return df_states
+
+    def create_day_level_vars_from_esm(self, df_states: pd.DataFrame) -> pd.DataFrame:
+        """
+        Aggregates ESM data to the person-day level.
+
+        This method mirrors the logic of create_person_level_vars_from_esm, but instead
+        of aggregating directly to one row per person, it creates one row per person and
+        ESM day. The resulting dataframe can be used to compute odd-even-day reliabilities
+        for ESM-derived person-level predictors.
+
+        Included day-level variables:
+        - Daily descriptive statistics for continuous ESM variables such as sleep quality
+          and number of interaction partners.
+        - Daily percentages for categorical ESM variables.
+        - Daily number of social interactions.
+        - Daily percentage of early-day responses.
+        - Daily number of responses.
+        - Daily percentage of responses.
+
+        Excluded by design:
+        - Weekday responses, because this is not meaningful within a single day.
+        - Years of participation, because this is only needed for country-level merging.
+        - Averaged criterion items, because these are not needed for the predictor
+          reliability checks described here.
+        """
+        df_states = self._add_esm_day_columns(df_states)
+
+        id_col = self.raw_esm_id_col
+        day_cols = [id_col, "esm_day", "esm_day_index"]
+
+        df_day = (
+            df_states[day_cols]
+            .drop_duplicates()
+            .sort_values([id_col, "esm_day"])
+            .reset_index(drop=True)
+        )
+
+        steps = [
+            self.create_day_level_desc_stats_from_esm,
+            self.create_day_level_percentages_from_esm,
+            self.create_day_level_number_interactions,
+            self.create_day_level_early_day_responses,
+            self.create_day_level_number_responses,
+        ]
+
+        for method in steps:
+            day_level_features = self._log_and_execute(
+                method,
+                df_states=df_states,
+                indent=6,
+            )
+            df_day = df_day.merge(
+                day_level_features, on=[id_col, "esm_day"], how="left"
+            )
+
+        df_day = self.create_day_level_percentage_responses(df_day)
+
+        return df_day
+
+    def _add_esm_day_columns(self, df_states: pd.DataFrame) -> pd.DataFrame:
+        """
+        Adds day identifiers to the ESM dataframe.
+
+        esm_day is the calendar date of the ESM response. esm_day_index is the sequential
+        day number within each person and can be used to split days into odd and even days.
+        """
+        id_col = self.raw_esm_id_col
+
+        df_states[self.esm_timestamp] = pd.to_datetime(
+            df_states[self.esm_timestamp],
+            errors="coerce",
+        )
+        df_states["esm_day"] = df_states[self.esm_timestamp].dt.date
+
+        day_index = (
+            df_states[[id_col, "esm_day"]]
+            .dropna(subset=[id_col, "esm_day"])
+            .drop_duplicates()
+            .sort_values([id_col, "esm_day"])
+        )
+        day_index["esm_day_index"] = day_index.groupby(id_col).cumcount() + 1
+
+        df_states = df_states.merge(day_index, on=[id_col, "esm_day"], how="left")
+
+        return df_states
+
+    def create_day_level_desc_stats_from_esm(
+        self, df_states: pd.DataFrame
+    ) -> pd.DataFrame:
+        """
+        Creates day-level descriptive statistics for continuous self-reported
+        micro-context variables.
+
+        This is the day-level analogue of create_person_level_desc_stats for ESM-based
+        predictors.
+        """
+        id_col = self.raw_esm_id_col
+        group_cols = [id_col, "esm_day"]
+
+        cont_var_entries = self.config_parser(
+            self.cfg_preprocessing["esm_based"]["self_reported_micro_context"],
+            "continuous",
+            "number_interaction_partners",
+            "sleep_quality",
+        )
+
+        df_day = df_states[group_cols].drop_duplicates().copy()
+
+        for entry in cont_var_entries:
+            var_name = entry["name"]
+
+            if self.dataset not in entry["item_names"]:
+                continue
+
+            column = entry["item_names"][self.dataset]
+
+            if column not in df_states.columns:
+                raise KeyError(f"Column: {column} not found in {self.dataset} state_df")
+
+            df_tmp = df_states[group_cols + [column]].copy()
+            df_tmp[column] = pd.to_numeric(df_tmp[column], errors="coerce")
+
+            stats = (
+                df_tmp.groupby(group_cols)[column]
+                .agg(
+                    mean="mean",
+                    sd=lambda x: x.std() if x.count() >= 2 else pd.NA,
+                    min="min",
+                    max="max",
+                )
+                .reset_index()
+            )
+
+            stats = stats.rename(
+                columns={
+                    "mean": f"{var_name}_mean",
+                    "sd": f"{var_name}_sd",
+                    "min": f"{var_name}_min",
+                    "max": f"{var_name}_max",
+                }
+            )
+
+            df_day = df_day.merge(stats, on=group_cols, how="left")
+
+            self.logger.log(
+                f"          Created day-level M, SD, Min, and Max for var {var_name}"
+            )
+
+        return df_day
+
+    def create_day_level_percentages_from_esm(
+        self, df_states: pd.DataFrame
+    ) -> pd.DataFrame:
+        """
+        Creates day-level percentages for categorical ESM-based variables.
+
+        This is the day-level analogue of create_person_level_percentages.
+        """
+        id_col = self.raw_esm_id_col
+        group_cols = [id_col, "esm_day"]
+
+        percentage_var_entries = self.config_parser(
+            cfg=self.cfg_preprocessing["esm_based"]["self_reported_micro_context"],
+            var_type="percentage",
+        )
+
+        df_day = df_states[group_cols].drop_duplicates().copy()
+
+        for entry in percentage_var_entries:
+            var_name = entry["name"]
+
+            if "item_names" not in entry or self.dataset not in entry["item_names"]:
+                continue
+
+            column = entry["item_names"][self.dataset]
+
+            if not isinstance(column, str):
+                self.logger.log(
+                    f"      Skipping day-level var {var_name} in dataset {self.dataset}, has custom method"
+                )
+                continue
+
+            if column not in df_states.columns:
+                raise KeyError(f"Column: {column} not found in {self.dataset} state_df")
+
+            df_tmp = df_states[group_cols + [self.esm_timestamp, column]].copy()
+
+            if (
+                "category_mappings" in entry
+                and self.dataset in entry["category_mappings"]
+            ):
+                category_mapping = entry["category_mappings"][self.dataset]
+
+                if df_tmp[column].dtype == object:
+                    df_tmp[column] = df_tmp[column].apply(
+                        lambda x: self._map_comma_separated(
+                            x,
+                            category_mapping,
+                            map_ambiguous=False,
+                        )
+                    )
+                else:
+                    df_tmp[column] = df_tmp[column].apply(
+                        lambda x: self._map_single_value(x, category_mapping)
+                    )
+
+            if "per_day" in entry:
+                df_tmp = df_tmp[group_cols + [column]].drop_duplicates()
+
+            def _percentage_valid_responses(group: pd.Series) -> float:
+                valid_n = group.isin([0, 1]).sum()
+                if valid_n == 0:
+                    return np.nan
+                return (group == 1).sum() / valid_n
+
+            stats = (
+                df_tmp.groupby(group_cols)[column]
+                .apply(_percentage_valid_responses)
+                .reset_index(name=var_name)
+            )
+
+            assert (
+                len(stats[stats[var_name] > 1]) == 0
+            ), "day-level percentage found that is greater than 1"
+
+            df_day = df_day.merge(stats, on=group_cols, how="left")
+
+            self.logger.log(
+                f"          Created day-level percentage for var {var_name}"
+            )
+
+        return df_day
+
+    def create_day_level_number_interactions(
+        self, df_states: pd.DataFrame
+    ) -> pd.DataFrame:
+        """
+        Creates the day-level variable number_interactions.
+
+        This is the day-level analogue of create_number_interactions.
+        """
+        id_col = self.raw_esm_id_col
+        group_cols = [id_col, "esm_day"]
+
+        cfg_num_ia = self.config_parser(
+            self.cfg_preprocessing["esm_based"]["self_reported_micro_context"],
+            "continuous",
+            "number_interactions",
+        )[0]
+
+        item_name = cfg_num_ia["item_names"][self.dataset]
+        cat_mappings = cfg_num_ia["category_mappings"][self.dataset]
+
+        if item_name not in df_states.columns:
+            raise KeyError(f"Column: {item_name} not found in {self.dataset} state_df")
+
+        df_tmp = df_states[group_cols + [item_name]].copy()
+        df_tmp["interaction_sum"] = df_tmp[item_name].map(
+            lambda x: cat_mappings.get(x, 0)
+        )
+
+        df_day = df_tmp.groupby(group_cols, as_index=False).agg(
+            number_interactions=("interaction_sum", "sum")
+        )
+
+        self.logger.log("          Created day-level number_interactions")
+
+        return df_day
+
+    def create_day_level_early_day_responses(
+        self, df_states: pd.DataFrame
+    ) -> pd.DataFrame:
+        """
+        Creates the day-level variable early_day_responses.
+
+        This is the day-level analogue of create_early_day_responses.
+        """
+        id_col = self.raw_esm_id_col
+        group_cols = [id_col, "esm_day"]
+
+        df_tmp = df_states[group_cols + [self.esm_timestamp]].copy()
+        df_tmp[self.esm_timestamp] = pd.to_datetime(
+            df_tmp[self.esm_timestamp],
+            errors="coerce",
+        )
+
+        df_tmp["hour_adjusted"] = (
+            df_tmp[self.esm_timestamp] - pd.DateOffset(hours=3)
+        ).dt.hour
+
+        df_tmp["is_early"] = df_tmp["hour_adjusted"].between(
+            0,
+            11,
+            inclusive="both",
+        )
+
+        df_day = (
+            df_tmp.groupby(group_cols)["is_early"]
+            .mean()
+            .reset_index(name="early_day_responses")
+        )
+
+        assert (
+            len(df_day[df_day["early_day_responses"] > 1]) == 0
+        ), "day-level percentage found that is greater than 1"
+
+        self.logger.log("          Created day-level early_day_responses")
+
+        return df_day
+
+    def create_day_level_number_responses(
+        self, df_states: pd.DataFrame
+    ) -> pd.DataFrame:
+        """
+        Creates the day-level variable number_responses.
+        """
+        id_col = self.raw_esm_id_col
+        group_cols = [id_col, "esm_day"]
+
+        df_day = (
+            df_states.groupby(group_cols).size().reset_index(name="number_responses")
+        )
+
+        self.logger.log("          Created day-level number_responses")
+
+        return df_day
+
+    def create_day_level_percentage_responses(
+        self, df_day: pd.DataFrame
+    ) -> pd.DataFrame:
+        """
+        Creates the day-level variable percentage_responses.
+
+        If a dataset-specific maximum number of daily responses is provided in the config
+        under general.daily_max_responses, that value is used. Otherwise, the observed
+        maximum number of responses per person-day is used as a fallback.
+        """
+        daily_max_responses = (
+            self.cfg_preprocessing.get("general", {})
+            .get("daily_max_responses", {})
+            .get(self.dataset)
+        )
+
+        if daily_max_responses is None:
+            daily_max_responses = df_day["number_responses"].max()
+            self.logger.log(
+                f"          WARNING: No configured daily_max_responses found for {self.dataset}. "
+                f"Using observed maximum daily response count: {daily_max_responses}"
+            )
+
+        df_day["percentage_responses"] = (
+            df_day["number_responses"] / daily_max_responses
+        )
+
+        max_resp = df_day[df_day["percentage_responses"] > 1]
+        if len(max_resp) > 0:
+            self.logger.log(
+                f"          WARNING: Found day-level percentage_responses values over 1, "
+                f"Max value: {max_resp['percentage_responses'].max()}, set to 1"
+            )
+
+        df_day["percentage_responses"] = df_day["percentage_responses"].apply(
+            lambda x: 1 if x > 1 else x
+        )
+
+        self.logger.log("          Created day-level percentage_responses")
+
+        return df_day
+
+    def store_sensing_df_before_selection(
+        self, df_sensing: pd.DataFrame, dataset: Optional[str] = None
+    ) -> pd.DataFrame:
+        """
+        Stores the processed sensing dataframe before it is aggregated to person-level
+        descriptive statistics.
+
+        At this point in the pipeline, sensing data are already at the person-day level.
+        The stored dataframe can therefore be used directly for odd-even-day reliability
+        checks of sensing-derived person-level predictors.
+
+        Importantly, this method returns the original df_sensing unchanged, so the existing
+        preprocessing pipeline remains unaffected.
+
+        Args:
+            df_sensing: A pandas DataFrame containing processed day-level sensing data.
+            dataset: Optional dataset name. Included for compatibility with the preprocessing
+                step structure; defaults to self.dataset if not provided.
+
+        Returns:
+            pd.DataFrame: The original sensing dataframe, unchanged.
+        """
+        dataset = dataset or self.dataset
+
+        sensing_df_to_store = deepcopy(df_sensing)
+
+        filename = os.path.join(
+            self.cfg_preprocessing["general"]["path_to_preprocessed_data"],
+            f"day_level_sensing_df_{dataset}",
+        )
+
+        with open(filename, "wb") as f:
+            pickle.dump(sensing_df_to_store, f)
+
+        return df_sensing

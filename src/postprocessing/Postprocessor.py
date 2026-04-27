@@ -330,6 +330,12 @@ class Postprocessor:
             store_index=var_table_cfg["store_index"],
         )
 
+        self.descriptives_creator.compute_predictor_reliabilities(
+            store=self.cfg_postprocessing["create_descriptives"]["compute_predictor_rel"]["store"],
+            filename=self.cfg_postprocessing["create_descriptives"]["compute_predictor_rel"]["filename"],
+            decimals=self.cfg_postprocessing["create_descriptives"]["compute_predictor_rel"]["decimals"],
+        )
+
         rel_dct = {}
         soc_dem_dct = {}
 
