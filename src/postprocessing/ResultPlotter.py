@@ -6,6 +6,7 @@ import matplotlib.lines as mlines
 import matplotlib.patches as mpatches
 import matplotlib.pyplot as plt
 import numpy as np
+import pandas as pd
 import shap
 from matplotlib.axes import Axes
 from matplotlib.colors import LinearSegmentedColormap
@@ -185,9 +186,10 @@ class ResultPlotter:
 
         for i, group in enumerate(feature_combinations):
             # For "combo", the first column uses "selected" samples, and the others use "all"
-            sublist_sample = (
-                "selected" if samples_to_include == "combo" and i == 0 else "all"
-            )
+            if samples_to_include == "combo":
+                sublist_sample = "selected" if i == 0 else "all"
+            else:
+                sublist_sample = samples_to_include
 
             print(sublist_sample)
             filtered_metrics = self.filter_cv_results_data(
@@ -717,10 +719,14 @@ class ResultPlotter:
 
         for i, model in enumerate(models):
             base_value = pl_reference_dct[f"{ref_feature_combo}_{model}"][m_metric]
-            increment = pl_margin_dct[f"{feature_combo}_{model}"][
-                f"incremental_{m_metric}"
-            ]
-            error = data[f"{feature_combo}_{model}"][sd_metric]
+            try:  # bit hacky but ok
+                increment = pl_margin_dct[f"{feature_combo}_{model}"][
+                    f"incremental_{m_metric}"
+                ]
+                error = data[f"{feature_combo}_{model}"][sd_metric]
+            except KeyError:
+                print("No all_in data for selected")
+                continue
 
             y_position_to_plot = 0 + (1 - 2 * i) * (bar_width / 2)
             alpha = color_dct["bar_saturation"][model]
@@ -1882,3 +1888,610 @@ class ResultPlotter:
         return os.path.normpath(
             os.path.join(self.plot_base_dir, *filtered_path_components)
         )
+
+    def plot_shap_sanity_histograms(
+        self,
+        comparison_df: pd.DataFrame,
+        shap_values_by_feature: dict[str, dict[str, np.ndarray]],
+        feature_combination: str,
+        num_features: int,
+        rank_by: str = "selected",
+        bin_width: float = 0.01,
+        feature_label_col: str = "Feature",
+        alpha: float = 0.45,
+        figsize: tuple[float, float] | None = None,
+        store: bool = False,
+        plot_name: str | None = None,
+        plot_format: str = "png",
+        dpi: int = 450,
+        crit: str | None = None,
+        model: str | None = None,
+    ) -> None:
+        """
+        Plots signed SHAP-value histograms for selected-vs-all sanity checks.
+
+
+        Note: Not used in final code
+
+        For a given feature combination, the function selects the top `num_features`
+        according to the mean absolute SHAP value in either the selected or all analysis.
+        For each selected feature, it overlays semi-transparent histograms of signed SHAP
+        values from the selected and all analyses.
+
+        Args:
+            comparison_df: DataFrame created in shap_sanity_checks. Must contain
+                Feature, Mean_abs_SHAP_selected, Mean_abs_SHAP_all, and
+                Pearson_r_selected_vs_all.
+            shap_values_by_feature: Dictionary with raw signed SHAP values:
+                {
+                    feature_name: {
+                        "selected": np.ndarray,
+                        "all": np.ndarray,
+                    }
+                }
+            feature_combination: Feature-combination label, e.g., "pl_srmc".
+            num_features: Number of top features to plot.
+            rank_by: Whether to rank top features by "selected" or "all" mean absolute SHAP.
+            bin_width: Width of the SHAP-value histogram bins.
+            feature_label_col: Column to use for feature labels. Defaults to "Feature".
+            alpha: Histogram transparency.
+            figsize: Optional figure size. If None, determined from num_features.
+            store: Whether to save the plot.
+            plot_name: Optional filename stem. If None, generated automatically.
+            plot_format: File format for saving.
+            dpi: Plot resolution.
+            crit: Optional criterion for structured storage path.
+            model: Optional model for structured storage path.
+        """
+        if rank_by not in ["selected", "all"]:
+            raise ValueError("rank_by must be either 'selected' or 'all'.")
+
+        importance_col = f"Mean_abs_SHAP_{rank_by}"
+
+        required_cols = {
+            "Feature",
+            "Mean_abs_SHAP_selected",
+            "Mean_abs_SHAP_all",
+            "Pearson_r_selected_vs_all",
+        }
+        missing_cols = required_cols.difference(comparison_df.columns)
+        if missing_cols:
+            raise KeyError(f"comparison_df is missing columns: {missing_cols}")
+
+        if importance_col not in comparison_df.columns:
+            raise KeyError(f"Column '{importance_col}' not found in comparison_df.")
+
+        label_col = (
+            feature_label_col
+            if feature_label_col in comparison_df.columns
+            else "Feature"
+        )
+
+        top_features_df = (
+            comparison_df.dropna(subset=[importance_col])
+            .sort_values(by=importance_col, ascending=False)
+            .head(num_features)
+            .reset_index(drop=True)
+        )
+
+        if top_features_df.empty:
+            print(f"No features available for {feature_combination}.")
+            return
+
+        missing_features = [
+            feature
+            for feature in top_features_df["Feature"]
+            if feature not in shap_values_by_feature
+        ]
+        if missing_features:
+            raise KeyError(
+                f"Raw SHAP values missing for features: {missing_features[:10]}"
+            )
+
+        if figsize is None:
+            figsize = (10, max(2.2 * len(top_features_df), 4))
+
+        fig, axes = plt.subplots(
+            nrows=len(top_features_df),
+            ncols=1,
+            figsize=figsize,
+            sharex=True,
+            squeeze=False,
+        )
+        axes = axes.flatten()
+
+        for ax, (_, row) in zip(axes, top_features_df.iterrows()):
+            feature = row["Feature"]
+            feature_label = str(row[label_col])
+
+            selected_vals = np.asarray(
+                shap_values_by_feature[feature]["selected"],
+                dtype=float,
+            )
+            all_vals = np.asarray(
+                shap_values_by_feature[feature]["all"],
+                dtype=float,
+            )
+
+            selected_vals = selected_vals[np.isfinite(selected_vals)]
+            all_vals = all_vals[np.isfinite(all_vals)]
+
+            if selected_vals.size == 0 and all_vals.size == 0:
+                continue
+
+            min_val = np.nanmin(
+                [
+                    selected_vals.min() if selected_vals.size > 0 else np.nan,
+                    all_vals.min() if all_vals.size > 0 else np.nan,
+                ]
+            )
+            max_val = np.nanmax(
+                [
+                    selected_vals.max() if selected_vals.size > 0 else np.nan,
+                    all_vals.max() if all_vals.size > 0 else np.nan,
+                ]
+            )
+
+            if min_val == max_val:
+                min_val -= bin_width
+                max_val += bin_width
+
+            bins = np.arange(min_val, max_val + bin_width, bin_width)
+            if len(bins) < 2:
+                bins = np.array([min_val, max_val + bin_width])
+
+            ax.hist(
+                all_vals,
+                bins=bins,
+                alpha=alpha,
+                label="All analysis",
+            )
+            ax.hist(
+                selected_vals,
+                bins=bins,
+                alpha=alpha,
+                label="Selected analysis",
+            )
+
+            ax.axvline(np.mean(all_vals), linestyle=":", linewidth=1)
+            ax.axvline(np.mean(selected_vals), linestyle="--", linewidth=1)
+
+            formatted_label = self.line_break_strings(
+                strng=feature_label,
+                max_char_on_line=45,
+                balance=True,
+            )
+
+            ax.text(
+                0.01,
+                0.92,
+                formatted_label,
+                transform=ax.transAxes,
+                ha="left",
+                va="top",
+                fontsize=10,
+                fontweight="bold",
+            )
+
+            ax.text(
+                0.99,
+                0.92,
+                (
+                    f"r = {row['Pearson_r_selected_vs_all']:.2f}\n"
+                    f"|SHAP| {rank_by} = {row[importance_col]:.3f}"
+                ),
+                transform=ax.transAxes,
+                ha="right",
+                va="top",
+                fontsize=9,
+            )
+
+            ax.set_ylabel("Count")
+            ax.spines["top"].set_visible(False)
+            ax.spines["right"].set_visible(False)
+
+        axes[-1].set_xlabel("Signed SHAP value")
+
+        mean_corr = pd.to_numeric(
+            comparison_df["Pearson_r_selected_vs_all"],
+            errors="coerce",
+        ).mean()
+
+        selected_patch = mpatches.Patch(alpha=alpha, label="Selected analysis")
+        all_patch = mpatches.Patch(alpha=alpha, label="All analysis")
+        mean_corr_line = mlines.Line2D(
+            [],
+            [],
+            linestyle="none",
+            label=f"Mean r = {mean_corr:.2f}",
+        )
+
+        fig.legend(
+            handles=[selected_patch, all_patch, mean_corr_line],
+            loc="lower center",
+            ncol=3,
+            frameon=False,
+        )
+
+        fig.suptitle(
+            f"{feature_combination}: selected vs. all SHAP distributions",
+            fontsize=12,
+            fontweight="bold",
+        )
+
+        plt.tight_layout(rect=(0, 0.06, 1, 0.96))
+
+        if store:
+            if plot_name is None:
+                plot_name = (
+                    f"shap_sanity_histograms_{feature_combination}"
+                    f"_top{num_features}_by_{rank_by}"
+                )
+
+            self.store_plot(
+                plot_name=plot_name,
+                plot_format=plot_format,
+                dpi=dpi,
+                feature_combination=feature_combination,
+                samples_to_include="selected_vs_all",
+                crit=crit,
+                model=model,
+            )
+        else:
+            plt.show()
+
+    def plot_country_level_variability(
+        self,
+        df: pd.DataFrame,
+        columns: list[str] | None = None,
+        country_id_col: str | None = None,
+        scale_boundaries: dict[str, dict[str, float]] | None = None,
+        n_cols: int = 5,
+        panel_width: float = 3.3,
+        panel_height: float = 2.4,
+        store: bool = False,
+        plot_name_base: str = "country_level_variability",
+        plot_format: str = "png",
+        dpi: int = 450,
+    ) -> None:
+        """
+        Creates two large overview plots for country-level variables:
+        1) dispersion across countries (collapsed country profiles)
+        2) dispersion across persons (person-weighted)
+
+        Each variable gets its own small panel showing:
+        - full theoretical range (from config)
+        - observed min-max range
+        - violin plot of the empirical distribution
+        - boxplot on top
+
+        Args:
+            df: DataFrame containing country-level variables. Typically one row per person.
+            columns: Country-level columns to include. If None, all df columns are used.
+            country_id_col: Optional country identifier column for collapsing to one row per country.
+                            If None, duplicate rows across the selected country-level columns are removed.
+            scale_boundaries: Optional dict of scale boundaries. If None, they are read from
+                              cfg_postprocessing["create_descriptives"]["country_vars"]["scale_boundaries"].
+            n_cols: Number of subplot columns in the overview figure.
+            panel_width: Width per subplot.
+            panel_height: Height per subplot.
+            store: If True, store the plots via self.store_plot.
+            plot_name_base: Base filename for stored plots.
+            plot_format: File format for stored plots.
+            dpi: Plot resolution.
+        """
+        if columns is None:
+            columns = list(df.columns)
+
+        if scale_boundaries is None:
+            scale_boundaries = self.cfg_postprocessing["create_descriptives"][
+                "country_vars"
+            ].get("scale_boundaries", {})
+
+        cols_to_use = columns.copy()
+
+        # Country-collapsed version
+        if country_id_col is not None and country_id_col in df.columns:
+            df_country = (
+                df[[country_id_col] + cols_to_use]
+                .drop_duplicates(subset=[country_id_col])
+                .loc[:, cols_to_use]
+                .copy()
+            )
+        else:
+            # Fallback: collapse repeated country profiles using the country-level columns themselves
+            df_country = df[cols_to_use].drop_duplicates().copy()
+
+        # Person-weighted version
+        df_person = df[cols_to_use].copy()
+
+        self._plot_country_variability_overview(
+            df_plot=df_country,
+            columns=cols_to_use,
+            scale_boundaries=scale_boundaries,
+            n_cols=n_cols,
+            panel_width=panel_width,
+            panel_height=panel_height,
+            distribution_label="Across countries",
+            violin_color="#4C78A8",
+            show_points=True,
+            store=store,
+            plot_name=f"{plot_name_base}_countries",
+            plot_format=plot_format,
+            dpi=dpi,
+        )
+
+        self._plot_country_variability_overview(
+            df_plot=df_person,
+            columns=cols_to_use,
+            scale_boundaries=scale_boundaries,
+            n_cols=n_cols,
+            panel_width=panel_width,
+            panel_height=panel_height,
+            distribution_label="Across persons",
+            violin_color="#F58518",
+            show_points=False,
+            store=store,
+            plot_name=f"{plot_name_base}_persons",
+            plot_format=plot_format,
+            dpi=dpi,
+        )
+
+    def _plot_country_variability_overview(
+        self,
+        df_plot: pd.DataFrame,
+        columns: list[str],
+        scale_boundaries: dict[str, dict[str, float]],
+        n_cols: int,
+        panel_width: float,
+        panel_height: float,
+        distribution_label: str,
+        violin_color: str,
+        show_points: bool,
+        store: bool,
+        plot_name: str,
+        plot_format: str,
+        dpi: int,
+    ) -> None:
+        """
+        Helper that creates one multi-panel overview figure.
+        """
+        n_vars = len(columns)
+        n_rows = int(np.ceil(n_vars / n_cols))
+
+        fig, axes = plt.subplots(
+            n_rows,
+            n_cols,
+            figsize=(n_cols * panel_width, n_rows * panel_height),
+            squeeze=False,
+        )
+        axes_flat = axes.flatten()
+
+        rng = np.random.default_rng(42)
+
+        for ax_idx, col in enumerate(columns):
+            ax = axes_flat[ax_idx]
+            values = pd.to_numeric(df_plot[col], errors="coerce").dropna()
+
+            if values.empty:
+                ax.set_axis_off()
+                continue
+
+            total_min, total_max = self._get_scale_bounds_for_variable(
+                col=col,
+                values=values,
+                scale_boundaries=scale_boundaries,
+            )
+
+            obs_min = float(values.min())
+            obs_max = float(values.max())
+            obs_sd = float(values.std(ddof=1)) if len(values) > 1 else 0.0
+
+            # Prevent degenerate x-range
+            if total_min == total_max:
+                total_min -= 0.5
+                total_max += 0.5
+
+            # Full possible scale range
+            ax.hlines(
+                y=0,
+                xmin=total_min,
+                xmax=total_max,
+                color="lightgray",
+                linewidth=8,
+                zorder=0,
+            )
+
+            # Observed range
+            ax.hlines(
+                y=0,
+                xmin=obs_min,
+                xmax=obs_max,
+                color="gray",
+                linewidth=8,
+                zorder=1,
+            )
+
+            # Violin
+            violin_parts = ax.violinplot(
+                dataset=[values.to_numpy()],
+                positions=[0],
+                vert=False,
+                widths=0.75,
+                showmeans=False,
+                showmedians=False,
+                showextrema=False,
+            )
+            for body in violin_parts["bodies"]:
+                body.set_facecolor(violin_color)
+                body.set_edgecolor("black")
+                body.set_alpha(0.45)
+                body.set_linewidth(0.8)
+
+            # Boxplot
+            ax.boxplot(
+                [values.to_numpy()],
+                positions=[0],
+                vert=False,
+                widths=0.22,
+                showfliers=False,
+                patch_artist=True,
+                boxprops=dict(facecolor="white", edgecolor="black", linewidth=1.0),
+                medianprops=dict(color="black", linewidth=1.2),
+                whiskerprops=dict(color="black", linewidth=1.0),
+                capprops=dict(color="black", linewidth=1.0),
+            )
+
+            # Optional raw points (useful for country-level figure)
+            if show_points:
+                jitter = rng.uniform(-0.08, 0.08, size=len(values))
+                ax.scatter(
+                    values.to_numpy(),
+                    jitter,
+                    s=12,
+                    alpha=0.45,
+                    color="black",
+                    linewidths=0,
+                    zorder=3,
+                )
+
+            ax.set_xlim(total_min, total_max)
+            ax.set_ylim(-0.6, 0.6)
+            ax.set_yticks([])
+
+            pretty_label = self._format_country_variable_label(col)
+            pretty_label = self.line_break_strings(
+                strng=pretty_label,
+                max_char_on_line=22,
+                balance=True,
+            )
+            ax.set_title(pretty_label, fontsize=10, pad=10)
+
+            ax.text(
+                0.02,
+                0.95,
+                f"obs: {obs_min:.2f}–{obs_max:.2f}\nSD = {obs_sd:.2f}",
+                transform=ax.transAxes,
+                ha="left",
+                va="top",
+                fontsize=8,
+            )
+
+            # Simplify spines
+            for spine in ["top", "right", "left"]:
+                ax.spines[spine].set_visible(False)
+
+            ax.tick_params(axis="x", labelsize=8)
+
+        # Hide unused axes
+        for ax in axes_flat[n_vars:]:
+            ax.set_axis_off()
+
+        legend_handles = [
+            mlines.Line2D(
+                [],
+                [],
+                color="lightgray",
+                linewidth=8,
+                label="Full possible scale range",
+            ),
+            mlines.Line2D(
+                [],
+                [],
+                color="gray",
+                linewidth=8,
+                label="Observed min–max range",
+            ),
+            mpatches.Patch(
+                facecolor=violin_color,
+                edgecolor="black",
+                alpha=0.45,
+                label=distribution_label,
+            ),
+            mpatches.Patch(
+                facecolor="white",
+                edgecolor="black",
+                label="Boxplot (median + IQR)",
+            ),
+        ]
+
+        if show_points:
+            legend_handles.append(
+                mlines.Line2D(
+                    [],
+                    [],
+                    color="black",
+                    marker="o",
+                    linestyle="None",
+                    markersize=5,
+                    alpha=0.6,
+                    label="Observed values",
+                )
+            )
+
+        fig.legend(
+            handles=legend_handles,
+            loc="upper center",
+            bbox_to_anchor=(0.5, 0.995),
+            ncol=3,
+            frameon=False,
+            fontsize=10,
+        )
+
+        fig.suptitle(
+            distribution_label,
+            fontsize=14,
+            fontweight="bold",
+            y=1.02,
+        )
+
+        plt.tight_layout(rect=(0, 0, 1, 0.96))
+
+        if store:
+            self.store_plot(
+                plot_name=plot_name,
+                plot_format=plot_format,
+                dpi=dpi,
+            )
+        else:
+            plt.show()
+
+    @staticmethod
+    def _get_scale_bounds_for_variable(
+        col: str,
+        values: pd.Series,
+        scale_boundaries: dict[str, dict[str, float]],
+    ) -> tuple[float, float]:
+        """
+        Resolves the theoretical scale boundaries for a variable.
+        Falls back to observed min/max if the variable is not found in scale_boundaries.
+        """
+        candidate_keys = [col]
+
+        for prefix in ["mac_", "pl_", "srmc_", "sens_", "crit_"]:
+            if col.startswith(prefix):
+                candidate_keys.append(col[len(prefix) :])
+
+        if "_" in col:
+            candidate_keys.append(col.partition("_")[2])
+
+        for key in candidate_keys:
+            if key in scale_boundaries:
+                total_min = float(scale_boundaries[key]["total_min"])
+                total_max = float(scale_boundaries[key]["total_max"])
+                return total_min, total_max
+
+        return float(values.min()), float(values.max())
+
+    @staticmethod
+    def _format_country_variable_label(col: str) -> str:
+        """
+        Creates a readable variable label from a column name.
+        """
+        label = col
+        for prefix in ["mac_", "pl_", "srmc_", "sens_", "crit_"]:
+            if label.startswith(prefix):
+                label = label[len(prefix) :]
+                break
+
+        return label.replace("_", " ").title()
