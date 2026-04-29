@@ -2,6 +2,7 @@ import os
 import re
 from typing import Union
 
+import numpy as np
 import pandas as pd
 
 from src.postprocessing.CVResultProcessor import CVResultProcessor
@@ -15,9 +16,10 @@ from src.postprocessing.SignificanceTesting import SignificanceTesting
 from src.postprocessing.SuppFileCreator import SuppFileCreator
 from src.utils.DataLoader import DataLoader
 from src.utils.DataSaver import DataSaver
+from src.utils.DataSelector import DataSelector
 from src.utils.Logger import Logger
 from src.utils.SanityChecker import SanityChecker
-from src.utils.utilfuncs import merge_M_SD_in_dct, NestedDict, create_defaultdict
+from src.utils.utilfuncs import merge_M_SD_in_dct, NestedDict, create_defaultdict, apply_name_mapping
 
 
 class Postprocessor:
@@ -312,13 +314,22 @@ class Postprocessor:
         desc_cfg = self.cfg_postprocessing["create_descriptives"]
         var_table_cfg = desc_cfg["m_sd_table"]
 
-        country_stats = self.descriptives_creator.analyze_country_level_vars()
+        country_stats, df_all, df_esm = self.descriptives_creator.analyze_country_level_vars()
         if desc_cfg["country_vars"]["store"]:
             file_path_country = os.path.join(
                 self.descriptives_creator.desc_results_base_path,
                 desc_cfg["country_vars"]["filename"],
             )
             self.data_saver.save_excel(country_stats, file_path_country)
+
+        # plot histograms for each feature
+        for samples_to_include, df in {"all": df_all, "reduced": df_esm}.items():
+            self.plotter.plot_country_level_variability(
+                df=df,
+                samples_to_include=samples_to_include,
+                columns=df.columns,
+                store=desc_cfg["country_vars"]["store_plot"],
+            )
 
         self.descriptives_creator.create_m_sd_var_table(
             vars_to_include=var_table_cfg["vars_to_include"],
@@ -667,3 +678,301 @@ class Postprocessor:
             _walk_flat(results, [])
         else:
             _walk_nested(results, base_dir)
+
+    def shap_sanity_checks(self) -> None:
+        """
+        Compares selected-sample and all-sample SHAP values for the same participants
+        and same predictors.
+
+        The row alignment is reconstructed from self.full_data using DataSelector.
+        """
+        shap_sanity_cfg = self.cfg_postprocessing["shap_sanity_checks"]
+
+        crit = shap_sanity_cfg["crit"]
+        shap_values_dct = self.shap_processor.load_shap_values_for_sanity_checks()
+
+        results = {}
+
+        for feature_combination, sample_dct in shap_values_dct.items():
+            if "selected" not in sample_dct or "all" not in sample_dct:
+                print(
+                    f"Skipping {feature_combination}: selected or all SHAP values missing."
+                )
+                continue
+
+            selected_idx = self.get_shap_analysis_index(
+                feature_combination=feature_combination,
+                samples_to_include="selected",
+                crit=crit,
+            )
+
+            all_idx = self.get_shap_analysis_index(
+                feature_combination=feature_combination,
+                samples_to_include="all",
+                crit=crit,
+            )
+
+            all_positions = all_idx.get_indexer(selected_idx)
+
+            if (all_positions == -1).any():
+                missing_ids = selected_idx[all_positions == -1].tolist()
+                raise ValueError(
+                    f"For {feature_combination}, selected contains IDs that were not "
+                    f"found in all. First missing IDs: {missing_ids[:10]}"
+                )
+
+            selected_shap, selected_features = (
+                self.shap_processor.get_shap_array_and_features(sample_dct["selected"])
+            )
+            all_shap, all_features = self.shap_processor.get_shap_array_and_features(
+                sample_dct["all"]
+            )
+
+            if selected_shap.shape[0] != len(selected_idx):
+                raise ValueError(
+                    f"{feature_combination} selected: SHAP rows do not match reconstructed index. "
+                    f"{selected_shap.shape[0]} SHAP rows vs. {len(selected_idx)} index rows."
+                )
+
+            if all_shap.shape[0] != len(all_idx):
+                raise ValueError(
+                    f"{feature_combination} all: SHAP rows do not match reconstructed index. "
+                    f"{all_shap.shape[0]} SHAP rows vs. {len(all_idx)} index rows."
+                )
+
+            common_features = [
+                feature for feature in selected_features if feature in all_features
+            ]
+
+            all_shap_aligned = all_shap[all_positions, :]
+
+            rows = []
+            shap_values_by_feature = {}
+
+            for feature in common_features:
+                selected_col_idx = selected_features.index(feature)
+                all_col_idx = all_features.index(feature)
+
+                selected_vals = selected_shap[:, selected_col_idx]
+                all_vals = all_shap_aligned[:, all_col_idx]
+
+                valid_idx = (~pd.isna(selected_vals)) & (~pd.isna(all_vals))
+
+                if valid_idx.sum() < 2:
+                    pearson_r = np.nan
+                    spearman_r = np.nan
+                else:
+                    pearson_r = pd.Series(selected_vals[valid_idx]).corr(
+                        pd.Series(all_vals[valid_idx]),
+                        method="pearson",
+                    )
+                    spearman_r = pd.Series(selected_vals[valid_idx]).corr(
+                        pd.Series(all_vals[valid_idx]),
+                        method="spearman",
+                    )
+
+                rows.append(
+                    {
+                        "Feature_combination": feature_combination,
+                        "Feature": feature,
+                        "N_comparison": int(valid_idx.sum()),
+                        "Mean_abs_SHAP_selected": np.mean(np.abs(selected_vals)),
+                        "Mean_abs_SHAP_all": np.mean(np.abs(all_vals)),
+                        "Pearson_r_selected_vs_all": pearson_r,
+                        "Spearman_r_selected_vs_all": spearman_r,
+                    }
+                )
+
+            df_result = (
+                pd.DataFrame(rows)
+                .sort_values(
+                    by="Mean_abs_SHAP_selected",
+                    ascending=False,
+                )
+                .reset_index(drop=True)
+            )
+
+            df_result.insert(
+                loc=2,
+                column="Feature Name",
+                value=apply_name_mapping(
+                    features=list(df_result["Feature"]),
+                    name_mapping=self.name_mapping,
+                    prefix=True,
+                ),
+            )
+            df_result = df_result.drop(columns=["Feature"])
+            numeric_cols = df_result.select_dtypes(include=[np.number]).columns
+            df_result[numeric_cols] = df_result[numeric_cols].round(3)
+
+            results[feature_combination] = df_result
+
+        shap_sanity_summary_df = self.create_shap_sanity_summary_df(
+            shap_sanity_results=results,
+            decimals=3,
+            top_n=6,
+            top_n_feature_combinations=["pl_sens", "pl_srmc_sens"],
+        )
+
+        if shap_sanity_cfg.get("store", False):
+            output_dir = shap_sanity_cfg["output_dir"]
+
+            self._save_nested_results(
+                results=results,
+                base_result_dir=output_dir,
+                flatten=True,
+                file_ext="xlsx",
+            )
+            self.data_saver.save_excel(
+                df=shap_sanity_summary_df,
+                output_path=os.path.join(
+                    output_dir,
+                    "shap_sanity_summary_table.xlsx"
+                )
+            )
+
+    def get_shap_analysis_index(
+        self,
+        feature_combination: str,
+        samples_to_include: str,
+        crit: str,
+    ) -> pd.Index:
+        """
+        Reconstructs the row index corresponding to the SHAP-value array rows
+        for a given analysis setting.
+
+        This mirrors the data-selection logic used before SHAP values were created.
+        """
+        data_selector = DataSelector(
+            cfg_analysis=self.cfg_analysis,
+            df=self.full_data.copy(),
+            feature_combination=feature_combination,
+            crit=crit,
+            samples_to_include=samples_to_include,
+            meta_vars=self.meta_vars,
+        )
+
+        data_selector.select_samples()
+        data_selector.select_features()
+        data_selector.select_criterion()
+
+        return data_selector.X.index
+
+    def create_shap_sanity_summary_df(
+        self,
+        shap_sanity_results: dict[str, pd.DataFrame],
+        decimals: int = 3,
+        top_n: int = 10,
+        top_n_feature_combinations: list[str] | None = None,
+        top_by: str = "Mean_abs_SHAP_selected",
+    ) -> pd.DataFrame:
+        """
+        Creates a compact SHAP sanity-check summary dataframe.
+
+        One row is created per feature combination.
+
+        For feature combinations listed in top_n_feature_combinations, the summary is
+        computed only across the top_n features ranked by top_by. For all other feature
+        combinations, all available features are used.
+
+        The dataframe summarizes:
+        - N used for selected-vs-all comparison.
+        - Number of features included.
+        - Mean feature-wise Pearson and Spearman correlations of signed SHAP values
+          across persons.
+        - Pearson and Spearman correlations of mean absolute SHAP values across features.
+        """
+        if top_n_feature_combinations is None:
+            top_n_feature_combinations = ["pl_sens", "pl_srmc_sens"]
+
+        rows = []
+
+        for feature_combination, df in shap_sanity_results.items():
+            df = df.copy()
+
+            required_cols = [
+                "N_comparison",
+                "Mean_abs_SHAP_selected",
+                "Mean_abs_SHAP_all",
+                "Pearson_r_selected_vs_all",
+                "Spearman_r_selected_vs_all",
+            ]
+            missing_cols = [col for col in required_cols if col not in df.columns]
+            if missing_cols:
+                raise KeyError(
+                    f"{feature_combination} is missing required columns: {missing_cols}"
+                )
+
+            if top_by not in df.columns:
+                raise KeyError(f"top_by column '{top_by}' not found in dataframe.")
+
+            if feature_combination in top_n_feature_combinations:
+                subsets = {
+                    f"top_{top_n}_features": (
+                        df.sort_values(by=top_by, ascending=False)
+                        .head(top_n)
+                        .reset_index(drop=True)
+                    ),
+                    "all_features": df,
+                }
+            else:
+                subsets = {
+                    "all_features": df,
+                }
+
+            for feature_set, df_subset in subsets.items():
+                mean_pearson_personwise = pd.to_numeric(
+                    df_subset["Pearson_r_selected_vs_all"],
+                    errors="coerce",
+                ).mean()
+
+                mean_spearman_personwise = pd.to_numeric(
+                    df_subset["Spearman_r_selected_vs_all"],
+                    errors="coerce",
+                ).mean()
+
+                abs_pearson_features = df_subset["Mean_abs_SHAP_selected"].corr(
+                    df_subset["Mean_abs_SHAP_all"],
+                    method="pearson",
+                )
+
+                abs_spearman_features = df_subset["Mean_abs_SHAP_selected"].corr(
+                    df_subset["Mean_abs_SHAP_all"],
+                    method="spearman",
+                )
+
+                rows.append(
+                    {
+                        "Feature_combination": self.map_feature_combination_label(
+                                feature_combination
+                            ),
+                        "Feature_set": feature_set,
+                        "N_comparison": int(df_subset["N_comparison"].max()),
+                        "N_features": int(len(df_subset)),
+                        "Mean_Pearson_r_signed_SHAP_personwise": mean_pearson_personwise,
+                        "Mean_Spearman_r_signed_SHAP_personwise": mean_spearman_personwise,
+                        "Pearson_r_mean_abs_SHAP_features": abs_pearson_features,
+                        "Spearman_r_mean_abs_SHAP_features": abs_spearman_features,
+                    }
+                )
+        summary_df = pd.DataFrame(rows)
+
+        numeric_cols = summary_df.select_dtypes(include=[np.number]).columns
+        summary_df[numeric_cols] = summary_df[numeric_cols].round(decimals)
+
+        return summary_df
+
+    def map_feature_combination_label(self, feature_combination: str) -> str:
+        """
+        Maps feature-combination keys such as 'pl_srmc_sens' to readable labels
+        using cfg_postprocessing["general"]["feature_combinations"]["name_mapping"].
+        """
+        feature_combo_mappings = self.cfg_postprocessing["general"][
+            "feature_combinations"
+        ]["name_mapping"]
+
+        for mapping_dct in feature_combo_mappings.values():
+            if feature_combination in mapping_dct:
+                return mapping_dct[feature_combination]
+
+        return feature_combination

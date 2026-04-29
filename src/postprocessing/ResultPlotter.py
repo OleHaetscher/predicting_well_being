@@ -2143,12 +2143,15 @@ class ResultPlotter:
     def plot_country_level_variability(
         self,
         df: pd.DataFrame,
+        samples_to_include: str,
         columns: list[str] | None = None,
         country_id_col: str | None = None,
-        scale_boundaries: dict[str, dict[str, float]] | None = None,
+        scale_boundaries: dict[str, dict[str, Any]] | None = None,
+        country_var_groups: dict[str, list[str]] | None = None,
         n_cols: int = 5,
         panel_width: float = 3.3,
         panel_height: float = 2.4,
+        x_padding_frac: float = 0.05,
         store: bool = False,
         plot_name_base: str = "country_level_variability",
         plot_format: str = "png",
@@ -2156,41 +2159,41 @@ class ResultPlotter:
     ) -> None:
         """
         Creates two large overview plots for country-level variables:
-        1) dispersion across countries (collapsed country profiles)
-        2) dispersion across persons (person-weighted)
+        1) dispersion across countries, collapsed to unique country profiles
+        2) dispersion across persons, person-weighted
 
-        Each variable gets its own small panel showing:
-        - full theoretical range (from config)
-        - observed min-max range
-        - violin plot of the empirical distribution
-        - boxplot on top
-
-        Args:
-            df: DataFrame containing country-level variables. Typically one row per person.
-            columns: Country-level columns to include. If None, all df columns are used.
-            country_id_col: Optional country identifier column for collapsing to one row per country.
-                            If None, duplicate rows across the selected country-level columns are removed.
-            scale_boundaries: Optional dict of scale boundaries. If None, they are read from
-                              cfg_postprocessing["create_descriptives"]["country_vars"]["scale_boundaries"].
-            n_cols: Number of subplot columns in the overview figure.
-            panel_width: Width per subplot.
-            panel_height: Height per subplot.
-            store: If True, store the plots via self.store_plot.
-            plot_name_base: Base filename for stored plots.
-            plot_format: File format for stored plots.
-            dpi: Plot resolution.
+        Each panel shows:
+        - configured source min-max range, if available
+        - observed min-max range in the analytic data
+        - violin plot
+        - boxplot
+        - optional observed country/person values
+        - configured global min/max country points from scale_boundaries
         """
         if columns is None:
             columns = list(df.columns)
+
+        if country_id_col is not None:
+            columns = [col for col in columns if col != country_id_col]
 
         if scale_boundaries is None:
             scale_boundaries = self.cfg_postprocessing["create_descriptives"][
                 "country_vars"
             ].get("scale_boundaries", {})
 
+        country_vars_cfg = self.cfg_postprocessing["create_descriptives"][
+            "country_vars"
+        ]
+
+        if country_var_groups is None:
+            country_var_groups = {
+                "psycho_political": country_vars_cfg["psycho_political"],
+                "socio_economic": country_vars_cfg["socio_economic"],
+                "health_environmental": country_vars_cfg["health_environmental"],
+            }
+
         cols_to_use = columns.copy()
 
-        # Country-collapsed version
         if country_id_col is not None and country_id_col in df.columns:
             df_country = (
                 df[[country_id_col] + cols_to_use]
@@ -2199,52 +2202,62 @@ class ResultPlotter:
                 .copy()
             )
         else:
-            # Fallback: collapse repeated country profiles using the country-level columns themselves
             df_country = df[cols_to_use].drop_duplicates().copy()
 
-        # Person-weighted version
         df_person = df[cols_to_use].copy()
 
-        self._plot_country_variability_overview(
-            df_plot=df_country,
+        grouped_columns = self._get_country_var_grouped_columns(
             columns=cols_to_use,
-            scale_boundaries=scale_boundaries,
-            n_cols=n_cols,
-            panel_width=panel_width,
-            panel_height=panel_height,
-            distribution_label="Across countries",
-            violin_color="#4C78A8",
-            show_points=True,
-            store=store,
-            plot_name=f"{plot_name_base}_countries",
-            plot_format=plot_format,
-            dpi=dpi,
+            country_var_groups=country_var_groups,
         )
 
-        self._plot_country_variability_overview(
-            df_plot=df_person,
-            columns=cols_to_use,
-            scale_boundaries=scale_boundaries,
-            n_cols=n_cols,
-            panel_width=panel_width,
-            panel_height=panel_height,
-            distribution_label="Across persons",
-            violin_color="#F58518",
-            show_points=False,
-            store=store,
-            plot_name=f"{plot_name_base}_persons",
-            plot_format=plot_format,
-            dpi=dpi,
-        )
+        for group_name, group_cols in grouped_columns.items():
+            if not group_cols:
+                continue
+
+            self._plot_country_variability_overview(
+                df_plot=df_country,
+                columns=group_cols,
+                scale_boundaries=scale_boundaries,
+                n_cols=n_cols,
+                panel_width=panel_width,
+                panel_height=panel_height,
+                x_padding_frac=x_padding_frac,
+                distribution_label=f"Across countries: {group_name.replace('_', ' ').title()}",
+                violin_color="#4C78A8",
+                show_points=True,
+                store=store,
+                plot_name=f"{plot_name_base}_{group_name}_countries",
+                plot_format=plot_format,
+                dpi=dpi,
+            )
+
+            self._plot_country_variability_overview(
+                df_plot=df_person,
+                columns=group_cols,
+                scale_boundaries=scale_boundaries,
+                n_cols=n_cols,
+                panel_width=panel_width,
+                panel_height=panel_height,
+                x_padding_frac=x_padding_frac,
+                distribution_label=f"Across persons: {group_name.replace('_', ' ').title()}",
+                violin_color="#F58518",
+                show_points=False,
+                store=store,
+                plot_name=f"{plot_name_base}_{group_name}_persons",
+                plot_format=plot_format,
+                dpi=dpi,
+            )
 
     def _plot_country_variability_overview(
         self,
         df_plot: pd.DataFrame,
         columns: list[str],
-        scale_boundaries: dict[str, dict[str, float]],
+        scale_boundaries: dict[str, dict[str, Any]],
         n_cols: int,
         panel_width: float,
         panel_height: float,
+        x_padding_frac: float,
         distribution_label: str,
         violin_color: str,
         show_points: bool,
@@ -2268,6 +2281,7 @@ class ResultPlotter:
         axes_flat = axes.flatten()
 
         rng = np.random.default_rng(42)
+        any_configured_extrema = False
 
         for ax_idx, col in enumerate(columns):
             ax = axes_flat[ax_idx]
@@ -2277,9 +2291,8 @@ class ResultPlotter:
                 ax.set_axis_off()
                 continue
 
-            total_min, total_max = self._get_scale_bounds_for_variable(
+            scale_info = self._get_scale_info_for_variable(
                 col=col,
-                values=values,
                 scale_boundaries=scale_boundaries,
             )
 
@@ -2287,22 +2300,36 @@ class ResultPlotter:
             obs_max = float(values.max())
             obs_sd = float(values.std(ddof=1)) if len(values) > 1 else 0.0
 
-            # Prevent degenerate x-range
-            if total_min == total_max:
-                total_min -= 0.5
-                total_max += 0.5
+            if scale_info is not None:
+                min_country = scale_info.get("min_country", {})
+                max_country = scale_info.get("max_country", {})
 
-            # Full possible scale range
+                x_min_base = float(min_country["value"])
+                x_max_base = float(max_country["value"])
+                unit = scale_info.get("unit", "")
+                any_configured_extrema = True
+            else:
+                x_min_base = obs_min
+                x_max_base = obs_max
+                unit = ""
+
+            x_min, x_max = self._add_axis_padding(
+                x_min=x_min_base,
+                x_max=x_max_base,
+                padding_frac=x_padding_frac,
+            )
+
+            # Configured source range
             ax.hlines(
                 y=0,
-                xmin=total_min,
-                xmax=total_max,
+                xmin=x_min_base,
+                xmax=x_max_base,
                 color="lightgray",
                 linewidth=8,
                 zorder=0,
             )
 
-            # Observed range
+            # Observed range in analytic data
             ax.hlines(
                 y=0,
                 xmin=obs_min,
@@ -2312,7 +2339,6 @@ class ResultPlotter:
                 zorder=1,
             )
 
-            # Violin
             violin_parts = ax.violinplot(
                 dataset=[values.to_numpy()],
                 positions=[0],
@@ -2328,7 +2354,6 @@ class ResultPlotter:
                 body.set_alpha(0.45)
                 body.set_linewidth(0.8)
 
-            # Boxplot
             ax.boxplot(
                 [values.to_numpy()],
                 positions=[0],
@@ -2342,7 +2367,6 @@ class ResultPlotter:
                 capprops=dict(color="black", linewidth=1.0),
             )
 
-            # Optional raw points (useful for country-level figure)
             if show_points:
                 jitter = rng.uniform(-0.08, 0.08, size=len(values))
                 ax.scatter(
@@ -2355,7 +2379,14 @@ class ResultPlotter:
                     zorder=3,
                 )
 
-            ax.set_xlim(total_min, total_max)
+            if scale_info is not None:
+                self._add_configured_min_max_points(
+                    ax=ax,
+                    scale_info=scale_info,
+                    y_pos=-0.42,
+                )
+
+            ax.set_xlim(x_min, x_max)
             ax.set_ylim(-0.6, 0.6)
             ax.set_yticks([])
 
@@ -2367,23 +2398,25 @@ class ResultPlotter:
             )
             ax.set_title(pretty_label, fontsize=10, pad=10)
 
+            info_text = f"obs: {obs_min:.2f}–{obs_max:.2f}\nSD = {obs_sd:.2f}"
+            if unit:
+                info_text += f"\n{unit}"
+
             ax.text(
                 0.02,
                 0.95,
-                f"obs: {obs_min:.2f}–{obs_max:.2f}\nSD = {obs_sd:.2f}",
+                info_text,
                 transform=ax.transAxes,
                 ha="left",
                 va="top",
-                fontsize=8,
+                fontsize=7.5,
             )
 
-            # Simplify spines
             for spine in ["top", "right", "left"]:
                 ax.spines[spine].set_visible(False)
 
             ax.tick_params(axis="x", labelsize=8)
 
-        # Hide unused axes
         for ax in axes_flat[n_vars:]:
             ax.set_axis_off()
 
@@ -2393,14 +2426,14 @@ class ResultPlotter:
                 [],
                 color="lightgray",
                 linewidth=8,
-                label="Full possible scale range",
+                label="Configured source min–max range",
             ),
             mlines.Line2D(
                 [],
                 [],
                 color="gray",
                 linewidth=8,
-                label="Observed min–max range",
+                label="Observed analytic min–max range",
             ),
             mpatches.Patch(
                 facecolor=violin_color,
@@ -2427,6 +2460,30 @@ class ResultPlotter:
                     alpha=0.6,
                     label="Observed values",
                 )
+            )
+
+        if any_configured_extrema:
+            legend_handles.extend(
+                [
+                    mlines.Line2D(
+                        [],
+                        [],
+                        color="#B22222",
+                        marker="v",
+                        linestyle="None",
+                        markersize=7,
+                        label="Configured minimum country",
+                    ),
+                    mlines.Line2D(
+                        [],
+                        [],
+                        color="#006400",
+                        marker="^",
+                        linestyle="None",
+                        markersize=7,
+                        label="Configured maximum country",
+                    ),
+                ]
             )
 
         fig.legend(
@@ -2457,14 +2514,49 @@ class ResultPlotter:
             plt.show()
 
     @staticmethod
-    def _get_scale_bounds_for_variable(
+    def _get_scale_info_for_variable(
         col: str,
-        values: pd.Series,
-        scale_boundaries: dict[str, dict[str, float]],
-    ) -> tuple[float, float]:
+        scale_boundaries: dict[str, dict[str, Any]],
+    ) -> dict[str, Any] | None:
         """
-        Resolves the theoretical scale boundaries for a variable.
-        Falls back to observed min/max if the variable is not found in scale_boundaries.
+        Retrieves configured scale information for a variable from the new config structure.
+
+        Expected structure:
+            scale_boundaries:
+              variable_name:
+                unit: ...
+                min_country:
+                  name: ...
+                  value: ...
+                  year: ...
+                max_country:
+                  name: ...
+                  value: ...
+                  year: ...
+        """
+        candidate_keys = ResultPlotter._get_country_var_candidate_keys(col)
+
+        for key in candidate_keys:
+            if key in scale_boundaries:
+                entry = scale_boundaries[key]
+
+                if "min_country" not in entry or "max_country" not in entry:
+                    return None
+
+                if (
+                    "value" not in entry["min_country"]
+                    or "value" not in entry["max_country"]
+                ):
+                    return None
+
+                return entry
+
+        return None
+
+    @staticmethod
+    def _get_country_var_candidate_keys(col: str) -> list[str]:
+        """
+        Creates candidate lookup keys for config dictionaries from a possibly prefixed column name.
         """
         candidate_keys = [col]
 
@@ -2475,13 +2567,95 @@ class ResultPlotter:
         if "_" in col:
             candidate_keys.append(col.partition("_")[2])
 
-        for key in candidate_keys:
-            if key in scale_boundaries:
-                total_min = float(scale_boundaries[key]["total_min"])
-                total_max = float(scale_boundaries[key]["total_max"])
-                return total_min, total_max
+        return list(dict.fromkeys(candidate_keys))
 
-        return float(values.min()), float(values.max())
+    @staticmethod
+    def _add_axis_padding(
+        x_min: float,
+        x_max: float,
+        padding_frac: float,
+    ) -> tuple[float, float]:
+        """
+        Adds symmetric padding to an x-axis range.
+        """
+        if x_min == x_max:
+            return x_min - 0.5, x_max + 0.5
+
+        x_range = x_max - x_min
+        padding = x_range * padding_frac
+
+        return x_min - padding, x_max + padding
+
+    @staticmethod
+    def _add_configured_min_max_points(
+        ax: Axes,
+        scale_info: dict[str, Any],
+        y_pos: float,
+    ) -> None:
+        """
+        Adds configured global min/max country points in distinct colors.
+        """
+        point_specs = {
+            "min_country": {
+                "marker": "v",
+                "color": "#B22222",
+                "label_prefix": "min",
+                "y_offset": 0.00,
+                "text_offset": -8,
+                "va": "top",
+            },
+            "max_country": {
+                "marker": "^",
+                "color": "#006400",
+                "label_prefix": "max",
+                "y_offset": 0.00,
+                "text_offset": -8,
+                "va": "top",
+            },
+        }
+
+        for key, spec in point_specs.items():
+            country_info = scale_info.get(key)
+            if not country_info:
+                continue
+
+            value = country_info.get("value")
+            country_name = country_info.get("name", "")
+
+            if value is None or pd.isna(value):
+                continue
+
+            try:
+                value = float(value)
+            except (TypeError, ValueError):
+                continue
+
+            y_current = y_pos + spec["y_offset"]
+
+            ax.scatter(
+                value,
+                y_current,
+                s=48,
+                marker=spec["marker"],
+                facecolor=spec["color"],
+                edgecolor="black",
+                linewidth=0.8,
+                zorder=6,
+            )
+
+            label = f"{spec['label_prefix']}: {country_name}"
+
+            ax.annotate(
+                label,
+                xy=(value, y_current),
+                xytext=(0, spec["text_offset"]),
+                textcoords="offset points",
+                ha="center",
+                va=spec["va"],
+                fontsize=7,
+                rotation=0,
+                zorder=7,
+            )
 
     @staticmethod
     def _format_country_variable_label(col: str) -> str:
@@ -2495,3 +2669,26 @@ class ResultPlotter:
                 break
 
         return label.replace("_", " ").title()
+
+    @staticmethod
+    def _get_country_var_grouped_columns(
+        columns: list[str],
+        country_var_groups: dict[str, list[str]],
+    ) -> dict[str, list[str]]:
+        """
+        Matches dataframe columns to higher-level country-variable groups.
+
+        Handles both prefixed and unprefixed column names, e.g.,
+        'mac_power_distance' and 'power_distance'.
+        """
+        grouped_columns = {group_name: [] for group_name in country_var_groups}
+
+        for col in columns:
+            candidate_keys = ResultPlotter._get_country_var_candidate_keys(col)
+
+            for group_name, group_vars in country_var_groups.items():
+                if any(candidate in group_vars for candidate in candidate_keys):
+                    grouped_columns[group_name].append(col)
+                    break
+
+        return grouped_columns

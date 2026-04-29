@@ -957,7 +957,7 @@ class DescriptiveStatistics:
             list(combined.index), name_mapping=self.name_mapping, prefix=True
         )
 
-        return combined
+        return combined, df_all, df_cocoesm
 
     @staticmethod
     def create_age_gender_descriptives(
