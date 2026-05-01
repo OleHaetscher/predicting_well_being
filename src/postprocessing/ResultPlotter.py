@@ -2158,18 +2158,26 @@ class ResultPlotter:
         dpi: int = 450,
     ) -> None:
         """
-        Creates two large overview plots for country-level variables:
-        1) dispersion across countries, collapsed to unique country profiles
-        2) dispersion across persons, person-weighted
+        Creates country-level variability plots.
 
-        Each panel shows:
-        - configured source min-max range, if available
-        - observed min-max range in the analytic data
-        - violin plot
-        - boxplot
-        - optional observed country/person values
-        - configured global min/max country points from scale_boundaries
+        New behavior:
+        - Reads plotting behavior directly from cfg_postprocessing["create_descriptives"]["country_vars"].
+        - If cfg contains `plot_top_n`, only one single plot is created using the corresponding
+          config entry `top_<n>_to_plot` (e.g., top_6_to_plot).
+        - `n_cols` and `n_rows` are configurable from the config.
+        - If `plot_top_n` is not set, the old grouped behavior is preserved.
         """
+        country_vars_cfg = self.cfg_postprocessing["create_descriptives"][
+            "country_vars"
+        ]
+
+        # Pull defaults from config
+        store = country_vars_cfg.get("store_plot", store)
+        plot_name_base = country_vars_cfg.get("plot_filename", plot_name_base)
+        n_cols = country_vars_cfg.get("n_cols", n_cols)
+        n_rows = country_vars_cfg.get("n_rows", None)
+        single_plot_source = country_vars_cfg.get("single_plot_source", "countries")
+
         if columns is None:
             columns = list(df.columns)
 
@@ -2177,23 +2185,20 @@ class ResultPlotter:
             columns = [col for col in columns if col != country_id_col]
 
         if scale_boundaries is None:
-            scale_boundaries = self.cfg_postprocessing["create_descriptives"][
-                "country_vars"
-            ].get("scale_boundaries", {})
-
-        country_vars_cfg = self.cfg_postprocessing["create_descriptives"][
-            "country_vars"
-        ]
+            scale_boundaries = country_vars_cfg.get("scale_boundaries", {})
 
         if country_var_groups is None:
             country_var_groups = {
-                "psycho_political": country_vars_cfg["psycho_political"],
-                "socio_economic": country_vars_cfg["socio_economic"],
-                "health_environmental": country_vars_cfg["health_environmental"],
+                "psycho_political": country_vars_cfg.get("psycho_political", []),
+                "socio_economic": country_vars_cfg.get("socio_economic", []),
+                "health_environmental": country_vars_cfg.get(
+                    "health_environmental", []
+                ),
             }
 
         cols_to_use = columns.copy()
 
+        # Country-collapsed data
         if country_id_col is not None and country_id_col in df.columns:
             df_country = (
                 df[[country_id_col] + cols_to_use]
@@ -2204,8 +2209,80 @@ class ResultPlotter:
         else:
             df_country = df[cols_to_use].drop_duplicates().copy()
 
+        # Person-weighted data
         df_person = df[cols_to_use].copy()
 
+        # ---------------------------------------------------------
+        # NEW: If plot_top_n is set -> create exactly one plot
+        # ---------------------------------------------------------
+        plot_top_n = country_vars_cfg.get("plot_top_n", None)
+
+        if plot_top_n:
+            top_key = f"top_{plot_top_n}_to_plot"
+            vars_to_plot = country_vars_cfg.get(top_key, [])
+
+            if not vars_to_plot:
+                raise KeyError(
+                    f"`plot_top_n` is set to {plot_top_n}, but config key '{top_key}' is missing or empty."
+                )
+
+            selected_cols, missing_vars = self._resolve_country_plot_columns(
+                available_columns=cols_to_use,
+                requested_variables=vars_to_plot,
+            )
+
+            if missing_vars:
+                print(
+                    f"Warning: The following configured variables could not be matched to dataframe columns "
+                    f"and will be skipped: {missing_vars}"
+                )
+
+            if not selected_cols:
+                raise ValueError(
+                    "No columns from the configured top-N list could be matched to the dataframe."
+                )
+
+            if single_plot_source == "countries":
+                df_plot = df_country
+                distribution_label = (
+                    f"Across countries: Top {len(selected_cols)} selected variables"
+                )
+                violin_color = "#4C78A8"
+                show_points = True
+            elif single_plot_source == "persons":
+                df_plot = df_person
+                distribution_label = (
+                    f"Across persons: Top {len(selected_cols)} selected variables"
+                )
+                violin_color = "#F58518"
+                show_points = False
+            else:
+                raise ValueError(
+                    "single_plot_source must be either 'countries' or 'persons'."
+                )
+
+            self._plot_country_variability_overview(
+                df_plot=df_plot,
+                columns=selected_cols,
+                scale_boundaries=scale_boundaries,
+                n_cols=n_cols,
+                n_rows=n_rows,
+                panel_width=panel_width,
+                panel_height=panel_height,
+                x_padding_frac=x_padding_frac,
+                distribution_label=distribution_label,
+                violin_color=violin_color,
+                show_points=show_points,
+                store=store,
+                plot_name=plot_name_base,
+                plot_format=plot_format,
+                dpi=dpi,
+            )
+            return
+
+        # ---------------------------------------------------------
+        # OLD behavior: grouped overview plots
+        # ---------------------------------------------------------
         grouped_columns = self._get_country_var_grouped_columns(
             columns=cols_to_use,
             country_var_groups=country_var_groups,
@@ -2220,6 +2297,7 @@ class ResultPlotter:
                 columns=group_cols,
                 scale_boundaries=scale_boundaries,
                 n_cols=n_cols,
+                n_rows=n_rows,
                 panel_width=panel_width,
                 panel_height=panel_height,
                 x_padding_frac=x_padding_frac,
@@ -2237,6 +2315,7 @@ class ResultPlotter:
                 columns=group_cols,
                 scale_boundaries=scale_boundaries,
                 n_cols=n_cols,
+                n_rows=n_rows,
                 panel_width=panel_width,
                 panel_height=panel_height,
                 x_padding_frac=x_padding_frac,
@@ -2255,6 +2334,7 @@ class ResultPlotter:
         columns: list[str],
         scale_boundaries: dict[str, dict[str, Any]],
         n_cols: int,
+        n_rows: int | None,
         panel_width: float,
         panel_height: float,
         x_padding_frac: float,
@@ -2268,9 +2348,26 @@ class ResultPlotter:
     ) -> None:
         """
         Helper that creates one multi-panel overview figure.
+
+        New behavior:
+        - `n_cols` and `n_rows` can be passed explicitly from config.
+        - If `n_rows` is None, it is computed automatically.
+        - If `n_rows * n_cols` is too small, an error is raised.
         """
         n_vars = len(columns)
-        n_rows = int(np.ceil(n_vars / n_cols))
+
+        if n_vars == 0:
+            print(f"No variables available for plot '{plot_name}'.")
+            return
+
+        if n_rows is None:
+            n_rows = int(np.ceil(n_vars / n_cols))
+        elif n_rows * n_cols < n_vars:
+            raise ValueError(
+                f"Configured grid too small for plot '{plot_name}': "
+                f"{n_rows} rows x {n_cols} cols = {n_rows * n_cols} panels, "
+                f"but {n_vars} variables need to be plotted."
+            )
 
         fig, axes = plt.subplots(
             n_rows,
@@ -2329,7 +2426,7 @@ class ResultPlotter:
                 zorder=0,
             )
 
-            # Observed range in analytic data
+            # Observed range
             ax.hlines(
                 y=0,
                 xmin=obs_min,
@@ -2512,6 +2609,44 @@ class ResultPlotter:
             )
         else:
             plt.show()
+
+    @staticmethod
+    def _resolve_country_plot_columns(
+        available_columns: list[str],
+        requested_variables: list[str],
+    ) -> tuple[list[str], list[str]]:
+        """
+        Matches requested variable names from config to actual dataframe columns.
+
+        Supports both prefixed and unprefixed names, e.g.
+        - "youth_unemployment"
+        - "mac_youth_unemployment"
+
+        Returns:
+            matched_columns: list of dataframe columns that were found
+            missing_variables: list of requested variables that could not be matched
+        """
+        matched_columns = []
+        missing_variables = []
+
+        for requested_var in requested_variables:
+            matched_col = None
+
+            for col in available_columns:
+                candidate_keys = ResultPlotter._get_country_var_candidate_keys(col)
+                if requested_var in candidate_keys:
+                    matched_col = col
+                    break
+
+            if matched_col is None:
+                missing_variables.append(requested_var)
+            else:
+                matched_columns.append(matched_col)
+
+        # remove duplicates while preserving order
+        matched_columns = list(dict.fromkeys(matched_columns))
+
+        return matched_columns, missing_variables
 
     @staticmethod
     def _get_scale_info_for_variable(
