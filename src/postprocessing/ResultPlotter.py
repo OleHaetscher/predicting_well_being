@@ -2150,7 +2150,7 @@ class ResultPlotter:
         country_var_groups: dict[str, list[str]] | None = None,
         n_cols: int = 5,
         panel_width: float = 3.3,
-        panel_height: float = 2.4,
+        panel_height: float = 4,
         x_padding_frac: float = 0.05,
         store: bool = False,
         plot_name_base: str = "country_level_variability",
@@ -2160,23 +2160,27 @@ class ResultPlotter:
         """
         Creates country-level variability plots.
 
-        New behavior:
-        - Reads plotting behavior directly from cfg_postprocessing["create_descriptives"]["country_vars"].
-        - If cfg contains `plot_top_n`, only one single plot is created using the corresponding
-          config entry `top_<n>_to_plot` (e.g., top_6_to_plot).
-        - `n_cols` and `n_rows` are configurable from the config.
-        - If `plot_top_n` is not set, the old grouped behavior is preserved.
+        If `reference_data.use` is true in the config:
+        - violin plots are based on all available reference data
+        - boxplots are based on all available reference data
+        - all reference data points can be plotted
+        - countries from the analytic data are highlighted by country-name matching
         """
         country_vars_cfg = self.cfg_postprocessing["create_descriptives"][
             "country_vars"
         ]
 
-        # Pull defaults from config
         store = country_vars_cfg.get("store_plot", store)
         plot_name_base = country_vars_cfg.get("plot_filename", plot_name_base)
         n_cols = country_vars_cfg.get("n_cols", n_cols)
         n_rows = country_vars_cfg.get("n_rows", None)
         single_plot_source = country_vars_cfg.get("single_plot_source", "countries")
+
+        reference_cfg = country_vars_cfg.get("reference_data", {})
+        reference_df = None
+
+        if reference_cfg.get("use", False):
+            reference_df = self._load_country_reference_data(reference_cfg)
 
         if columns is None:
             columns = list(df.columns)
@@ -2198,32 +2202,33 @@ class ResultPlotter:
 
         cols_to_use = columns.copy()
 
-        # Country-collapsed data
         if country_id_col is not None and country_id_col in df.columns:
             df_country = (
                 df[[country_id_col] + cols_to_use]
                 .drop_duplicates(subset=[country_id_col])
-                .loc[:, cols_to_use]
                 .copy()
             )
         else:
             df_country = df[cols_to_use].drop_duplicates().copy()
 
-        # Person-weighted data
         df_person = df[cols_to_use].copy()
 
-        # ---------------------------------------------------------
-        # NEW: If plot_top_n is set -> create exactly one plot
-        # ---------------------------------------------------------
         plot_top_n = country_vars_cfg.get("plot_top_n", None)
 
-        if plot_top_n:
-            top_key = f"top_{plot_top_n}_to_plot"
-            vars_to_plot = country_vars_cfg.get(top_key, [])
+        if plot_top_n is not None:
+            top_n_vars = country_vars_cfg.get("top_n_to_plot", [])
 
-            if not vars_to_plot:
+            if not top_n_vars:
                 raise KeyError(
-                    f"`plot_top_n` is set to {plot_top_n}, but config key '{top_key}' is missing or empty."
+                    "`plot_top_n` is set, but `top_n_to_plot` is missing or empty."
+                )
+
+            vars_to_plot = top_n_vars[:plot_top_n]
+
+            if len(top_n_vars) < plot_top_n:
+                print(
+                    f"Warning: `plot_top_n` is set to {plot_top_n}, but only "
+                    f"{len(top_n_vars)} variables are listed in `top_n_to_plot`."
                 )
 
             selected_cols, missing_vars = self._resolve_country_plot_columns(
@@ -2233,13 +2238,13 @@ class ResultPlotter:
 
             if missing_vars:
                 print(
-                    f"Warning: The following configured variables could not be matched to dataframe columns "
-                    f"and will be skipped: {missing_vars}"
+                    "Warning: The following configured variables could not be matched "
+                    f"to analytic dataframe columns and will be skipped: {missing_vars}"
                 )
 
             if not selected_cols:
                 raise ValueError(
-                    "No columns from the configured top-N list could be matched to the dataframe."
+                    "No columns from `top_n_to_plot` could be matched to the analytic dataframe."
                 )
 
             if single_plot_source == "countries":
@@ -2249,6 +2254,7 @@ class ResultPlotter:
                 )
                 violin_color = "#4C78A8"
                 show_points = True
+
             elif single_plot_source == "persons":
                 df_plot = df_person
                 distribution_label = (
@@ -2256,9 +2262,10 @@ class ResultPlotter:
                 )
                 violin_color = "#F58518"
                 show_points = False
+
             else:
                 raise ValueError(
-                    "single_plot_source must be either 'countries' or 'persons'."
+                    "`single_plot_source` must be either 'countries' or 'persons'."
                 )
 
             self._plot_country_variability_overview(
@@ -2277,12 +2284,12 @@ class ResultPlotter:
                 plot_name=plot_name_base,
                 plot_format=plot_format,
                 dpi=dpi,
+                reference_df=reference_df,
+                reference_cfg=reference_cfg,
             )
+
             return
 
-        # ---------------------------------------------------------
-        # OLD behavior: grouped overview plots
-        # ---------------------------------------------------------
         grouped_columns = self._get_country_var_grouped_columns(
             columns=cols_to_use,
             country_var_groups=country_var_groups,
@@ -2308,6 +2315,8 @@ class ResultPlotter:
                 plot_name=f"{plot_name_base}_{group_name}_countries",
                 plot_format=plot_format,
                 dpi=dpi,
+                reference_df=reference_df,
+                reference_cfg=reference_cfg,
             )
 
             self._plot_country_variability_overview(
@@ -2326,6 +2335,8 @@ class ResultPlotter:
                 plot_name=f"{plot_name_base}_{group_name}_persons",
                 plot_format=plot_format,
                 dpi=dpi,
+                reference_df=reference_df,
+                reference_cfg=reference_cfg,
             )
 
     def _plot_country_variability_overview(
@@ -2345,14 +2356,15 @@ class ResultPlotter:
         plot_name: str,
         plot_format: str,
         dpi: int,
+        reference_df: pd.DataFrame | None = None,
+        reference_cfg: dict[str, Any] | None = None,
+        highlighted_country_names: set[str] | None = None,
     ) -> None:
         """
         Helper that creates one multi-panel overview figure.
 
-        New behavior:
-        - `n_cols` and `n_rows` can be passed explicitly from config.
-        - If `n_rows` is None, it is computed automatically.
-        - If `n_rows * n_cols` is too small, an error is raised.
+        If reference_df is provided, the distribution is based on the reference data.
+        Own analytic countries are highlighted inside the reference distribution.
         """
         n_vars = len(columns)
 
@@ -2362,12 +2374,33 @@ class ResultPlotter:
 
         if n_rows is None:
             n_rows = int(np.ceil(n_vars / n_cols))
-        elif n_rows * n_cols < n_vars:
+
+        if n_rows * n_cols < n_vars:
             raise ValueError(
                 f"Configured grid too small for plot '{plot_name}': "
                 f"{n_rows} rows x {n_cols} cols = {n_rows * n_cols} panels, "
                 f"but {n_vars} variables need to be plotted."
             )
+
+        if reference_cfg is None:
+            reference_cfg = {}
+
+        country_vars_cfg = self.cfg_postprocessing["create_descriptives"][
+            "country_vars"
+        ]
+
+        show_legend = country_vars_cfg.get("show_legend", False)
+        show_configured_min_max_points_default = country_vars_cfg.get(
+            "show_configured_min_max_points",
+            False,
+        )
+
+        if highlighted_country_names is None:
+            highlighted_country_names = set()
+
+        use_reference_data = reference_df is not None and reference_cfg.get(
+            "use", False
+        )
 
         fig, axes = plt.subplots(
             n_rows,
@@ -2375,14 +2408,65 @@ class ResultPlotter:
             figsize=(n_cols * panel_width, n_rows * panel_height),
             squeeze=False,
         )
-        axes_flat = axes.flatten()
 
+        axes_flat = axes.flatten()
         rng = np.random.default_rng(42)
+
         any_configured_extrema = False
+        any_reference_distribution = False
+        any_highlighted_points = False
+
+        all_points_color = reference_cfg.get("all_points_color", "black")
+        all_points_alpha = reference_cfg.get("all_points_alpha", 0.18)
+        all_points_size = reference_cfg.get("all_points_size", 10)
+
+        highlight_color = reference_cfg.get("highlight_color", "#D55E00")
+        highlight_alpha = reference_cfg.get("highlight_alpha", 0.95)
+        highlight_size = reference_cfg.get("highlight_size", 32)
 
         for ax_idx, col in enumerate(columns):
             ax = axes_flat[ax_idx]
-            values = pd.to_numeric(df_plot[col], errors="coerce").dropna()
+
+            reference_var_df = None
+            reference_col = None
+            values_source = "analytic"
+
+            if use_reference_data:
+                reference_col = self._resolve_reference_variable_column(
+                    plot_col=col,
+                    reference_columns=list(reference_df.columns),
+                    variable_mapping=reference_cfg.get("variable_mapping", {}),
+                )
+
+                if reference_col is not None:
+                    reference_var_df = self._prepare_reference_variable_df(
+                        reference_df=reference_df,
+                        reference_col=reference_col,
+                        reference_cfg=reference_cfg,
+                    )
+
+                    values = pd.to_numeric(
+                        reference_var_df[reference_col],
+                        errors="coerce",
+                    ).dropna()
+
+                    if not values.empty:
+                        values_source = "reference"
+                        any_reference_distribution = True
+                    else:
+                        values = pd.to_numeric(df_plot[col], errors="coerce").dropna()
+                        print(
+                            f"Warning: Reference column '{reference_col}' for '{col}' "
+                            "has no valid numeric values. Falling back to analytic data."
+                        )
+                else:
+                    values = pd.to_numeric(df_plot[col], errors="coerce").dropna()
+                    print(
+                        f"Warning: Could not find reference-data column for '{col}'. "
+                        "Falling back to analytic data."
+                    )
+            else:
+                values = pd.to_numeric(df_plot[col], errors="coerce").dropna()
 
             if values.empty:
                 ax.set_axis_off()
@@ -2398,43 +2482,59 @@ class ResultPlotter:
             obs_sd = float(values.std(ddof=1)) if len(values) > 1 else 0.0
 
             if scale_info is not None:
-                min_country = scale_info.get("min_country", {})
-                max_country = scale_info.get("max_country", {})
-
-                x_min_base = float(min_country["value"])
-                x_max_base = float(max_country["value"])
                 unit = scale_info.get("unit", "")
-                any_configured_extrema = True
+
+                configured_x_min = scale_info.get("x_min", None)
+                configured_x_max = scale_info.get("x_max", None)
+
+                if configured_x_min is not None and configured_x_max is not None:
+                    x_min = float(configured_x_min)
+                    x_max = float(configured_x_max)
+                else:
+                    min_country = scale_info.get("min_country", {})
+                    max_country = scale_info.get("max_country", {})
+
+                    if "value" in min_country and "value" in max_country:
+                        scale_min = float(min_country["value"])
+                        scale_max = float(max_country["value"])
+
+                        x_min_base = min(scale_min, obs_min)
+                        x_max_base = max(scale_max, obs_max)
+                    else:
+                        x_min_base = obs_min
+                        x_max_base = obs_max
+
+                    x_min, x_max = self._add_axis_padding(
+                        x_min=x_min_base,
+                        x_max=x_max_base,
+                        padding_frac=x_padding_frac,
+                    )
             else:
-                x_min_base = obs_min
-                x_max_base = obs_max
                 unit = ""
+                x_min, x_max = self._add_axis_padding(
+                    x_min=obs_min,
+                    x_max=obs_max,
+                    padding_frac=x_padding_frac,
+                )
 
-            x_min, x_max = self._add_axis_padding(
-                x_min=x_min_base,
-                x_max=x_max_base,
-                padding_frac=x_padding_frac,
-            )
-
-            # Configured source range
-            ax.hlines(
-                y=0,
-                xmin=x_min_base,
-                xmax=x_max_base,
-                color="lightgray",
-                linewidth=8,
-                zorder=0,
-            )
-
-            # Observed range
-            ax.hlines(
-                y=0,
-                xmin=obs_min,
-                xmax=obs_max,
-                color="gray",
-                linewidth=8,
-                zorder=1,
-            )
+            if values_source == "reference":
+                ax.hlines(
+                    y=0,
+                    xmin=obs_min,
+                    xmax=obs_max,
+                    color="lightgray",
+                    linewidth=8,
+                    zorder=0,
+                )
+            else:
+                ax.hlines(
+                    y=0,
+                    xmin=obs_min,
+                    xmax=obs_max,
+                    color="gray",
+                    linewidth=8,
+                    zorder=1,
+                )
 
             violin_parts = ax.violinplot(
                 dataset=[values.to_numpy()],
@@ -2445,6 +2545,7 @@ class ResultPlotter:
                 showmedians=False,
                 showextrema=False,
             )
+
             for body in violin_parts["bodies"]:
                 body.set_facecolor(violin_color)
                 body.set_edgecolor("black")
@@ -2464,7 +2565,71 @@ class ResultPlotter:
                 capprops=dict(color="black", linewidth=1.0),
             )
 
-            if show_points:
+            if values_source == "reference" and reference_var_df is not None:
+                numeric_reference_values = pd.to_numeric(
+                    reference_var_df[reference_col],
+                    errors="coerce",
+                )
+
+                valid_reference_df = reference_var_df.loc[
+                    numeric_reference_values.notna()
+                ].copy()
+                valid_reference_df[reference_col] = numeric_reference_values.loc[
+                    numeric_reference_values.notna()
+                ]
+
+                if reference_cfg.get("plot_all_points", True):
+                    all_values = valid_reference_df[reference_col].to_numpy()
+                    all_jitter = rng.uniform(-0.13, 0.13, size=len(all_values))
+
+                    ax.scatter(
+                        all_values,
+                        all_jitter,
+                        s=all_points_size,
+                        alpha=all_points_alpha,
+                        color=all_points_color,
+                        linewidths=0,
+                        zorder=3,
+                    )
+
+                if reference_cfg.get("highlight_own_points", True):
+                    highlighted_values = pd.to_numeric(
+                        df_plot[col],
+                        errors="coerce",
+                    ).dropna()
+
+                    if not highlighted_values.empty:
+                        highlighted_values_arr = highlighted_values.to_numpy()
+                        highlight_jitter = rng.uniform(
+                            -0.17,
+                            0.17,
+                            size=len(highlighted_values_arr),
+                        )
+
+                        ax.scatter(
+                            highlighted_values_arr,
+                            highlight_jitter,
+                            s=highlight_size,
+                            alpha=highlight_alpha,
+                            color=highlight_color,
+                            edgecolor="black",
+                            linewidths=0.5,
+                            zorder=6,
+                        )
+
+                        any_highlighted_points = True
+
+                        ax.hlines(
+                            y=-0.36,
+                            xmin=float(np.nanmin(highlighted_values_arr)),
+                            xmax=float(np.nanmax(highlighted_values_arr)),
+                            color=highlight_color,
+                            linewidth=4,
+                            alpha=0.65,
+                            zorder=5,
+                        )
+
+            elif show_points:
                 jitter = rng.uniform(-0.08, 0.08, size=len(values))
                 ax.scatter(
                     values.to_numpy(),
@@ -2477,11 +2642,17 @@ class ResultPlotter:
                 )
 
             if scale_info is not None:
-                self._add_configured_min_max_points(
-                    ax=ax,
-                    scale_info=scale_info,
-                    y_pos=-0.42,
+                show_configured_min_max_points = scale_info.get(
+                    "show_min_max_points",
+                    show_configured_min_max_points_default,
                 )
+
+                if show_configured_min_max_points:
+                    self._add_configured_min_max_points(
+                        ax=ax,
+                        scale_info=scale_info,
+                        y_pos=-0.42,
+                    )
 
             ax.set_xlim(x_min, x_max)
             ax.set_ylim(-0.6, 0.6)
@@ -2493,9 +2664,12 @@ class ResultPlotter:
                 max_char_on_line=22,
                 balance=True,
             )
+
             ax.set_title(pretty_label, fontsize=10, pad=10)
 
-            info_text = f"obs: {obs_min:.2f}–{obs_max:.2f}\nSD = {obs_sd:.2f}"
+            range_label = "all" if values_source == "reference" else "obs"
+            info_text = f"{range_label}: {obs_min:.2f}–{obs_max:.2f}\nSD = {obs_sd:.2f}"
+
             if unit:
                 info_text += f"\n{unit}"
 
@@ -2517,35 +2691,85 @@ class ResultPlotter:
         for ax in axes_flat[n_vars:]:
             ax.set_axis_off()
 
-        legend_handles = [
-            mlines.Line2D(
-                [],
-                [],
-                color="lightgray",
-                linewidth=8,
-                label="Configured source min–max range",
-            ),
-            mlines.Line2D(
-                [],
-                [],
-                color="gray",
-                linewidth=8,
-                label="Observed analytic min–max range",
-            ),
-            mpatches.Patch(
-                facecolor=violin_color,
-                edgecolor="black",
-                alpha=0.45,
-                label=distribution_label,
-            ),
-            mpatches.Patch(
-                facecolor="white",
-                edgecolor="black",
-                label="Boxplot (median + IQR)",
-            ),
-        ]
+        legend_handles = []
 
-        if show_points:
+        if any_reference_distribution:
+            legend_handles.append(
+                mlines.Line2D(
+                    [],
+                    [],
+                    color="lightgray",
+                    linewidth=8,
+                    label="All available min–max range",
+                )
+            )
+        else:
+            legend_handles.append(
+                mlines.Line2D(
+                    [],
+                    [],
+                    color="gray",
+                    linewidth=8,
+                    label="Observed analytic min–max range",
+                )
+            )
+
+        legend_handles.extend(
+            [
+                mpatches.Patch(
+                    facecolor=violin_color,
+                    edgecolor="black",
+                    alpha=0.45,
+                    label=(
+                        "Reference distribution"
+                        if any_reference_distribution
+                        else distribution_label
+                    ),
+                ),
+                mpatches.Patch(
+                    facecolor="white",
+                    edgecolor="black",
+                    label="Boxplot based on plotted distribution",
+                ),
+            ]
+        )
+
+        if any_reference_distribution and reference_cfg.get("plot_all_points", True):
+            legend_handles.append(
+                mlines.Line2D(
+                    [],
+                    [],
+                    color=all_points_color,
+                    marker="o",
+                    linestyle="None",
+                    markersize=5,
+                    alpha=all_points_alpha,
+                    label=reference_cfg.get(
+                        "all_points_label",
+                        "All available data points",
+                    ),
+                )
+            )
+
+        if any_highlighted_points:
+            legend_handles.append(
+                mlines.Line2D(
+                    [],
+                    [],
+                    color=highlight_color,
+                    marker="o",
+                    markeredgecolor="black",
+                    linestyle="None",
+                    markersize=6,
+                    alpha=highlight_alpha,
+                    label=reference_cfg.get(
+                        "highlight_label",
+                        "Countries in analytic sample",
+                    ),
+                )
+            )
+
+        elif show_points and not any_reference_distribution:
             legend_handles.append(
                 mlines.Line2D(
                     [],
@@ -2592,8 +2816,14 @@ class ResultPlotter:
             fontsize=10,
         )
 
+        title = distribution_label
+        if any_reference_distribution:
+            title = (
+                f"{distribution_label} — boxplots based on all available reference data"
+            )
+
         fig.suptitle(
-            distribution_label,
+            title,
             fontsize=14,
             fontweight="bold",
             y=1.02,
@@ -2827,3 +3057,106 @@ class ResultPlotter:
                     break
 
         return grouped_columns
+
+    @staticmethod
+    def _load_country_reference_data(reference_cfg: dict[str, Any]) -> pd.DataFrame:
+        """
+        Loads the reference country-level data from an Excel file.
+
+        The file is expected to contain one row per country-year or country observation.
+        """
+        path = reference_cfg.get("path")
+        sheet_name = reference_cfg.get("sheet_name", 0)
+
+        if not path:
+            raise ValueError("`reference_data.path` must be provided when reference_data.use is true.")
+
+        if not os.path.exists(path):
+            raise FileNotFoundError(f"Reference data file not found: {path}")
+
+        reference_df = pd.read_excel(path, sheet_name=sheet_name)
+        reference_df.columns = [str(col).strip() for col in reference_df.columns]
+
+        return reference_df
+
+    @staticmethod
+    def _normalize_country_name(country: Any) -> str:
+        """
+        Normalizes country names for robust matching.
+        """
+        if pd.isna(country):
+            return ""
+
+        return str(country).strip().lower()
+
+    @staticmethod
+    def _get_normalized_country_names(
+        df: pd.DataFrame,
+        country_col: str,
+    ) -> set[str]:
+        """
+        Extracts normalized country names from the analytic dataframe.
+        """
+        return {
+            ResultPlotter._normalize_country_name(country)
+            for country in df[country_col].dropna().unique()
+        }
+
+    @staticmethod
+    def _resolve_reference_variable_column(
+        plot_col: str,
+        reference_columns: list[str],
+        variable_mapping: dict[str, str],
+    ) -> str | None:
+        """
+        Resolves the plotting variable column to the corresponding reference-data column.
+
+        Supports:
+        - direct matches
+        - prefixed analytic columns, e.g. mac_youth_unemployment
+        - config-based mappings, e.g. youth_unemployment -> youth_unemployment_rate
+        """
+        default_mapping = {
+            "adult_unemployment": "unemployment_rate",
+            "youth_unemployment": "youth_unemployment_rate",
+        }
+
+        variable_mapping = {
+            **default_mapping,
+            **variable_mapping,
+        }
+
+        reference_columns_set = set(reference_columns)
+        candidate_keys = ResultPlotter._get_country_var_candidate_keys(plot_col)
+
+        for candidate in candidate_keys:
+            mapped_col = variable_mapping.get(candidate)
+            if mapped_col in reference_columns_set:
+                return mapped_col
+
+        for candidate in candidate_keys:
+            if candidate in reference_columns_set:
+                return candidate
+
+        return None
+
+    @staticmethod
+    def _prepare_reference_variable_df(
+        reference_df: pd.DataFrame,
+        reference_col: str,
+        reference_cfg: dict[str, Any],
+    ) -> pd.DataFrame:
+        """
+        Prepares reference data for one variable.
+
+        Simplified behavior:
+        - uses all available numeric values from the reference column
+        - ignores country and year columns
+        - no country matching
+        - no year filtering
+        """
+        df_var = reference_df[[reference_col]].copy()
+        df_var[reference_col] = pd.to_numeric(df_var[reference_col], errors="coerce")
+        df_var = df_var.dropna(subset=[reference_col])
+
+        return df_var
