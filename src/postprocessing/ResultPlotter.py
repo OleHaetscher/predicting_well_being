@@ -2164,7 +2164,9 @@ class ResultPlotter:
         - violin plots are based on all available reference data
         - boxplots are based on all available reference data
         - all reference data points can be plotted
-        - countries from the analytic data are highlighted by country-name matching
+        - analytic-data values are highlighted directly from `df_plot[col]`
+        - the in-panel annotation only shows the percentage of reference range
+          covered by the analytic-data range
         """
         country_vars_cfg = self.cfg_postprocessing["create_descriptives"][
             "country_vars"
@@ -2358,13 +2360,16 @@ class ResultPlotter:
         dpi: int,
         reference_df: pd.DataFrame | None = None,
         reference_cfg: dict[str, Any] | None = None,
-        highlighted_country_names: set[str] | None = None,
     ) -> None:
         """
         Helper that creates one multi-panel overview figure.
 
-        If reference_df is provided, the distribution is based on the reference data.
-        Own analytic countries are highlighted inside the reference distribution.
+        If reference_df is provided:
+        - reference values are used for the violin and boxplot
+        - analytic values from df_plot[col] are plotted as highlighted points
+        - the highlighted orange range bar is computed from the same visible highlighted values
+        - the only in-panel annotation is the percentage of reference range covered
+          by the analytic-data range
         """
         n_vars = len(columns)
 
@@ -2390,13 +2395,12 @@ class ResultPlotter:
         ]
 
         show_legend = country_vars_cfg.get("show_legend", False)
+        show_suptitle = country_vars_cfg.get("show_suptitle", False)
+
         show_configured_min_max_points_default = country_vars_cfg.get(
             "show_configured_min_max_points",
             False,
         )
-
-        if highlighted_country_names is None:
-            highlighted_country_names = set()
 
         use_reference_data = reference_df is not None and reference_cfg.get(
             "use", False
@@ -2419,10 +2423,31 @@ class ResultPlotter:
         all_points_color = reference_cfg.get("all_points_color", "black")
         all_points_alpha = reference_cfg.get("all_points_alpha", 0.18)
         all_points_size = reference_cfg.get("all_points_size", 10)
+        all_points_jitter_width = reference_cfg.get("all_points_jitter_width", 0.13)
 
         highlight_color = reference_cfg.get("highlight_color", "#D55E00")
         highlight_alpha = reference_cfg.get("highlight_alpha", 0.95)
         highlight_size = reference_cfg.get("highlight_size", 32)
+        highlight_jitter_width = reference_cfg.get("highlight_jitter_width", 0.17)
+
+        highlight_range_y = reference_cfg.get(
+            "highlight_range_y",
+            country_vars_cfg.get("highlight_range_y", -0.50),
+        )
+        highlight_range_linewidth = reference_cfg.get(
+            "highlight_range_linewidth",
+            country_vars_cfg.get("highlight_range_linewidth", 4),
+        )
+        highlight_range_alpha = reference_cfg.get(
+            "highlight_range_alpha",
+            country_vars_cfg.get("highlight_range_alpha", 0.65),
+        )
+
+        y_min = country_vars_cfg.get("country_variability_y_min", -0.58)
+        y_max = country_vars_cfg.get("country_variability_y_max", 0.60)
+
+        coverage_label = country_vars_cfg.get("range_coverage_label", "range covered")
+        coverage_decimals = country_vars_cfg.get("range_coverage_decimals", 1)
 
         for ax_idx, col in enumerate(columns):
             ax = axes_flat[ax_idx]
@@ -2477,13 +2502,11 @@ class ResultPlotter:
                 scale_boundaries=scale_boundaries,
             )
 
-            obs_min = float(values.min())
-            obs_max = float(values.max())
-            obs_sd = float(values.std(ddof=1)) if len(values) > 1 else 0.0
+            background_values_arr = self._finite_numeric_array(values)
+            background_min = float(np.nanmin(background_values_arr))
+            background_max = float(np.nanmax(background_values_arr))
 
             if scale_info is not None:
-                unit = scale_info.get("unit", "")
-
                 configured_x_min = scale_info.get("x_min", None)
                 configured_x_max = scale_info.get("x_max", None)
 
@@ -2498,11 +2521,11 @@ class ResultPlotter:
                         scale_min = float(min_country["value"])
                         scale_max = float(max_country["value"])
 
-                        x_min_base = min(scale_min, obs_min)
-                        x_max_base = max(scale_max, obs_max)
+                        x_min_base = min(scale_min, background_min)
+                        x_max_base = max(scale_max, background_max)
                     else:
-                        x_min_base = obs_min
-                        x_max_base = obs_max
+                        x_min_base = background_min
+                        x_max_base = background_max
 
                     x_min, x_max = self._add_axis_padding(
                         x_min=x_min_base,
@@ -2510,18 +2533,17 @@ class ResultPlotter:
                         padding_frac=x_padding_frac,
                     )
             else:
-                unit = ""
                 x_min, x_max = self._add_axis_padding(
-                    x_min=obs_min,
-                    x_max=obs_max,
+                    x_min=background_min,
+                    x_max=background_max,
                     padding_frac=x_padding_frac,
                 )
 
             if values_source == "reference":
                 ax.hlines(
                     y=0,
-                    xmin=obs_min,
-                    xmax=obs_max,
+                    xmin=background_min,
+                    xmax=background_max,
                     color="lightgray",
                     linewidth=8,
                     zorder=0,
@@ -2529,15 +2551,15 @@ class ResultPlotter:
             else:
                 ax.hlines(
                     y=0,
-                    xmin=obs_min,
-                    xmax=obs_max,
+                    xmin=background_min,
+                    xmax=background_max,
                     color="gray",
                     linewidth=8,
                     zorder=1,
                 )
 
             violin_parts = ax.violinplot(
-                dataset=[values.to_numpy()],
+                dataset=[background_values_arr],
                 positions=[0],
                 vert=False,
                 widths=0.75,
@@ -2553,7 +2575,7 @@ class ResultPlotter:
                 body.set_linewidth(0.8)
 
             ax.boxplot(
-                [values.to_numpy()],
+                [background_values_arr],
                 positions=[0],
                 vert=False,
                 widths=0.22,
@@ -2565,25 +2587,50 @@ class ResultPlotter:
                 capprops=dict(color="black", linewidth=1.0),
             )
 
+            highlighted_values_all_arr = self._finite_numeric_array(df_plot[col])
+            highlighted_values_visible_arr = self._values_within_xlim(
+                values=highlighted_values_all_arr,
+                x_min=x_min,
+                x_max=x_max,
+            )
+
+            coverage_pct = self._compute_range_coverage_pct(
+                numerator_values=highlighted_values_all_arr,
+                denominator_values=background_values_arr,
+            )
+            coverage_text = self._format_range_coverage_text(
+                coverage_pct=coverage_pct,
+                label=coverage_label,
+                decimals=coverage_decimals,
+            )
+
             if values_source == "reference" and reference_var_df is not None:
                 numeric_reference_values = pd.to_numeric(
                     reference_var_df[reference_col],
                     errors="coerce",
                 )
 
-                valid_reference_df = reference_var_df.loc[
-                    numeric_reference_values.notna()
-                ].copy()
-                valid_reference_df[reference_col] = numeric_reference_values.loc[
-                    numeric_reference_values.notna()
-                ]
+                valid_reference_values_arr = self._finite_numeric_array(
+                    numeric_reference_values
+                )
+                valid_reference_values_visible_arr = self._values_within_xlim(
+                    values=valid_reference_values_arr,
+                    x_min=x_min,
+                    x_max=x_max,
+                )
 
-                if reference_cfg.get("plot_all_points", True):
-                    all_values = valid_reference_df[reference_col].to_numpy()
-                    all_jitter = rng.uniform(-0.13, 0.13, size=len(all_values))
+                if (
+                    reference_cfg.get("plot_all_points", True)
+                    and valid_reference_values_visible_arr.size > 0
+                ):
+                    all_jitter = rng.uniform(
+                        -all_points_jitter_width,
+                        all_points_jitter_width,
+                        size=len(valid_reference_values_visible_arr),
+                    )
 
                     ax.scatter(
-                        all_values,
+                        valid_reference_values_visible_arr,
                         all_jitter,
                         s=all_points_size,
                         alpha=all_points_alpha,
@@ -2592,54 +2639,60 @@ class ResultPlotter:
                         zorder=3,
                     )
 
-                if reference_cfg.get("highlight_own_points", True):
-                    highlighted_values = pd.to_numeric(
-                        df_plot[col],
-                        errors="coerce",
-                    ).dropna()
+                if (
+                    reference_cfg.get("highlight_own_points", True)
+                    and highlighted_values_visible_arr.size > 0
+                ):
+                    highlight_jitter = rng.uniform(
+                        -highlight_jitter_width,
+                        highlight_jitter_width,
+                        size=len(highlighted_values_visible_arr),
+                    )
 
-                    if not highlighted_values.empty:
-                        highlighted_values_arr = highlighted_values.to_numpy()
-                        highlight_jitter = rng.uniform(
-                            -0.17,
-                            0.17,
-                            size=len(highlighted_values_arr),
-                        )
+                    ax.scatter(
+                        highlighted_values_visible_arr,
+                        highlight_jitter,
+                        s=highlight_size,
+                        alpha=highlight_alpha,
+                        color=highlight_color,
+                        edgecolor="black",
+                        linewidths=0.5,
+                        zorder=6,
+                    )
 
-                        ax.scatter(
-                            highlighted_values_arr,
-                            highlight_jitter,
-                            s=highlight_size,
-                            alpha=highlight_alpha,
-                            color=highlight_color,
-                            edgecolor="black",
-                            linewidths=0.5,
-                            zorder=6,
-                        )
+                    any_highlighted_points = True
 
-                        any_highlighted_points = True
-
-                        ax.hlines(
-                            y=-0.36,
-                            xmin=float(np.nanmin(highlighted_values_arr)),
-                            xmax=float(np.nanmax(highlighted_values_arr)),
-                            color=highlight_color,
-                            linewidth=4,
-                            alpha=0.65,
-                            zorder=5,
-                        )
+                    ax.hlines(
+                        y=highlight_range_y,
+                        xmin=float(np.nanmin(highlighted_values_visible_arr)),
+                        xmax=float(np.nanmax(highlighted_values_visible_arr)),
+                        color=highlight_color,
+                        linewidth=highlight_range_linewidth,
+                        alpha=highlight_range_alpha,
+                        zorder=5,
+                    )
 
             elif show_points:
-                jitter = rng.uniform(-0.08, 0.08, size=len(values))
-                ax.scatter(
-                    values.to_numpy(),
-                    jitter,
-                    s=12,
-                    alpha=0.45,
-                    color="black",
-                    linewidths=0,
-                    zorder=3,
+                analytic_values_visible_arr = self._values_within_xlim(
+                    values=background_values_arr,
+                    x_min=x_min,
+                    x_max=x_max,
                 )
+
+                if analytic_values_visible_arr.size > 0:
+                    jitter = rng.uniform(
+                        -0.08, 0.08, size=len(analytic_values_visible_arr)
+                    )
+
+                    ax.scatter(
+                        analytic_values_visible_arr,
+                        jitter,
+                        s=12,
+                        alpha=0.45,
+                        color="black",
+                        linewidths=0,
+                        zorder=3,
+                    )
 
             if scale_info is not None:
                 show_configured_min_max_points = scale_info.get(
@@ -2648,14 +2701,16 @@ class ResultPlotter:
                 )
 
                 if show_configured_min_max_points:
+                    any_configured_extrema = True
+
                     self._add_configured_min_max_points(
                         ax=ax,
                         scale_info=scale_info,
-                        y_pos=-0.42,
+                        y_pos=highlight_range_y,
                     )
 
             ax.set_xlim(x_min, x_max)
-            ax.set_ylim(-0.6, 0.6)
+            ax.set_ylim(y_min, y_max)
             ax.set_yticks([])
 
             pretty_label = self._format_country_variable_label(col)
@@ -2667,16 +2722,10 @@ class ResultPlotter:
 
             ax.set_title(pretty_label, fontsize=10, pad=10)
 
-            range_label = "all" if values_source == "reference" else "obs"
-            info_text = f"{range_label}: {obs_min:.2f}–{obs_max:.2f}\nSD = {obs_sd:.2f}"
-
-            if unit:
-                info_text += f"\n{unit}"
-
             ax.text(
                 0.02,
                 0.95,
-                info_text,
+                coverage_text,
                 transform=ax.transAxes,
                 ha="left",
                 va="top",
@@ -2691,130 +2740,119 @@ class ResultPlotter:
         for ax in axes_flat[n_vars:]:
             ax.set_axis_off()
 
-        legend_handles = []
+        if show_legend:
+            legend_handles = []
 
-        if any_reference_distribution:
-            legend_handles.append(
-                mlines.Line2D(
-                    [],
-                    [],
-                    color="lightgray",
-                    linewidth=8,
-                    label="All available min–max range",
+            if any_reference_distribution:
+                legend_handles.append(
+                    mlines.Line2D(
+                        [],
+                        [],
+                        color="lightgray",
+                        linewidth=8,
+                        label="All available min–max range",
+                    )
                 )
-            )
-        else:
-            legend_handles.append(
-                mlines.Line2D(
-                    [],
-                    [],
-                    color="gray",
-                    linewidth=8,
-                    label="Observed analytic min–max range",
+            else:
+                legend_handles.append(
+                    mlines.Line2D(
+                        [],
+                        [],
+                        color="gray",
+                        linewidth=8,
+                        label="Observed analytic min–max range",
+                    )
                 )
-            )
 
-        legend_handles.extend(
-            [
-                mpatches.Patch(
-                    facecolor=violin_color,
-                    edgecolor="black",
-                    alpha=0.45,
-                    label=(
-                        "Reference distribution"
-                        if any_reference_distribution
-                        else distribution_label
-                    ),
-                ),
-                mpatches.Patch(
-                    facecolor="white",
-                    edgecolor="black",
-                    label="Boxplot based on plotted distribution",
-                ),
-            ]
-        )
-
-        if any_reference_distribution and reference_cfg.get("plot_all_points", True):
-            legend_handles.append(
-                mlines.Line2D(
-                    [],
-                    [],
-                    color=all_points_color,
-                    marker="o",
-                    linestyle="None",
-                    markersize=5,
-                    alpha=all_points_alpha,
-                    label=reference_cfg.get(
-                        "all_points_label",
-                        "All available data points",
-                    ),
-                )
-            )
-
-        if any_highlighted_points:
-            legend_handles.append(
-                mlines.Line2D(
-                    [],
-                    [],
-                    color=highlight_color,
-                    marker="o",
-                    markeredgecolor="black",
-                    linestyle="None",
-                    markersize=6,
-                    alpha=highlight_alpha,
-                    label=reference_cfg.get(
-                        "highlight_label",
-                        "Countries in analytic sample",
-                    ),
-                )
-            )
-
-        elif show_points and not any_reference_distribution:
-            legend_handles.append(
-                mlines.Line2D(
-                    [],
-                    [],
-                    color="black",
-                    marker="o",
-                    linestyle="None",
-                    markersize=5,
-                    alpha=0.6,
-                    label="Observed values",
-                )
-            )
-
-        if any_configured_extrema:
             legend_handles.extend(
                 [
-                    mlines.Line2D(
-                        [],
-                        [],
-                        color="#B22222",
-                        marker="v",
-                        linestyle="None",
-                        markersize=7,
-                        label="Configured minimum country",
+                    mpatches.Patch(
+                        facecolor=violin_color,
+                        edgecolor="black",
+                        alpha=0.45,
+                        label=(
+                            "Reference distribution"
+                            if any_reference_distribution
+                            else distribution_label
+                        ),
                     ),
-                    mlines.Line2D(
-                        [],
-                        [],
-                        color="#006400",
-                        marker="^",
-                        linestyle="None",
-                        markersize=7,
-                        label="Configured maximum country",
+                    mpatches.Patch(
+                        facecolor="white",
+                        edgecolor="black",
+                        label="Boxplot based on plotted distribution",
                     ),
                 ]
             )
 
-        fig.legend(
-            handles=legend_handles,
-            loc="upper center",
-            bbox_to_anchor=(0.5, 0.995),
-            ncol=3,
-            frameon=False,
-            fontsize=10,
-        )
+            if any_reference_distribution and reference_cfg.get(
+                "plot_all_points", True
+            ):
+                legend_handles.append(
+                    mlines.Line2D(
+                        [],
+                        [],
+                        color=all_points_color,
+                        marker="o",
+                        linestyle="None",
+                        markersize=5,
+                        alpha=all_points_alpha,
+                        label=reference_cfg.get(
+                            "all_points_label",
+                            "All available data points",
+                        ),
+                    )
+                )
+
+            if any_highlighted_points:
+                legend_handles.append(
+                    mlines.Line2D(
+                        [],
+                        [],
+                        color=highlight_color,
+                        marker="o",
+                        markeredgecolor="black",
+                        linestyle="None",
+                        markersize=6,
+                        alpha=highlight_alpha,
+                        label=reference_cfg.get(
+                            "highlight_label",
+                            "Analytic sample values",
+                        ),
+                    )
+                )
+
+            if any_configured_extrema:
+                legend_handles.extend(
+                    [
+                        mlines.Line2D(
+                            [],
+                            [],
+                            color="#B22222",
+                            marker="v",
+                            linestyle="None",
+                            markersize=7,
+                            label="Configured minimum country",
+                        ),
+                        mlines.Line2D(
+                            [],
+                            [],
+                            color="#006400",
+                            marker="^",
+                            linestyle="None",
+                            markersize=7,
+                            label="Configured maximum country",
+                        ),
+                    ]
+                )
+
+            fig.legend(
+                handles=legend_handles,
+                loc="lower center",
+                bbox_to_anchor=(0.5, -0.01),
+                ncol=3,
+                frameon=False,
+                fontsize=10,
+            )
 
         title = distribution_label
         if any_reference_distribution:
@@ -2822,14 +2860,22 @@ class ResultPlotter:
                 f"{distribution_label} — boxplots based on all available reference data"
             )
 
-        fig.suptitle(
-            title,
-            fontsize=14,
-            fontweight="bold",
-            y=1.02,
-        )
+        if show_suptitle:
+            fig.suptitle(
+                title,
+                fontsize=14,
+                fontweight="bold",
+                y=0.995,
+            )
 
-        plt.tight_layout(rect=(0, 0, 1, 0.96))
+        if show_legend and show_suptitle:
+            plt.tight_layout(rect=(0, 0.06, 1, 0.94))
+        elif show_legend:
+            plt.tight_layout(rect=(0, 0.06, 1, 0.98))
+        elif show_suptitle:
+            plt.tight_layout(rect=(0, 0, 1, 0.94))
+        else:
+            plt.tight_layout(rect=(0, 0, 1, 0.98))
 
         if store:
             self.store_plot(
@@ -2864,6 +2910,7 @@ class ResultPlotter:
 
             for col in available_columns:
                 candidate_keys = ResultPlotter._get_country_var_candidate_keys(col)
+
                 if requested_var in candidate_keys:
                     matched_col = col
                     break
@@ -2873,7 +2920,6 @@ class ResultPlotter:
             else:
                 matched_columns.append(matched_col)
 
-        # remove duplicates while preserving order
         matched_columns = list(dict.fromkeys(matched_columns))
 
         return matched_columns, missing_variables
@@ -2884,37 +2930,24 @@ class ResultPlotter:
         scale_boundaries: dict[str, dict[str, Any]],
     ) -> dict[str, Any] | None:
         """
-        Retrieves configured scale information for a variable from the new config structure.
+        Retrieves configured scale information for a variable.
 
-        Expected structure:
-            scale_boundaries:
-              variable_name:
-                unit: ...
-                min_country:
-                  name: ...
-                  value: ...
-                  year: ...
-                max_country:
-                  name: ...
-                  value: ...
-                  year: ...
+        The config entry may contain:
+        - unit
+        - x_min
+        - x_max
+        - min_country
+        - max_country
+        - show_min_max_points
+
+        Unlike earlier versions, this method does not require min_country/max_country.
+        This allows using scale info only for axis limits.
         """
         candidate_keys = ResultPlotter._get_country_var_candidate_keys(col)
 
         for key in candidate_keys:
             if key in scale_boundaries:
-                entry = scale_boundaries[key]
-
-                if "min_country" not in entry or "max_country" not in entry:
-                    return None
-
-                if (
-                    "value" not in entry["min_country"]
-                    or "value" not in entry["max_country"]
-                ):
-                    return None
-
-                return entry
+                return scale_boundaries[key]
 
         return None
 
@@ -2981,6 +3014,7 @@ class ResultPlotter:
 
         for key, spec in point_specs.items():
             country_info = scale_info.get(key)
+
             if not country_info:
                 continue
 
@@ -3028,6 +3062,7 @@ class ResultPlotter:
         Creates a readable variable label from a column name.
         """
         label = col
+
         for prefix in ["mac_", "pl_", "srmc_", "sens_", "crit_"]:
             if label.startswith(prefix):
                 label = label[len(prefix) :]
@@ -3069,7 +3104,9 @@ class ResultPlotter:
         sheet_name = reference_cfg.get("sheet_name", 0)
 
         if not path:
-            raise ValueError("`reference_data.path` must be provided when reference_data.use is true.")
+            raise ValueError(
+                "`reference_data.path` must be provided when reference_data.use is true."
+            )
 
         if not os.path.exists(path):
             raise FileNotFoundError(f"Reference data file not found: {path}")
@@ -3078,29 +3115,6 @@ class ResultPlotter:
         reference_df.columns = [str(col).strip() for col in reference_df.columns]
 
         return reference_df
-
-    @staticmethod
-    def _normalize_country_name(country: Any) -> str:
-        """
-        Normalizes country names for robust matching.
-        """
-        if pd.isna(country):
-            return ""
-
-        return str(country).strip().lower()
-
-    @staticmethod
-    def _get_normalized_country_names(
-        df: pd.DataFrame,
-        country_col: str,
-    ) -> set[str]:
-        """
-        Extracts normalized country names from the analytic dataframe.
-        """
-        return {
-            ResultPlotter._normalize_country_name(country)
-            for country in df[country_col].dropna().unique()
-        }
 
     @staticmethod
     def _resolve_reference_variable_column(
@@ -3131,6 +3145,7 @@ class ResultPlotter:
 
         for candidate in candidate_keys:
             mapped_col = variable_mapping.get(candidate)
+
             if mapped_col in reference_columns_set:
                 return mapped_col
 
@@ -3160,3 +3175,75 @@ class ResultPlotter:
         df_var = df_var.dropna(subset=[reference_col])
 
         return df_var
+
+    @staticmethod
+    def _finite_numeric_array(values: Any) -> np.ndarray:
+        """
+        Converts values to a finite numeric numpy array.
+        """
+        values_arr = pd.to_numeric(pd.Series(values), errors="coerce").to_numpy(
+            dtype=float
+        )
+        values_arr = values_arr[np.isfinite(values_arr)]
+
+        return values_arr
+
+    @staticmethod
+    def _values_within_xlim(
+        values: np.ndarray,
+        x_min: float,
+        x_max: float,
+    ) -> np.ndarray:
+        """
+        Returns values inside the visible x-axis range.
+
+        This ensures that the highlighted range bar aligns with the actually visible
+        highlighted points when configured x-axis limits clip some values.
+        """
+        if values.size == 0:
+            return values
+
+        return values[(values >= x_min) & (values <= x_max)]
+
+    @staticmethod
+    def _compute_range_coverage_pct(
+        numerator_values: np.ndarray,
+        denominator_values: np.ndarray,
+    ) -> float:
+        """
+        Computes the percentage of the denominator range covered by the numerator range.
+
+        Used for:
+            analytic-data range / all-world reference-data range
+        """
+        numerator_values = numerator_values[np.isfinite(numerator_values)]
+        denominator_values = denominator_values[np.isfinite(denominator_values)]
+
+        if numerator_values.size == 0 or denominator_values.size == 0:
+            return np.nan
+
+        numerator_range = float(
+            np.nanmax(numerator_values) - np.nanmin(numerator_values)
+        )
+        denominator_range = float(
+            np.nanmax(denominator_values) - np.nanmin(denominator_values)
+        )
+
+        if denominator_range <= 0:
+            return np.nan
+
+        return 100 * numerator_range / denominator_range
+
+    @staticmethod
+    def _format_range_coverage_text(
+        coverage_pct: float,
+        label: str = "range covered",
+        decimals: int = 1,
+    ) -> str:
+        """
+        Formats the in-panel range-coverage annotation.
+        """
+        if coverage_pct is None or not np.isfinite(coverage_pct):
+            return f"{label}: n/a"
+
+        return f"{label}: {coverage_pct:.{decimals}f}%"
