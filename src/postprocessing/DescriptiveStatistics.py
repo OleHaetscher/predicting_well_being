@@ -1106,10 +1106,17 @@ class DescriptiveStatistics:
         dataset: str,
     ) -> pd.DataFrame:
         """
-        Computes odd-even-day split-half reliabilities for ESM-derived day-level predictors.
+        Computes split-half reliabilities for ESM-derived day-level predictors.
 
         The method uses the stored day_level_state_df_* files. It assumes that these files
         already contain one row per person-day and the ESM-derived variables of interest.
+
+        For regular day-level ESM predictors, odd-even-day split-half correlations are
+        Spearman-Brown corrected.
+
+        For selected variables assessed only once per day, derived SD/min/max
+        reliabilities are recomputed from the daily reference column using alternating
+        3-day blocks.
         """
         if dataset not in self.esm_id_col_dct:
             return pd.DataFrame()
@@ -1140,23 +1147,82 @@ class DescriptiveStatistics:
                 and pd.to_numeric(df[col], errors="coerce").notna().any()
             ]
 
-        rel_series = self.compute_odd_even_day_rels(
-            df=df,
-            id_col=id_col,
-            date_values=date_values,
-            value_cols=value_cols,
-            agg_func="mean",
-        )
+        special_daily_bases = {
+            "sleep_quality": "sleep_quality_mean",
+            "home_office": "home_office_mean",
+        }
 
-        return pd.DataFrame(
-            {
-                "Dataset": dataset,
-                "Group": "srmc",
-                "Variable": [f"srmc_{var}" for var in rel_series.index],
-                "Rel": rel_series.values,
-                "Method": "odd_even_days",
-            }
-        )
+        blocked_suffix_to_agg = {
+            "sd": "std",
+            "min": "min",
+            "max": "max",
+        }
+
+        special_replacement_cols = set()
+
+        for base_name in special_daily_bases:
+            for suffix in blocked_suffix_to_agg:
+                special_replacement_cols.add(f"{base_name}_{suffix}")
+
+        regular_value_cols = [
+            col for col in value_cols if col not in special_replacement_cols
+        ]
+
+        rows = []
+
+        if regular_value_cols:
+            rel_series = self.compute_odd_even_day_rels(
+                df=df,
+                id_col=id_col,
+                date_values=date_values,
+                value_cols=regular_value_cols,
+                agg_func="mean",
+            )
+
+            for var, rel in rel_series.items():
+                rows.append(
+                    {
+                        "Dataset": dataset,
+                        "Group": "srmc",
+                        "Variable": f"srmc_{var}",
+                        "Rel": rel,
+                        "Method": "odd_even_days_spearman_brown",
+                    }
+                )
+
+        for base_name, reference_col in special_daily_bases.items():
+            if reference_col not in df.columns:
+                continue
+
+            for suffix, agg_func in blocked_suffix_to_agg.items():
+                target_col = f"{base_name}_{suffix}"
+
+                if allowed_cols and target_col not in allowed_cols:
+                    continue
+
+                rel_series = self.compute_blocked_day_rels(
+                    df=df,
+                    id_col=id_col,
+                    date_values=date_values,
+                    value_cols=[reference_col],
+                    agg_func=agg_func,
+                    block_size=3,
+                    apply_spearman_brown=False,
+                )
+
+                rel = rel_series.get(reference_col, np.nan)
+
+                rows.append(
+                    {
+                        "Dataset": dataset,
+                        "Group": "srmc",
+                        "Variable": f"srmc_{target_col}",
+                        "Rel": rel,
+                        "Method": "odd_even_3day_blocks_uncorrected",
+                    }
+                )
+
+        return pd.DataFrame(rows)
 
     def compute_day_level_sensing_predictor_rels(
         self,
@@ -1255,13 +1321,27 @@ class DescriptiveStatistics:
         }
 
         for suffix, agg_func in agg_map.items():
-            rel_series = self.compute_odd_even_day_rels(
-                df=df,
-                id_col=id_col,
-                date_values=date_values,
-                value_cols=list(raw_to_var_name.keys()),
-                agg_func=agg_func,
-            )
+            if suffix == "mean":
+                rel_series = self.compute_odd_even_day_rels(
+                    df=df,
+                    id_col=id_col,
+                    date_values=date_values,
+                    value_cols=list(raw_to_var_name.keys()),
+                    agg_func=agg_func,
+                )
+                method = "odd_even_days_spearman_brown"
+
+            else:
+                rel_series = self.compute_blocked_day_rels(
+                    df=df,
+                    id_col=id_col,
+                    date_values=date_values,
+                    value_cols=list(raw_to_var_name.keys()),
+                    agg_func=agg_func,
+                    block_size=3,
+                    apply_spearman_brown=False,
+                )
+                method = "odd_even_3day_blocks_uncorrected"
 
             for raw_col, rel in rel_series.items():
                 feature_name = f"{raw_to_var_name[raw_col]}_{suffix}"
@@ -1275,11 +1355,97 @@ class DescriptiveStatistics:
                         "Group": "sens",
                         "Variable": f"sens_{feature_name}",
                         "Rel": rel,
-                        "Method": "odd_even_days",
+                        "Method": method,
                     }
                 )
 
         return pd.DataFrame(rows)
+
+    @staticmethod
+    def compute_blocked_day_rels(
+        df: pd.DataFrame,
+        id_col: str,
+        date_values: pd.Series,
+        value_cols: list[str],
+        agg_func: str,
+        block_size: int = 3,
+        correlation_method: str = "pearson",
+        apply_spearman_brown: bool = True,
+    ) -> pd.Series:
+        """
+        Computes split-half reliabilities using alternating multi-day blocks.
+
+        Days are ordered within person and assigned to consecutive blocks of size
+        `block_size`. Odd-numbered blocks and even-numbered blocks are then used as
+        two split halves. The target aggregation function is computed separately
+        across all days assigned to odd versus even blocks.
+
+        Spearman-Brown correction is optional because it is less straightforward for
+        nonlinear statistics such as SD, min, and max.
+        """
+        tmp = df[[id_col] + value_cols].copy()
+        tmp["_rel_day"] = pd.to_datetime(
+            pd.Series(date_values, index=df.index),
+            errors="coerce",
+        ).dt.date
+
+        tmp = tmp.dropna(subset=[id_col, "_rel_day"])
+
+        for col in value_cols:
+            tmp[col] = pd.to_numeric(tmp[col], errors="coerce")
+
+        # One row per person-day
+        day_df = (
+            tmp.groupby([id_col, "_rel_day"], as_index=False)[value_cols]
+            .mean()
+            .sort_values([id_col, "_rel_day"])
+        )
+
+        day_df["_rel_day_index"] = day_df.groupby(id_col).cumcount() + 1
+        day_df["_rel_block_index"] = ((day_df["_rel_day_index"] - 1) // block_size) + 1
+
+        day_df["_rel_split"] = np.where(
+            day_df["_rel_block_index"] % 2 == 1,
+            "odd",
+            "even",
+        )
+
+        rels = pd.Series(dtype=float)
+
+        for col in value_cols:
+            odd_scores = (
+                day_df[day_df["_rel_split"] == "odd"].groupby(id_col)[col].agg(agg_func)
+            )
+
+            even_scores = (
+                day_df[day_df["_rel_split"] == "even"]
+                .groupby(id_col)[col]
+                .agg(agg_func)
+            )
+
+            paired_scores = pd.concat(
+                [odd_scores, even_scores],
+                axis=1,
+                keys=["odd", "even"],
+            ).dropna()
+
+            if len(paired_scores) < 2:
+                rels[col] = np.nan
+                continue
+
+            correlation = paired_scores["odd"].corr(
+                paired_scores["even"],
+                method=correlation_method,
+            )
+
+            if pd.isna(correlation) or correlation == -1:
+                rels[col] = np.nan
+            elif apply_spearman_brown:
+                rels[col] = 2 * correlation / (1 + correlation)
+            else:
+                rels[col] = correlation
+
+        return rels
 
     @staticmethod
     def compute_odd_even_day_rels(

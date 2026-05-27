@@ -110,9 +110,11 @@ class ResultPlotter:
                         metric=metric,
                         feature_combinations=feature_combos,
                     )
-                    ref_samples_to_include = self.cfg_cv_results_plot["ref_dct"][
-                        "samples_to_include"
-                    ]
+                    if samples_to_include == "combo":
+                        ref_samples_to_include = "all"
+                    else:
+                        ref_samples_to_include = samples_to_include
+
                     ref_feature_combo = self.cfg_cv_results_plot["ref_dct"][
                         "feature_combo"
                     ]
@@ -2155,7 +2157,7 @@ class ResultPlotter:
         store: bool = False,
         plot_name_base: str = "country_level_variability",
         plot_format: str = "png",
-        dpi: int = 450,
+        dpi: int = 600,
     ) -> None:
         """
         Creates country-level variability plots.
@@ -2397,6 +2399,9 @@ class ResultPlotter:
         show_legend = country_vars_cfg.get("show_legend", False)
         show_suptitle = country_vars_cfg.get("show_suptitle", False)
 
+        plot_percentile = country_vars_cfg.get("plot_percentile", False)
+        percentile = country_vars_cfg.get("percentile", 0.90)
+
         show_configured_min_max_points_default = country_vars_cfg.get(
             "show_configured_min_max_points",
             False,
@@ -2448,6 +2453,20 @@ class ResultPlotter:
 
         coverage_label = country_vars_cfg.get("range_coverage_label", "range covered")
         coverage_decimals = country_vars_cfg.get("range_coverage_decimals", 1)
+        coverage_fontsize = country_vars_cfg.get("range_coverage_fontsize", 9.5)
+
+        subplot_title_fontsize = country_vars_cfg.get("subplot_title_fontsize", 12)
+        subplot_title_fontweight = country_vars_cfg.get(
+            "subplot_title_fontweight",
+            "bold",
+        )
+        subplot_title_pad = country_vars_cfg.get("subplot_title_pad", 14)
+
+        row_hspace = country_vars_cfg.get("row_hspace", 0.65)
+        tight_layout_h_pad = country_vars_cfg.get("tight_layout_h_pad", 3.0)
+        tight_layout_w_pad = country_vars_cfg.get("tight_layout_w_pad", 1.5)
+
+        display_name_mapping = country_vars_cfg.get("display_name_mapping", {})
 
         for ax_idx, col in enumerate(columns):
             ax = axes_flat[ax_idx]
@@ -2506,38 +2525,33 @@ class ResultPlotter:
             background_min = float(np.nanmin(background_values_arr))
             background_max = float(np.nanmax(background_values_arr))
 
-            if scale_info is not None:
-                configured_x_min = scale_info.get("x_min", None)
-                configured_x_max = scale_info.get("x_max", None)
-
-                if configured_x_min is not None and configured_x_max is not None:
-                    x_min = float(configured_x_min)
-                    x_max = float(configured_x_max)
-                else:
-                    min_country = scale_info.get("min_country", {})
-                    max_country = scale_info.get("max_country", {})
-
-                    if "value" in min_country and "value" in max_country:
-                        scale_min = float(min_country["value"])
-                        scale_max = float(max_country["value"])
-
-                        x_min_base = min(scale_min, background_min)
-                        x_max_base = max(scale_max, background_max)
-                    else:
-                        x_min_base = background_min
-                        x_max_base = background_max
-
-                    x_min, x_max = self._add_axis_padding(
-                        x_min=x_min_base,
-                        x_max=x_max_base,
-                        padding_frac=x_padding_frac,
-                    )
-            else:
-                x_min, x_max = self._add_axis_padding(
-                    x_min=background_min,
-                    x_max=background_max,
+            if plot_percentile:
+                x_min, x_max = self._get_percentile_axis_limits(
+                    values=background_values_arr,
+                    percentile=percentile,
                     padding_frac=x_padding_frac,
                 )
+
+            else:
+                if scale_info is not None:
+                    configured_x_min = scale_info.get("x_min", None)
+                    configured_x_max = scale_info.get("x_max", None)
+
+                    if configured_x_min is not None and configured_x_max is not None:
+                        x_min = float(configured_x_min)
+                        x_max = float(configured_x_max)
+                    else:
+                        x_min, x_max = self._add_axis_padding(
+                            x_min=background_min,
+                            x_max=background_max,
+                            padding_frac=x_padding_frac,
+                        )
+                else:
+                    x_min, x_max = self._add_axis_padding(
+                        x_min=background_min,
+                        x_max=background_max,
+                        padding_frac=x_padding_frac,
+                    )
 
             if values_source == "reference":
                 ax.hlines(
@@ -2594,10 +2608,17 @@ class ResultPlotter:
                 x_max=x_max,
             )
 
-            coverage_pct = self._compute_range_coverage_pct(
-                numerator_values=highlighted_values_all_arr,
-                denominator_values=background_values_arr,
+            background_values_visible_arr = self._values_within_xlim(
+                values=background_values_arr,
+                x_min=x_min,
+                x_max=x_max,
             )
+
+            coverage_pct = self._compute_range_coverage_pct(
+                numerator_values=highlighted_values_visible_arr,
+                denominator_values=background_values_visible_arr,
+            )
+
             coverage_text = self._format_range_coverage_text(
                 coverage_pct=coverage_pct,
                 label=coverage_label,
@@ -2681,7 +2702,9 @@ class ResultPlotter:
 
                 if analytic_values_visible_arr.size > 0:
                     jitter = rng.uniform(
-                        -0.08, 0.08, size=len(analytic_values_visible_arr)
+                        -0.08,
+                        0.08,
+                        size=len(analytic_values_visible_arr),
                     )
 
                     ax.scatter(
@@ -2713,14 +2736,22 @@ class ResultPlotter:
             ax.set_ylim(y_min, y_max)
             ax.set_yticks([])
 
-            pretty_label = self._format_country_variable_label(col)
+            pretty_label = self._format_country_variable_label(
+                col,
+                display_name_mapping=display_name_mapping,
+            )
             pretty_label = self.line_break_strings(
                 strng=pretty_label,
-                max_char_on_line=22,
+                max_char_on_line=24,
                 balance=True,
             )
 
-            ax.set_title(pretty_label, fontsize=10, pad=10)
+            ax.set_title(
+                pretty_label,
+                fontsize=subplot_title_fontsize,
+                fontweight=subplot_title_fontweight,
+                pad=subplot_title_pad,
+            )
 
             ax.text(
                 0.02,
@@ -2729,7 +2760,7 @@ class ResultPlotter:
                 transform=ax.transAxes,
                 ha="left",
                 va="top",
-                fontsize=7.5,
+                fontsize=coverage_fontsize,
             )
 
             for spine in ["top", "right", "left"]:
@@ -2869,13 +2900,20 @@ class ResultPlotter:
             )
 
         if show_legend and show_suptitle:
-            plt.tight_layout(rect=(0, 0.06, 1, 0.94))
+            layout_rect = (0, 0.06, 1, 0.94)
         elif show_legend:
-            plt.tight_layout(rect=(0, 0.06, 1, 0.98))
+            layout_rect = (0, 0.06, 1, 0.98)
         elif show_suptitle:
-            plt.tight_layout(rect=(0, 0, 1, 0.94))
+            layout_rect = (0, 0, 1, 0.94)
         else:
-            plt.tight_layout(rect=(0, 0, 1, 0.98))
+            layout_rect = (0, 0, 1, 0.98)
+
+        fig.tight_layout(
+            rect=layout_rect,
+            h_pad=tight_layout_h_pad,
+            w_pad=tight_layout_w_pad,
+        )
+        fig.subplots_adjust(hspace=row_hspace)
 
         if store:
             self.store_plot(
@@ -3057,10 +3095,41 @@ class ResultPlotter:
             )
 
     @staticmethod
-    def _format_country_variable_label(col: str) -> str:
+    def _format_country_variable_label(
+        col: str,
+        display_name_mapping: dict[str, str] | None = None,
+    ) -> str:
         """
         Creates a readable variable label from a column name.
+
+        Uses special display labels for the top-6 country variables and allows
+        optional config overrides via `country_vars.display_name_mapping`.
         """
+        default_display_name_mapping = {
+            "inflation_rate": "Inflation rate",
+            "gdp_growth": "GDP growth",
+            "adult_unemployment": "Unemployment rate",
+            "unemployment_rate": "Unemployment rate",
+            "youth_unemployment": "Youth unemployment rate",
+            "youth_unemployment_rate": "Youth unemployment rate",
+            "poverty_rate": "Poverty rate",
+            "shortterm_orientation": "Short- vs. long-term\norientation",
+        }
+
+        if display_name_mapping is None:
+            display_name_mapping = {}
+
+        display_name_mapping = {
+            **default_display_name_mapping,
+            **display_name_mapping,
+        }
+
+        candidate_keys = ResultPlotter._get_country_var_candidate_keys(col)
+
+        for candidate in candidate_keys:
+            if candidate in display_name_mapping:
+                return display_name_mapping[candidate]
+
         label = col
 
         for prefix in ["mac_", "pl_", "srmc_", "sens_", "crit_"]:
@@ -3247,3 +3316,45 @@ class ResultPlotter:
             return f"{label}: n/a"
 
         return f"{label}: {coverage_pct:.{decimals}f}%"
+
+    @staticmethod
+    def _get_percentile_axis_limits(
+        values: np.ndarray,
+        percentile: float,
+        padding_frac: float,
+    ) -> tuple[float, float]:
+        """
+        Computes symmetric percentile-based x-axis limits.
+
+        Example:
+            percentile = 0.90 uses the 5th and 95th percentiles.
+            percentile = 0.80 uses the 10th and 90th percentiles.
+        """
+        values = values[np.isfinite(values)]
+
+        if values.size == 0:
+            return np.nan, np.nan
+
+        percentile = float(percentile)
+
+        # Allow both 0.90 and 90 as input
+        if percentile > 1:
+            percentile = percentile / 100
+
+        if percentile <= 0 or percentile > 1:
+            raise ValueError(
+                "`percentile` must be in the interval (0, 1] or given as a percentage, "
+                "for example 0.90 or 90."
+            )
+
+        lower_q = (1 - percentile) / 2
+        upper_q = 1 - lower_q
+
+        x_min = float(np.nanquantile(values, lower_q))
+        x_max = float(np.nanquantile(values, upper_q))
+
+        return ResultPlotter._add_axis_padding(
+            x_min=x_min,
+            x_max=x_max,
+            padding_frac=padding_frac,
+        )

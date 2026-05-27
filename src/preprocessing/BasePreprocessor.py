@@ -2735,7 +2735,7 @@ class BasePreprocessor(ABC):
                 df_tmp.groupby(group_cols)[column]
                 .agg(
                     mean="mean",
-                    sd=lambda x: x.std() if x.count() >= 2 else pd.NA,
+                    sd= "std",
                     min="min",
                     max="max",
                 )
