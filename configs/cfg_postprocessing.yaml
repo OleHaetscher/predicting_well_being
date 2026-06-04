@@ -6,31 +6,32 @@ execute_postprocessing: true
 methods_to_apply:
   #- condense_cv_results
   #- prediction_sanity_checks
-  #- create_descriptives
+  - create_cv_results_plots
   #- conduct_significance_tests
   #- create_cv_results_plots
   #- create_shap_plots
   #- calculate_exp_lin_models
   #- create_lin_model_coefs_supp
-  - create_shap_values_supp  # this may take a while
+  #- create_shap_values_supp  # this may take a while
   #- create_shap_ia_values_supp
   #- test_measurement_invariance
   #- analyze_samples_missings
+  #- shap_sanity_checks  # corr selected/all
 
 general:
   feature_combinations:
     name_mapping:
-      main:
-        pl: "Person-lv"
-        srmc: "Situation-lv (ESM)"
-        sens: "Situation-lv (Sensing)"
-        mac: "Country-lv"
-        pl_srmc: "Person-lv + Situation-lv (ESM)"
-        pl_sens: "Person-lv + Situation-lv (Sensing)"
-        pl_srmc_sens: "Person-lv + Situation-lv (ESM) + Situation-lv (Sensing)"
-        pl_mac: "Person-lv + Country-lv"
-        pl_srmc_mac: "Person-lv + Situation-lv (ESM) + Country-lv"
-        all_in: "Person-lv + Situation-lv (ESM) + Situation-lv (Sensing) + Country-lv"
+      main:  # Note: Remove -lv for Paper CV_Result_Plot due to reviewer comment
+        pl: "Person"
+        srmc: "Situation (ESM)"
+        sens: "Situation (Sensing)"
+        mac: "Country"
+        pl_srmc: "Person + Situation (ESM)"
+        pl_sens: "Person + Situation (Sensing)"
+        pl_srmc_sens: "Person + Situation (ESM) + Situation (Sensing)"
+        pl_mac: "Person + Country"
+        pl_srmc_mac: "Person + Situation (ESM) + Country"
+        all_in: "Person + Situation (ESM) + Situation (Sensing) + Country"
 
       supp:
         # As currently implemented, do only include 1x Supp analysis and comment the other out, not ideal but ok
@@ -135,7 +136,7 @@ condense_cv_results:
     - spearman
     - neg_mean_squared_error
   all_results:
-    store: true
+    store: false
     filename: "all_cv_results.json"
 
   main_nnse_diffs:
@@ -144,7 +145,7 @@ condense_cv_results:
     samples_to_include: [ selected ]
     metrics: [ pearson, r2 ]
     decimals: 3
-    store: true
+    store: false
     filename: "main_nnse_diffs.json"
 
   perf_increase:
@@ -161,7 +162,7 @@ condense_cv_results:
     filename: "perf_increase_percent.json"
 
   result_table:
-    store: true
+    store: false
     file_base_name: cv_results
     result_strs:
       main: main
@@ -193,6 +194,11 @@ create_descriptives:
   states_base_filename: wb_items
   traits_base_filename: trait_wb_items
 
+  compute_predictor_rel:
+    store: true
+    filename: "predictor_reliabilities.xlsx"
+    decimals: 2
+
   m_sd_table:
     store: false
     filename: "vars_m_sd_table.xlsx"
@@ -207,12 +213,131 @@ create_descriptives:
       - mac
       - crit
   soc_dem:
-    store: true
+    store: false
     filename: "age_gender_per_dataset.json"
 
+  # country var supp. figure
   country_vars:
-    store: true
+    store: false
     filename: "country_add_descriptives.xlsx"
+    store_plot: true
+    plot_filename: "country_level_variability_top_n"
+
+    plot_top_n: 6
+    top_n_to_plot:
+      - youth_unemployment
+      - adult_unemployment
+      - shortterm_orientation
+      - gdp_growth
+      - inflation_rate
+      - poverty_rate
+
+    n_cols: 3
+    n_rows: 2
+
+    show_legend: false
+    show_configured_min_max_points: false
+    plot_percentile: true
+    percentile: 0.95
+
+    reference_data:
+      use: true
+      path: "../data/top6_countries_alldata.xlsx"
+      sheet_name: 0
+      plot_all_points: true
+      highlight_own_points: true
+
+      variable_mapping:
+        adult_unemployment: "unemployment_rate"
+        youth_unemployment: "youth_unemployment_rate"
+
+    scale_boundaries:
+      youth_unemployment:
+        unit: "% of labor force ages 15-24"
+        min_country:
+          name: "Tanzania"
+          value: 3.49
+          year: 2023
+        max_country:
+          name: "South Africa"
+          value: 49.866
+          year: 2021
+        x_min: 0
+        x_max: 60
+        show_min_max_points: false  # optional per-variable override
+
+      adult_unemployment:
+        unit: "% of labor force"
+        min_country:
+          name: "Qatar"
+          value: 0.13
+          year: 2022
+        max_country:
+          name: "Eswatini"
+          value: 35.359
+          year: 2022
+        x_min: 0
+        x_max: 40
+        show_min_max_points: false  # optional per-variable override
+
+      shortterm_orientation:
+        unit: "Hofstede long-term orientation score"
+        min_country:
+          name: "Puerto Rico"
+          value: 0
+          year: "static/source score"
+        max_country:
+          name: "South Korea"
+          value: 100
+          year: "static/source score"
+        x_min: 0
+        x_max: 100
+        show_min_max_points: false  # optional per-variable override
+
+      gdp_growth:
+        unit: "annual GDP growth, %"
+        min_country:
+          name: "Macao SAR, China"
+          value: -54.402
+          year: 2020
+        max_country:
+          name: "Macao SAR, China"
+          value: 75.308
+          year: 2023
+        x_min: -25
+        x_max: 25
+        show_min_max_points: false  # optional per-variable override
+
+      inflation_rate:
+        unit: "annual CPI inflation, %"
+        min_country:
+          name: "South Sudan"
+          value: -6.687
+          year: 2022
+        max_country:
+          name: "Zimbabwe"
+          value: 557.202
+          year: 2020
+        x_min: -20
+        x_max: 50
+        show_min_max_points: false  # optional per-variable override
+
+      poverty_rate:
+        unit: "% of population below $2.15/day, 2017 PPP"
+        source_scope: "World Bank WDI / Poverty and Inequality Platform; international extreme poverty line"
+        indicator_code: "SI.POV.DDAY"
+        indicator_name: "Poverty headcount ratio at $2.15 a day (2017 PPP) (% of population)"
+        min_country:
+          name: "multiple countries"
+          value: 0.0
+          year: "varies"
+        max_country:
+          name: "Zambia"
+          value: 64.3
+          year: 2022
+        x_min: 0
+        x_max: 70
+        show_min_max_points: false  # optional per-variable override
 
   wb_items:  # to ensure consistent tables
     store: false
@@ -315,8 +440,8 @@ create_cv_results_plots:
 
   store_params:
     store: true
-    dpi: 450
-    format: png  # png, pdf
+    dpi: 600
+    format: pdf  # png, pdf
     name: cv_results
 
   titles:
@@ -340,12 +465,13 @@ create_cv_results_plots:
     height: 10
     x_min: 0
     x_max: 0.70
-    add_n: True
+    add_n: False  # for paper version according to reviewer comment
     bar_width: 0.15
     bar_align: center
     bar_capsize: 5
     y_line:
-      x_pos: [ 0.09, 0.4073, 0.725 ]
+      #x_pos: [ 0.09, 0.4073, 0.725 ]  # OLD positions (with Sens)
+      x_pos: [ 0.1075, 0.425, 0.7423 ]  # New positions (with Sensing)
       y_pos: [ [ 0.10, 0.908 ], [ 0.10, 0.908 ], [ 0.5202, 0.908 ] ]
       linestyle: "-"
       linewidth: 1
@@ -368,7 +494,7 @@ create_cv_results_plots:
     axes:
       yticks:
         which: major
-        pad: 90  # 90
+        pad: 115  # 90
         length: 0
       ylabels:
         hor_align: left
@@ -392,17 +518,17 @@ create_cv_results_plots:
       rfr_label: "RFR (Lower Bar)"
     feature_combo_legend:
       add: true
-      ref_label: "Person-lv predictors"
-      other_label: "Situation-lv/Country-lv predictors"
+      ref_label: "Person predictors"
+      other_label: "Situation/Country predictors"
     legend_loc: "lower right"
     legend_pos: [ 0.955, 0.18 ]
     ncol: 1
 
   fontsizes:
     title: 22
-    tick_params: 15
-    legend: 15
-    label: 15
+    tick_params: 18
+    legend: 19
+    label: 18
 
   color_dct:
     pl: "#5E9ACC"
@@ -412,7 +538,7 @@ create_cv_results_plots:
       randomforestregressor: 1
 
   ref_dct:
-    samples_to_include: all
+    samples_to_include: selected # all for combo
     feature_combo: pl
 
   n_samples:
@@ -429,14 +555,14 @@ create_cv_results_plots:
 
 create_shap_plots:
   analysis: main   # main, supp
-  models: [ randomforestregressor, elasticnet]  # must be iterable
-  crits: [ wb_state, wb_trait ]  # must be iterable
-  samples_to_include: [ selected, all ]   # must be iterable
+  models: [ randomforestregressor]  # must be iterable
+  crits: [ wb_state ] # must be iterable
+  samples_to_include: [ selected ]   # must be iterable
   num_to_display: 6
 
   store_params:
     store: true
-    dpi: 450
+    dpi: 600
     format: png # pdf, png
     name: beeswarm
 
@@ -468,7 +594,7 @@ create_shap_plots:
       - [ 3, 2 ]
 
   ia_values:
-    add: false
+    add: true
     position: [ 3, 2 ]
     feature_combination: srmc
     short_feature_names: True
@@ -544,6 +670,22 @@ create_supp_files:
   lin_coefs_output_filename: run_2012_lin_model_coefs
   shap_output_filename: run_2012_shap_values
   shap_ia_output_filename: run_2012_shap_ia_values
+
+shap_sanity_checks:
+  store: true
+  crit: wb_state
+  model: randomforestregressor
+  feature_combinations:
+    - pl
+    - srmc
+    - sens
+    - mac
+    - pl_srmc
+    - pl_sens
+    - pl_mac
+    - pl_srmc_sens
+    - pl_srmc_mac
+  output_dir: "../results/shap_summary_tables"
 
 measurement_invariance:
   general:

@@ -85,6 +85,7 @@ class SanityChecker:
             (self.check_country, {"df": None, "dataset": dataset}),
             (self.check_dtypes, {"df": None}),
             (self.check_num_rows, {"df": None, "dataset": dataset}),
+            (self.log_unique_countries, {"df": None}),
             (self.calc_reliability, {"df": df_before_final_sel, "dataset": dataset}),
             (self.check_zero_variance, {"df": None}),
             (self.check_scale_endpoints, {"df": None, "dataset": dataset}),
@@ -178,6 +179,19 @@ class SanityChecker:
 
             else:
                 self.logger.log(f"    WARNING: Cannot infer country in dataset cocoesm")
+
+    def log_unique_countries(self, df: pd.DataFrame) -> None:
+        """
+        Logs the unique values in the DataFrame column 'country'.
+
+        Args:
+            df: The DataFrame to inspect.
+        """
+        unique_countries = df["other_country"].unique()
+
+        self.logger.log("    Unique values in column 'country':")
+        for value in unique_countries:
+            self.logger.log(f"      {value}")
 
     def check_dtypes(self, df: pd.DataFrame) -> None:
         """

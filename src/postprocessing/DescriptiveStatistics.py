@@ -1,8 +1,11 @@
 import os
+import pickle
 from typing import Union, Optional
 
 import numpy as np
 import pandas as pd
+
+from src.utils.ConfigParser import ConfigParser
 from src.utils.DataLoader import DataLoader
 import openpyxl
 import pingouin as pg
@@ -92,6 +95,7 @@ class DescriptiveStatistics:
         )
 
         self.full_data = full_data
+        self.config_parser = ConfigParser().cfg_parser
 
     def create_m_sd_var_table(
         self,
@@ -953,7 +957,7 @@ class DescriptiveStatistics:
             list(combined.index), name_mapping=self.name_mapping, prefix=True
         )
 
-        return combined
+        return combined, df_all, df_cocoesm
 
     @staticmethod
     def create_age_gender_descriptives(
@@ -1007,3 +1011,663 @@ class DescriptiveStatistics:
             "prop_female": props["female"],
             "prop_other": props["other"],
         }
+
+    def compute_predictor_reliabilities(
+        self,
+        decimals: int = 2,
+        store: bool = True,
+        filename: str = "predictor_reliabilities.xlsx",
+    ) -> pd.DataFrame:
+        """
+        Computes reliabilities for predictor variables.
+
+        Included reliability estimates:
+        - ESM-derived day-level predictors: odd-even-day split-half reliability.
+        - Sensing-derived day-level predictors: odd-even-day split-half reliability.
+        - Trait-level multi-item predictors: Cronbach's alpha based on configured item-scale mappings.
+
+        The existing compute_rel method for well-being criteria remains unchanged.
+        """
+        results = []
+
+        for dataset in self.datasets:
+            # ESM day-level predictors
+            state_day_df = self._load_preprocessed_pickle(
+                f"day_level_state_df_{dataset}"
+            )
+            if state_day_df is not None:
+                results.append(
+                    self.compute_day_level_esm_predictor_rels(
+                        df=state_day_df,
+                        dataset=dataset,
+                    )
+                )
+
+            # Sensing day-level predictors
+            sensing_day_df = self._load_preprocessed_pickle(
+                f"day_level_sensing_df_{dataset}"
+            )
+            if sensing_day_df is not None:
+                results.append(
+                    self.compute_day_level_sensing_predictor_rels(
+                        df=sensing_day_df,
+                        dataset=dataset,
+                    )
+                )
+
+            # Trait predictor scales
+            trait_df = self._load_preprocessed_pickle(f"full_trait_df_{dataset}")
+            if trait_df is None:
+                trait_df = self._load_preprocessed_pickle(f"raw_trait_df_{dataset}")
+
+            if trait_df is not None:
+                results.append(
+                    self.compute_trait_predictor_rels(
+                        df=trait_df,
+                        dataset=dataset,
+                    )
+                )
+
+        rel_df = pd.concat(results, ignore_index=True) if results else pd.DataFrame()
+
+        rel_df_export = self.format_predictor_reliabilities_for_export(
+            rel_df=rel_df,
+            decimals=decimals,
+        )
+
+        if store:
+            file_path = os.path.join(self.desc_results_base_path, filename)
+            self.data_saver.save_excel(rel_df_export, file_path, index=False)
+
+        return rel_df_export
+
+        return rel_df
+
+    def _load_preprocessed_pickle(self, filename: str) -> Optional[pd.DataFrame]:
+        """
+        Loads a pickle file from path_to_preprocessed_data.
+
+        Tries both the filename as provided and filename + '.pkl', because the existing
+        preprocessing files may be stored without a file extension.
+        """
+        file_path = os.path.join(self.data_base_path, filename)
+        candidate_paths = [file_path, f"{file_path}.pkl"]
+
+        for path in candidate_paths:
+            if os.path.exists(path):
+                with open(path, "rb") as f:
+                    return pickle.load(f)
+
+        return None
+
+    def compute_day_level_esm_predictor_rels(
+        self,
+        df: pd.DataFrame,
+        dataset: str,
+    ) -> pd.DataFrame:
+        """
+        Computes split-half reliabilities for ESM-derived day-level predictors.
+
+        The method uses the stored day_level_state_df_* files. It assumes that these files
+        already contain one row per person-day and the ESM-derived variables of interest.
+
+        For regular day-level ESM predictors, odd-even-day split-half correlations are
+        Spearman-Brown corrected.
+
+        For selected variables assessed only once per day, derived SD/min/max
+        reliabilities are recomputed from the daily reference column using alternating
+        3-day blocks.
+        """
+        if dataset not in self.esm_id_col_dct:
+            return pd.DataFrame()
+
+        id_col = self.esm_id_col_dct[dataset]
+
+        if "esm_day" in df.columns:
+            date_values = df["esm_day"]
+        else:
+            date_col = self.esm_tp_col_dct[dataset]
+            date_values = df[date_col]
+
+        allowed_cols = self.cfg_preprocessing["var_assignments"].get("srmc", [])
+        value_cols = [col for col in allowed_cols if col in df.columns]
+
+        if not value_cols:
+            excluded_cols = {
+                id_col,
+                "esm_day",
+                "esm_day_index",
+                self.esm_tp_col_dct.get(dataset),
+                "country",
+            }
+            value_cols = [
+                col
+                for col in df.columns
+                if col not in excluded_cols
+                and pd.to_numeric(df[col], errors="coerce").notna().any()
+            ]
+
+        special_daily_bases = {
+            "sleep_quality": "sleep_quality_mean",
+            "home_office": "home_office_mean",
+        }
+
+        blocked_suffix_to_agg = {
+            "sd": "std",
+            "min": "min",
+            "max": "max",
+        }
+
+        special_replacement_cols = set()
+
+        for base_name in special_daily_bases:
+            for suffix in blocked_suffix_to_agg:
+                special_replacement_cols.add(f"{base_name}_{suffix}")
+
+        regular_value_cols = [
+            col for col in value_cols if col not in special_replacement_cols
+        ]
+
+        rows = []
+
+        if regular_value_cols:
+            rel_series = self.compute_odd_even_day_rels(
+                df=df,
+                id_col=id_col,
+                date_values=date_values,
+                value_cols=regular_value_cols,
+                agg_func="mean",
+            )
+
+            for var, rel in rel_series.items():
+                rows.append(
+                    {
+                        "Dataset": dataset,
+                        "Group": "srmc",
+                        "Variable": f"srmc_{var}",
+                        "Rel": rel,
+                        "Method": "odd_even_days_spearman_brown",
+                    }
+                )
+
+        for base_name, reference_col in special_daily_bases.items():
+            if reference_col not in df.columns:
+                continue
+
+            for suffix, agg_func in blocked_suffix_to_agg.items():
+                target_col = f"{base_name}_{suffix}"
+
+                if allowed_cols and target_col not in allowed_cols:
+                    continue
+
+                rel_series = self.compute_blocked_day_rels(
+                    df=df,
+                    id_col=id_col,
+                    date_values=date_values,
+                    value_cols=[reference_col],
+                    agg_func=agg_func,
+                    block_size=3,
+                    apply_spearman_brown=False,
+                )
+
+                rel = rel_series.get(reference_col, np.nan)
+
+                rows.append(
+                    {
+                        "Dataset": dataset,
+                        "Group": "srmc",
+                        "Variable": f"srmc_{target_col}",
+                        "Rel": rel,
+                        "Method": "odd_even_3day_blocks_uncorrected",
+                    }
+                )
+
+        return pd.DataFrame(rows)
+
+    def compute_day_level_sensing_predictor_rels(
+        self,
+        df: pd.DataFrame,
+        dataset: str,
+    ) -> pd.DataFrame:
+        """
+        Computes odd-even-day split-half reliabilities for sensing-derived predictors.
+
+        The sensing data are already day-level. To mirror the final person-level sensing
+        predictors, this method computes odd-even reliability separately for the person-level
+        aggregation targets: mean, SD, min, and max.
+        """
+        if (
+            dataset
+            not in self.cfg_preprocessing["sensing_based"]["phone"][0]["item_names"]
+        ):
+            return pd.DataFrame()
+
+        id_col = self.cfg_preprocessing["sensing_based"]["phone"][0]["item_names"][
+            dataset
+        ]
+
+        if id_col not in df.columns:
+            return pd.DataFrame()
+
+        date_cols = []
+
+        try:
+            date_cols.append(
+                self.cfg_preprocessing["sensing_based"]["phone"][1]["item_names"][
+                    dataset
+                ]
+            )
+        except KeyError:
+            pass
+
+        try:
+            date_cols.append(
+                self.cfg_preprocessing["sensing_based"]["gps_weather"][1]["item_names"][
+                    dataset
+                ]
+            )
+        except KeyError:
+            pass
+
+        available_date_cols = [col for col in date_cols if col in df.columns]
+
+        if not available_date_cols:
+            raise KeyError(
+                f"No sensing date column found for {dataset}. Expected one of: {date_cols}"
+            )
+
+        date_values = None
+        for col in available_date_cols:
+            current_dates = pd.to_datetime(df[col], errors="coerce")
+            date_values = (
+                current_dates
+                if date_values is None
+                else date_values.combine_first(current_dates)
+            )
+
+        phone_entries = self.config_parser(
+            self.cfg_preprocessing["sensing_based"]["phone"],
+            "continuous",
+        )
+        gps_weather_entries = self.config_parser(
+            self.cfg_preprocessing["sensing_based"]["gps_weather"],
+            "continuous",
+        )
+
+        raw_to_var_name = {}
+
+        for entry in phone_entries + gps_weather_entries:
+            if dataset not in entry.get("item_names", {}):
+                continue
+
+            raw_col = entry["item_names"][dataset]
+
+            if isinstance(raw_col, str) and raw_col in df.columns:
+                raw_to_var_name[raw_col] = entry["name"]
+
+        if not raw_to_var_name:
+            return pd.DataFrame()
+
+        allowed_final_cols = set(
+            self.cfg_preprocessing["var_assignments"].get("sens", [])
+        )
+
+        rows = []
+        agg_map = {
+            "mean": "mean",
+            "sd": "std",
+            "min": "min",
+            "max": "max",
+        }
+
+        for suffix, agg_func in agg_map.items():
+            if suffix == "mean":
+                rel_series = self.compute_odd_even_day_rels(
+                    df=df,
+                    id_col=id_col,
+                    date_values=date_values,
+                    value_cols=list(raw_to_var_name.keys()),
+                    agg_func=agg_func,
+                )
+                method = "odd_even_days_spearman_brown"
+
+            else:
+                rel_series = self.compute_blocked_day_rels(
+                    df=df,
+                    id_col=id_col,
+                    date_values=date_values,
+                    value_cols=list(raw_to_var_name.keys()),
+                    agg_func=agg_func,
+                    block_size=3,
+                    apply_spearman_brown=False,
+                )
+                method = "odd_even_3day_blocks_uncorrected"
+
+            for raw_col, rel in rel_series.items():
+                feature_name = f"{raw_to_var_name[raw_col]}_{suffix}"
+
+                if allowed_final_cols and feature_name not in allowed_final_cols:
+                    continue
+
+                rows.append(
+                    {
+                        "Dataset": dataset,
+                        "Group": "sens",
+                        "Variable": f"sens_{feature_name}",
+                        "Rel": rel,
+                        "Method": method,
+                    }
+                )
+
+        return pd.DataFrame(rows)
+
+    @staticmethod
+    def compute_blocked_day_rels(
+        df: pd.DataFrame,
+        id_col: str,
+        date_values: pd.Series,
+        value_cols: list[str],
+        agg_func: str,
+        block_size: int = 3,
+        correlation_method: str = "pearson",
+        apply_spearman_brown: bool = True,
+    ) -> pd.Series:
+        """
+        Computes split-half reliabilities using alternating multi-day blocks.
+
+        Days are ordered within person and assigned to consecutive blocks of size
+        `block_size`. Odd-numbered blocks and even-numbered blocks are then used as
+        two split halves. The target aggregation function is computed separately
+        across all days assigned to odd versus even blocks.
+
+        Spearman-Brown correction is optional because it is less straightforward for
+        nonlinear statistics such as SD, min, and max.
+        """
+        tmp = df[[id_col] + value_cols].copy()
+        tmp["_rel_day"] = pd.to_datetime(
+            pd.Series(date_values, index=df.index),
+            errors="coerce",
+        ).dt.date
+
+        tmp = tmp.dropna(subset=[id_col, "_rel_day"])
+
+        for col in value_cols:
+            tmp[col] = pd.to_numeric(tmp[col], errors="coerce")
+
+        # One row per person-day
+        day_df = (
+            tmp.groupby([id_col, "_rel_day"], as_index=False)[value_cols]
+            .mean()
+            .sort_values([id_col, "_rel_day"])
+        )
+
+        day_df["_rel_day_index"] = day_df.groupby(id_col).cumcount() + 1
+        day_df["_rel_block_index"] = ((day_df["_rel_day_index"] - 1) // block_size) + 1
+
+        day_df["_rel_split"] = np.where(
+            day_df["_rel_block_index"] % 2 == 1,
+            "odd",
+            "even",
+        )
+
+        rels = pd.Series(dtype=float)
+
+        for col in value_cols:
+            odd_scores = (
+                day_df[day_df["_rel_split"] == "odd"].groupby(id_col)[col].agg(agg_func)
+            )
+
+            even_scores = (
+                day_df[day_df["_rel_split"] == "even"]
+                .groupby(id_col)[col]
+                .agg(agg_func)
+            )
+
+            paired_scores = pd.concat(
+                [odd_scores, even_scores],
+                axis=1,
+                keys=["odd", "even"],
+            ).dropna()
+
+            if len(paired_scores) < 2:
+                rels[col] = np.nan
+                continue
+
+            correlation = paired_scores["odd"].corr(
+                paired_scores["even"],
+                method=correlation_method,
+            )
+
+            if pd.isna(correlation) or correlation == -1:
+                rels[col] = np.nan
+            elif apply_spearman_brown:
+                rels[col] = 2 * correlation / (1 + correlation)
+            else:
+                rels[col] = correlation
+
+        return rels
+
+    @staticmethod
+    def compute_odd_even_day_rels(
+        df: pd.DataFrame,
+        id_col: str,
+        date_values: pd.Series,
+        value_cols: list[str],
+        agg_func: str = "mean",
+        correlation_method: str = "pearson",
+    ) -> pd.Series:
+        """
+        Computes odd-even-day split-half reliabilities for day-level variables.
+
+        For each person, days are ordered by date and split into odd versus even days.
+        The specified aggregation function is then applied within odd and even days
+        separately. Reliability is computed as the Spearman-Brown corrected correlation
+        between odd-day and even-day person-level scores.
+        """
+        tmp = df[[id_col] + value_cols].copy()
+        tmp["_rel_day"] = pd.to_datetime(
+            pd.Series(date_values, index=df.index),
+            errors="coerce",
+        ).dt.date
+
+        tmp = tmp.dropna(subset=[id_col, "_rel_day"])
+
+        for col in value_cols:
+            tmp[col] = pd.to_numeric(tmp[col], errors="coerce")
+
+        # Ensure one row per person-day before assigning odd/even days
+        day_df = (
+            tmp.groupby([id_col, "_rel_day"], as_index=False)[value_cols]
+            .mean()
+            .sort_values([id_col, "_rel_day"])
+        )
+
+        day_df["_rel_day_index"] = day_df.groupby(id_col).cumcount() + 1
+
+        rels = pd.Series(dtype=float)
+
+        for col in value_cols:
+            odd_scores = (
+                day_df[day_df["_rel_day_index"] % 2 == 1]
+                .groupby(id_col)[col]
+                .agg(agg_func)
+            )
+            even_scores = (
+                day_df[day_df["_rel_day_index"] % 2 == 0]
+                .groupby(id_col)[col]
+                .agg(agg_func)
+            )
+
+            paired_scores = pd.concat(
+                [odd_scores, even_scores],
+                axis=1,
+                keys=["odd", "even"],
+            ).dropna()
+
+            if len(paired_scores) < 2:
+                rels[col] = np.nan
+                continue
+
+            correlation = paired_scores["odd"].corr(
+                paired_scores["even"],
+                method=correlation_method,
+            )
+
+            if pd.isna(correlation) or correlation == -1:
+                rels[col] = np.nan
+            else:
+                rels[col] = 2 * correlation / (1 + correlation)
+
+        return rels
+
+    def compute_trait_predictor_rels(
+        self,
+        df: pd.DataFrame,
+        dataset: str,
+    ) -> pd.DataFrame:
+        """
+        Computes internal consistencies for trait-level predictor scales.
+
+        This uses the person_level/personality config entries to identify which individual
+        items belong to which scale. The method assumes that full_trait_df_* was stored
+        after preprocessing, so item recoding and scale alignment have already been applied.
+        """
+        cont_pers_entries = self.config_parser(
+            self.cfg_preprocessing["person_level"]["personality"],
+            "continuous",
+        )
+
+        allowed_pl_cols = set(self.cfg_preprocessing["var_assignments"].get("pl", []))
+        rows = []
+
+        for entry in cont_pers_entries:
+            var_name = entry["name"]
+
+            if allowed_pl_cols and var_name not in allowed_pl_cols:
+                continue
+
+            if dataset not in entry.get("item_names", {}):
+                continue
+
+            item_names = entry["item_names"][dataset]
+
+            if isinstance(item_names, str):
+                item_names = [item_names]
+
+            available_items = [item for item in item_names if item in df.columns]
+
+            if len(available_items) < 2:
+                rel = np.nan
+                method = "single_item_or_missing"
+            else:
+                item_df = df[available_items].apply(pd.to_numeric, errors="coerce")
+                item_df = item_df.dropna(how="all")
+
+                if item_df.shape[0] < 2:
+                    rel = np.nan
+                    method = "insufficient_data"
+                else:
+                    try:
+                        rel = pg.cronbach_alpha(data=item_df)[0]
+                        method = "cronbach_alpha"
+                    except Exception:
+                        rel = np.nan
+                        method = "cronbach_alpha_failed"
+
+            rows.append(
+                {
+                    "Dataset": dataset,
+                    "Group": "pl",
+                    "Variable": f"pl_{var_name}",
+                    "Rel": rel,
+                    "Method": method,
+                }
+            )
+
+        return pd.DataFrame(rows)
+
+    def format_predictor_reliabilities_for_export(
+        self,
+        rel_df: pd.DataFrame,
+        decimals: int = 2,
+    ) -> pd.DataFrame:
+        """
+        Formats predictor reliabilities for export with datasets as columns.
+
+        Output format:
+        Group | Variable | Method | emotions | cocout | cocoesm | ...
+
+        Below each predictor category, one summary row is inserted that reports
+        the mean and standard deviation of the reliability estimates within that
+        category for each dataset.
+        """
+        if rel_df.empty:
+            return rel_df
+
+        rel_df = rel_df.copy()
+
+        # Use presentation labels only
+        rel_df["Variable"] = apply_name_mapping(
+            features=list(rel_df["Variable"]),
+            name_mapping=self.name_mapping,
+            prefix=True,
+        )
+
+        dataset_order = [
+            dataset
+            for dataset in self.datasets
+            if dataset in rel_df["Dataset"].unique()
+        ]
+
+        rel_wide = rel_df.pivot_table(
+            index=["Group", "Variable", "Method"],
+            columns="Dataset",
+            values="Rel",
+            aggfunc="first",
+        ).reset_index()
+
+        rel_wide = rel_wide[["Group", "Variable", "Method"] + dataset_order]
+
+        for dataset in dataset_order:
+            rel_wide[dataset] = rel_wide[dataset].round(decimals)
+
+        def format_m_sd(values: pd.Series) -> str:
+            values = pd.to_numeric(values, errors="coerce").dropna()
+
+            if values.empty:
+                return np.nan
+
+            mean = values.mean()
+            sd = values.std()
+
+            if pd.isna(sd):
+                return f"{mean:.{decimals}f} (NA)"
+
+            return f"{mean:.{decimals}f} ({sd:.{decimals}f})"
+
+        rows = []
+
+        group_order = [
+            group
+            for group in rel_df["Group"].drop_duplicates()
+            if group in rel_wide["Group"].unique()
+        ]
+
+        for group in group_order:
+            group_rows = rel_wide[rel_wide["Group"] == group].copy()
+            rows.append(group_rows)
+
+            summary_row = {
+                "Group": group,
+                "Variable": "M (SD)",
+                "Method": "",
+            }
+
+            for dataset in dataset_order:
+                summary_row[dataset] = format_m_sd(group_rows[dataset])
+
+            rows.append(pd.DataFrame([summary_row]))
+
+        rel_wide_with_summary = pd.concat(rows, ignore_index=True)
+
+        return rel_wide_with_summary

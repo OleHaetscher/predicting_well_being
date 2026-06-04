@@ -6,6 +6,7 @@ import matplotlib.lines as mlines
 import matplotlib.patches as mpatches
 import matplotlib.pyplot as plt
 import numpy as np
+import pandas as pd
 import shap
 from matplotlib.axes import Axes
 from matplotlib.colors import LinearSegmentedColormap
@@ -109,9 +110,11 @@ class ResultPlotter:
                         metric=metric,
                         feature_combinations=feature_combos,
                     )
-                    ref_samples_to_include = self.cfg_cv_results_plot["ref_dct"][
-                        "samples_to_include"
-                    ]
+                    if samples_to_include == "combo":
+                        ref_samples_to_include = "all"
+                    else:
+                        ref_samples_to_include = samples_to_include
+
                     ref_feature_combo = self.cfg_cv_results_plot["ref_dct"][
                         "feature_combo"
                     ]
@@ -185,9 +188,10 @@ class ResultPlotter:
 
         for i, group in enumerate(feature_combinations):
             # For "combo", the first column uses "selected" samples, and the others use "all"
-            sublist_sample = (
-                "selected" if samples_to_include == "combo" and i == 0 else "all"
-            )
+            if samples_to_include == "combo":
+                sublist_sample = "selected" if i == 0 else "all"
+            else:
+                sublist_sample = samples_to_include
 
             print(sublist_sample)
             filtered_metrics = self.filter_cv_results_data(
@@ -664,6 +668,7 @@ class ResultPlotter:
             metric=metric,
             fontsizes=fontsizes,
             rel=rel,
+            add_n=self.cfg_cv_results_plot["figure_params"]["add_n"],
         )
 
     def plot_incremental_bar_plot(
@@ -716,10 +721,14 @@ class ResultPlotter:
 
         for i, model in enumerate(models):
             base_value = pl_reference_dct[f"{ref_feature_combo}_{model}"][m_metric]
-            increment = pl_margin_dct[f"{feature_combo}_{model}"][
-                f"incremental_{m_metric}"
-            ]
-            error = data[f"{feature_combo}_{model}"][sd_metric]
+            try:  # bit hacky but ok
+                increment = pl_margin_dct[f"{feature_combo}_{model}"][
+                    f"incremental_{m_metric}"
+                ]
+                error = data[f"{feature_combo}_{model}"][sd_metric]
+            except KeyError:
+                print("No all_in data for selected")
+                continue
 
             y_position_to_plot = 0 + (1 - 2 * i) * (bar_width / 2)
             alpha = color_dct["bar_saturation"][model]
@@ -802,6 +811,7 @@ class ResultPlotter:
                 metric=metric,
                 fontsizes=fontsizes,
                 rel=rel,
+                add_n=self.cfg_cv_results_plot["figure_params"]["add_n"]
             )
 
     @staticmethod
@@ -939,6 +949,7 @@ class ResultPlotter:
         fontsizes: dict[str, int],
         metric: str,
         rel: float = None,
+        add_n: bool = True,
     ) -> None:
         """
         Formats a bar plot by adjusting y-ticks, x-axis labels, and adding an optional reference line.
@@ -960,6 +971,7 @@ class ResultPlotter:
             fontsizes: A dictionary containing font sizes for various plot elements.
             metric: The metric being plotted (e.g., "spearman", "pearson", "r2").
             rel: Optional float for a vertical reference line to indicate a threshold or baseline. If `None`, no line is added.
+            add_n: If the sample sizes are added in the y-axes ticks
         """
         y_arr = np.array([y_position])
         ax.set_yticks(y_arr + bar_width / 2)
@@ -974,13 +986,15 @@ class ResultPlotter:
         )
 
         n_samples = self.cfg_cv_results_plot["n_samples"][feature_combo]
-        feature_combos_str_format_n = self.add_n_to_title(
-            feature_combo_formatted, n_samples
-        )
+
+        if add_n:
+            feature_combo_formatted = self.add_n_to_title(
+                feature_combo_formatted, n_samples
+            )
 
         axes_cfg = self.cfg_cv_results_plot["format_bar_plot"]["axes"]
         ax.set_yticklabels(
-            [feature_combos_str_format_n],
+            [feature_combo_formatted],
             fontsize=fontsizes["tick_params"],
             horizontalalignment=axes_cfg["ylabels"]["hor_align"],
         )
@@ -1875,4 +1889,1472 @@ class ResultPlotter:
 
         return os.path.normpath(
             os.path.join(self.plot_base_dir, *filtered_path_components)
+        )
+
+    def plot_shap_sanity_histograms(
+        self,
+        comparison_df: pd.DataFrame,
+        shap_values_by_feature: dict[str, dict[str, np.ndarray]],
+        feature_combination: str,
+        num_features: int,
+        rank_by: str = "selected",
+        bin_width: float = 0.01,
+        feature_label_col: str = "Feature",
+        alpha: float = 0.45,
+        figsize: tuple[float, float] | None = None,
+        store: bool = False,
+        plot_name: str | None = None,
+        plot_format: str = "png",
+        dpi: int = 450,
+        crit: str | None = None,
+        model: str | None = None,
+    ) -> None:
+        """
+        Plots signed SHAP-value histograms for selected-vs-all sanity checks.
+
+
+        Note: Not used in final code
+
+        For a given feature combination, the function selects the top `num_features`
+        according to the mean absolute SHAP value in either the selected or all analysis.
+        For each selected feature, it overlays semi-transparent histograms of signed SHAP
+        values from the selected and all analyses.
+
+        Args:
+            comparison_df: DataFrame created in shap_sanity_checks. Must contain
+                Feature, Mean_abs_SHAP_selected, Mean_abs_SHAP_all, and
+                Pearson_r_selected_vs_all.
+            shap_values_by_feature: Dictionary with raw signed SHAP values:
+                {
+                    feature_name: {
+                        "selected": np.ndarray,
+                        "all": np.ndarray,
+                    }
+                }
+            feature_combination: Feature-combination label, e.g., "pl_srmc".
+            num_features: Number of top features to plot.
+            rank_by: Whether to rank top features by "selected" or "all" mean absolute SHAP.
+            bin_width: Width of the SHAP-value histogram bins.
+            feature_label_col: Column to use for feature labels. Defaults to "Feature".
+            alpha: Histogram transparency.
+            figsize: Optional figure size. If None, determined from num_features.
+            store: Whether to save the plot.
+            plot_name: Optional filename stem. If None, generated automatically.
+            plot_format: File format for saving.
+            dpi: Plot resolution.
+            crit: Optional criterion for structured storage path.
+            model: Optional model for structured storage path.
+        """
+        if rank_by not in ["selected", "all"]:
+            raise ValueError("rank_by must be either 'selected' or 'all'.")
+
+        importance_col = f"Mean_abs_SHAP_{rank_by}"
+
+        required_cols = {
+            "Feature",
+            "Mean_abs_SHAP_selected",
+            "Mean_abs_SHAP_all",
+            "Pearson_r_selected_vs_all",
+        }
+        missing_cols = required_cols.difference(comparison_df.columns)
+        if missing_cols:
+            raise KeyError(f"comparison_df is missing columns: {missing_cols}")
+
+        if importance_col not in comparison_df.columns:
+            raise KeyError(f"Column '{importance_col}' not found in comparison_df.")
+
+        label_col = (
+            feature_label_col
+            if feature_label_col in comparison_df.columns
+            else "Feature"
+        )
+
+        top_features_df = (
+            comparison_df.dropna(subset=[importance_col])
+            .sort_values(by=importance_col, ascending=False)
+            .head(num_features)
+            .reset_index(drop=True)
+        )
+
+        if top_features_df.empty:
+            print(f"No features available for {feature_combination}.")
+            return
+
+        missing_features = [
+            feature
+            for feature in top_features_df["Feature"]
+            if feature not in shap_values_by_feature
+        ]
+        if missing_features:
+            raise KeyError(
+                f"Raw SHAP values missing for features: {missing_features[:10]}"
+            )
+
+        if figsize is None:
+            figsize = (10, max(2.2 * len(top_features_df), 4))
+
+        fig, axes = plt.subplots(
+            nrows=len(top_features_df),
+            ncols=1,
+            figsize=figsize,
+            sharex=True,
+            squeeze=False,
+        )
+        axes = axes.flatten()
+
+        for ax, (_, row) in zip(axes, top_features_df.iterrows()):
+            feature = row["Feature"]
+            feature_label = str(row[label_col])
+
+            selected_vals = np.asarray(
+                shap_values_by_feature[feature]["selected"],
+                dtype=float,
+            )
+            all_vals = np.asarray(
+                shap_values_by_feature[feature]["all"],
+                dtype=float,
+            )
+
+            selected_vals = selected_vals[np.isfinite(selected_vals)]
+            all_vals = all_vals[np.isfinite(all_vals)]
+
+            if selected_vals.size == 0 and all_vals.size == 0:
+                continue
+
+            min_val = np.nanmin(
+                [
+                    selected_vals.min() if selected_vals.size > 0 else np.nan,
+                    all_vals.min() if all_vals.size > 0 else np.nan,
+                ]
+            )
+            max_val = np.nanmax(
+                [
+                    selected_vals.max() if selected_vals.size > 0 else np.nan,
+                    all_vals.max() if all_vals.size > 0 else np.nan,
+                ]
+            )
+
+            if min_val == max_val:
+                min_val -= bin_width
+                max_val += bin_width
+
+            bins = np.arange(min_val, max_val + bin_width, bin_width)
+            if len(bins) < 2:
+                bins = np.array([min_val, max_val + bin_width])
+
+            ax.hist(
+                all_vals,
+                bins=bins,
+                alpha=alpha,
+                label="All analysis",
+            )
+            ax.hist(
+                selected_vals,
+                bins=bins,
+                alpha=alpha,
+                label="Selected analysis",
+            )
+
+            ax.axvline(np.mean(all_vals), linestyle=":", linewidth=1)
+            ax.axvline(np.mean(selected_vals), linestyle="--", linewidth=1)
+
+            formatted_label = self.line_break_strings(
+                strng=feature_label,
+                max_char_on_line=45,
+                balance=True,
+            )
+
+            ax.text(
+                0.01,
+                0.92,
+                formatted_label,
+                transform=ax.transAxes,
+                ha="left",
+                va="top",
+                fontsize=10,
+                fontweight="bold",
+            )
+
+            ax.text(
+                0.99,
+                0.92,
+                (
+                    f"r = {row['Pearson_r_selected_vs_all']:.2f}\n"
+                    f"|SHAP| {rank_by} = {row[importance_col]:.3f}"
+                ),
+                transform=ax.transAxes,
+                ha="right",
+                va="top",
+                fontsize=9,
+            )
+
+            ax.set_ylabel("Count")
+            ax.spines["top"].set_visible(False)
+            ax.spines["right"].set_visible(False)
+
+        axes[-1].set_xlabel("Signed SHAP value")
+
+        mean_corr = pd.to_numeric(
+            comparison_df["Pearson_r_selected_vs_all"],
+            errors="coerce",
+        ).mean()
+
+        selected_patch = mpatches.Patch(alpha=alpha, label="Selected analysis")
+        all_patch = mpatches.Patch(alpha=alpha, label="All analysis")
+        mean_corr_line = mlines.Line2D(
+            [],
+            [],
+            linestyle="none",
+            label=f"Mean r = {mean_corr:.2f}",
+        )
+
+        fig.legend(
+            handles=[selected_patch, all_patch, mean_corr_line],
+            loc="lower center",
+            ncol=3,
+            frameon=False,
+        )
+
+        fig.suptitle(
+            f"{feature_combination}: selected vs. all SHAP distributions",
+            fontsize=12,
+            fontweight="bold",
+        )
+
+        plt.tight_layout(rect=(0, 0.06, 1, 0.96))
+
+        if store:
+            if plot_name is None:
+                plot_name = (
+                    f"shap_sanity_histograms_{feature_combination}"
+                    f"_top{num_features}_by_{rank_by}"
+                )
+
+            self.store_plot(
+                plot_name=plot_name,
+                plot_format=plot_format,
+                dpi=dpi,
+                feature_combination=feature_combination,
+                samples_to_include="selected_vs_all",
+                crit=crit,
+                model=model,
+            )
+        else:
+            plt.show()
+
+    def plot_country_level_variability(
+        self,
+        df: pd.DataFrame,
+        samples_to_include: str,
+        columns: list[str] | None = None,
+        country_id_col: str | None = None,
+        scale_boundaries: dict[str, dict[str, Any]] | None = None,
+        country_var_groups: dict[str, list[str]] | None = None,
+        n_cols: int = 5,
+        panel_width: float = 3.3,
+        panel_height: float = 4,
+        x_padding_frac: float = 0.05,
+        store: bool = False,
+        plot_name_base: str = "country_level_variability",
+        plot_format: str = "png",
+        dpi: int = 600,
+    ) -> None:
+        """
+        Creates country-level variability plots.
+
+        If `reference_data.use` is true in the config:
+        - violin plots are based on all available reference data
+        - boxplots are based on all available reference data
+        - all reference data points can be plotted
+        - analytic-data values are highlighted directly from `df_plot[col]`
+        - the in-panel annotation only shows the percentage of reference range
+          covered by the analytic-data range
+        """
+        country_vars_cfg = self.cfg_postprocessing["create_descriptives"][
+            "country_vars"
+        ]
+
+        store = country_vars_cfg.get("store_plot", store)
+        plot_name_base = country_vars_cfg.get("plot_filename", plot_name_base)
+        n_cols = country_vars_cfg.get("n_cols", n_cols)
+        n_rows = country_vars_cfg.get("n_rows", None)
+        single_plot_source = country_vars_cfg.get("single_plot_source", "countries")
+
+        reference_cfg = country_vars_cfg.get("reference_data", {})
+        reference_df = None
+
+        if reference_cfg.get("use", False):
+            reference_df = self._load_country_reference_data(reference_cfg)
+
+        if columns is None:
+            columns = list(df.columns)
+
+        if country_id_col is not None:
+            columns = [col for col in columns if col != country_id_col]
+
+        if scale_boundaries is None:
+            scale_boundaries = country_vars_cfg.get("scale_boundaries", {})
+
+        if country_var_groups is None:
+            country_var_groups = {
+                "psycho_political": country_vars_cfg.get("psycho_political", []),
+                "socio_economic": country_vars_cfg.get("socio_economic", []),
+                "health_environmental": country_vars_cfg.get(
+                    "health_environmental", []
+                ),
+            }
+
+        cols_to_use = columns.copy()
+
+        if country_id_col is not None and country_id_col in df.columns:
+            df_country = (
+                df[[country_id_col] + cols_to_use]
+                .drop_duplicates(subset=[country_id_col])
+                .copy()
+            )
+        else:
+            df_country = df[cols_to_use].drop_duplicates().copy()
+
+        df_person = df[cols_to_use].copy()
+
+        plot_top_n = country_vars_cfg.get("plot_top_n", None)
+
+        if plot_top_n is not None:
+            top_n_vars = country_vars_cfg.get("top_n_to_plot", [])
+
+            if not top_n_vars:
+                raise KeyError(
+                    "`plot_top_n` is set, but `top_n_to_plot` is missing or empty."
+                )
+
+            vars_to_plot = top_n_vars[:plot_top_n]
+
+            if len(top_n_vars) < plot_top_n:
+                print(
+                    f"Warning: `plot_top_n` is set to {plot_top_n}, but only "
+                    f"{len(top_n_vars)} variables are listed in `top_n_to_plot`."
+                )
+
+            selected_cols, missing_vars = self._resolve_country_plot_columns(
+                available_columns=cols_to_use,
+                requested_variables=vars_to_plot,
+            )
+
+            if missing_vars:
+                print(
+                    "Warning: The following configured variables could not be matched "
+                    f"to analytic dataframe columns and will be skipped: {missing_vars}"
+                )
+
+            if not selected_cols:
+                raise ValueError(
+                    "No columns from `top_n_to_plot` could be matched to the analytic dataframe."
+                )
+
+            if single_plot_source == "countries":
+                df_plot = df_country
+                distribution_label = (
+                    f"Across countries: Top {len(selected_cols)} selected variables"
+                )
+                violin_color = "#4C78A8"
+                show_points = True
+
+            elif single_plot_source == "persons":
+                df_plot = df_person
+                distribution_label = (
+                    f"Across persons: Top {len(selected_cols)} selected variables"
+                )
+                violin_color = "#F58518"
+                show_points = False
+
+            else:
+                raise ValueError(
+                    "`single_plot_source` must be either 'countries' or 'persons'."
+                )
+
+            self._plot_country_variability_overview(
+                df_plot=df_plot,
+                columns=selected_cols,
+                scale_boundaries=scale_boundaries,
+                n_cols=n_cols,
+                n_rows=n_rows,
+                panel_width=panel_width,
+                panel_height=panel_height,
+                x_padding_frac=x_padding_frac,
+                distribution_label=distribution_label,
+                violin_color=violin_color,
+                show_points=show_points,
+                store=store,
+                plot_name=plot_name_base,
+                plot_format=plot_format,
+                dpi=dpi,
+                reference_df=reference_df,
+                reference_cfg=reference_cfg,
+            )
+
+            return
+
+        grouped_columns = self._get_country_var_grouped_columns(
+            columns=cols_to_use,
+            country_var_groups=country_var_groups,
+        )
+
+        for group_name, group_cols in grouped_columns.items():
+            if not group_cols:
+                continue
+
+            self._plot_country_variability_overview(
+                df_plot=df_country,
+                columns=group_cols,
+                scale_boundaries=scale_boundaries,
+                n_cols=n_cols,
+                n_rows=n_rows,
+                panel_width=panel_width,
+                panel_height=panel_height,
+                x_padding_frac=x_padding_frac,
+                distribution_label=f"Across countries: {group_name.replace('_', ' ').title()}",
+                violin_color="#4C78A8",
+                show_points=True,
+                store=store,
+                plot_name=f"{plot_name_base}_{group_name}_countries",
+                plot_format=plot_format,
+                dpi=dpi,
+                reference_df=reference_df,
+                reference_cfg=reference_cfg,
+            )
+
+            self._plot_country_variability_overview(
+                df_plot=df_person,
+                columns=group_cols,
+                scale_boundaries=scale_boundaries,
+                n_cols=n_cols,
+                n_rows=n_rows,
+                panel_width=panel_width,
+                panel_height=panel_height,
+                x_padding_frac=x_padding_frac,
+                distribution_label=f"Across persons: {group_name.replace('_', ' ').title()}",
+                violin_color="#F58518",
+                show_points=False,
+                store=store,
+                plot_name=f"{plot_name_base}_{group_name}_persons",
+                plot_format=plot_format,
+                dpi=dpi,
+                reference_df=reference_df,
+                reference_cfg=reference_cfg,
+            )
+
+    def _plot_country_variability_overview(
+        self,
+        df_plot: pd.DataFrame,
+        columns: list[str],
+        scale_boundaries: dict[str, dict[str, Any]],
+        n_cols: int,
+        n_rows: int | None,
+        panel_width: float,
+        panel_height: float,
+        x_padding_frac: float,
+        distribution_label: str,
+        violin_color: str,
+        show_points: bool,
+        store: bool,
+        plot_name: str,
+        plot_format: str,
+        dpi: int,
+        reference_df: pd.DataFrame | None = None,
+        reference_cfg: dict[str, Any] | None = None,
+    ) -> None:
+        """
+        Helper that creates one multi-panel overview figure.
+
+        If reference_df is provided:
+        - reference values are used for the violin and boxplot
+        - analytic values from df_plot[col] are plotted as highlighted points
+        - the highlighted orange range bar is computed from the same visible highlighted values
+        - the only in-panel annotation is the percentage of reference range covered
+          by the analytic-data range
+        """
+        n_vars = len(columns)
+
+        if n_vars == 0:
+            print(f"No variables available for plot '{plot_name}'.")
+            return
+
+        if n_rows is None:
+            n_rows = int(np.ceil(n_vars / n_cols))
+
+        if n_rows * n_cols < n_vars:
+            raise ValueError(
+                f"Configured grid too small for plot '{plot_name}': "
+                f"{n_rows} rows x {n_cols} cols = {n_rows * n_cols} panels, "
+                f"but {n_vars} variables need to be plotted."
+            )
+
+        if reference_cfg is None:
+            reference_cfg = {}
+
+        country_vars_cfg = self.cfg_postprocessing["create_descriptives"][
+            "country_vars"
+        ]
+
+        show_legend = country_vars_cfg.get("show_legend", False)
+        show_suptitle = country_vars_cfg.get("show_suptitle", False)
+
+        plot_percentile = country_vars_cfg.get("plot_percentile", False)
+        percentile = country_vars_cfg.get("percentile", 0.90)
+
+        show_configured_min_max_points_default = country_vars_cfg.get(
+            "show_configured_min_max_points",
+            False,
+        )
+
+        use_reference_data = reference_df is not None and reference_cfg.get(
+            "use", False
+        )
+
+        fig, axes = plt.subplots(
+            n_rows,
+            n_cols,
+            figsize=(n_cols * panel_width, n_rows * panel_height),
+            squeeze=False,
+        )
+
+        axes_flat = axes.flatten()
+        rng = np.random.default_rng(42)
+
+        any_configured_extrema = False
+        any_reference_distribution = False
+        any_highlighted_points = False
+
+        all_points_color = reference_cfg.get("all_points_color", "black")
+        all_points_alpha = reference_cfg.get("all_points_alpha", 0.18)
+        all_points_size = reference_cfg.get("all_points_size", 10)
+        all_points_jitter_width = reference_cfg.get("all_points_jitter_width", 0.13)
+
+        highlight_color = reference_cfg.get("highlight_color", "#D55E00")
+        highlight_alpha = reference_cfg.get("highlight_alpha", 0.95)
+        highlight_size = reference_cfg.get("highlight_size", 32)
+        highlight_jitter_width = reference_cfg.get("highlight_jitter_width", 0.17)
+
+        highlight_range_y = reference_cfg.get(
+            "highlight_range_y",
+            country_vars_cfg.get("highlight_range_y", -0.50),
+        )
+        highlight_range_linewidth = reference_cfg.get(
+            "highlight_range_linewidth",
+            country_vars_cfg.get("highlight_range_linewidth", 4),
+        )
+        highlight_range_alpha = reference_cfg.get(
+            "highlight_range_alpha",
+            country_vars_cfg.get("highlight_range_alpha", 0.65),
+        )
+
+        y_min = country_vars_cfg.get("country_variability_y_min", -0.58)
+        y_max = country_vars_cfg.get("country_variability_y_max", 0.60)
+
+        coverage_label = country_vars_cfg.get("range_coverage_label", "range covered")
+        coverage_decimals = country_vars_cfg.get("range_coverage_decimals", 1)
+        coverage_fontsize = country_vars_cfg.get("range_coverage_fontsize", 9.5)
+
+        subplot_title_fontsize = country_vars_cfg.get("subplot_title_fontsize", 12)
+        subplot_title_fontweight = country_vars_cfg.get(
+            "subplot_title_fontweight",
+            "bold",
+        )
+        subplot_title_pad = country_vars_cfg.get("subplot_title_pad", 14)
+
+        row_hspace = country_vars_cfg.get("row_hspace", 0.65)
+        tight_layout_h_pad = country_vars_cfg.get("tight_layout_h_pad", 3.0)
+        tight_layout_w_pad = country_vars_cfg.get("tight_layout_w_pad", 1.5)
+
+        display_name_mapping = country_vars_cfg.get("display_name_mapping", {})
+
+        for ax_idx, col in enumerate(columns):
+            ax = axes_flat[ax_idx]
+
+            reference_var_df = None
+            reference_col = None
+            values_source = "analytic"
+
+            if use_reference_data:
+                reference_col = self._resolve_reference_variable_column(
+                    plot_col=col,
+                    reference_columns=list(reference_df.columns),
+                    variable_mapping=reference_cfg.get("variable_mapping", {}),
+                )
+
+                if reference_col is not None:
+                    reference_var_df = self._prepare_reference_variable_df(
+                        reference_df=reference_df,
+                        reference_col=reference_col,
+                        reference_cfg=reference_cfg,
+                    )
+
+                    values = pd.to_numeric(
+                        reference_var_df[reference_col],
+                        errors="coerce",
+                    ).dropna()
+
+                    if not values.empty:
+                        values_source = "reference"
+                        any_reference_distribution = True
+                    else:
+                        values = pd.to_numeric(df_plot[col], errors="coerce").dropna()
+                        print(
+                            f"Warning: Reference column '{reference_col}' for '{col}' "
+                            "has no valid numeric values. Falling back to analytic data."
+                        )
+                else:
+                    values = pd.to_numeric(df_plot[col], errors="coerce").dropna()
+                    print(
+                        f"Warning: Could not find reference-data column for '{col}'. "
+                        "Falling back to analytic data."
+                    )
+            else:
+                values = pd.to_numeric(df_plot[col], errors="coerce").dropna()
+
+            if values.empty:
+                ax.set_axis_off()
+                continue
+
+            scale_info = self._get_scale_info_for_variable(
+                col=col,
+                scale_boundaries=scale_boundaries,
+            )
+
+            background_values_arr = self._finite_numeric_array(values)
+            background_min = float(np.nanmin(background_values_arr))
+            background_max = float(np.nanmax(background_values_arr))
+
+            if plot_percentile:
+                x_min, x_max = self._get_percentile_axis_limits(
+                    values=background_values_arr,
+                    percentile=percentile,
+                    padding_frac=x_padding_frac,
+                )
+
+            else:
+                if scale_info is not None:
+                    configured_x_min = scale_info.get("x_min", None)
+                    configured_x_max = scale_info.get("x_max", None)
+
+                    if configured_x_min is not None and configured_x_max is not None:
+                        x_min = float(configured_x_min)
+                        x_max = float(configured_x_max)
+                    else:
+                        x_min, x_max = self._add_axis_padding(
+                            x_min=background_min,
+                            x_max=background_max,
+                            padding_frac=x_padding_frac,
+                        )
+                else:
+                    x_min, x_max = self._add_axis_padding(
+                        x_min=background_min,
+                        x_max=background_max,
+                        padding_frac=x_padding_frac,
+                    )
+
+            if values_source == "reference":
+                ax.hlines(
+                    y=0,
+                    xmin=background_min,
+                    xmax=background_max,
+                    color="lightgray",
+                    linewidth=8,
+                    zorder=0,
+                )
+            else:
+                ax.hlines(
+                    y=0,
+                    xmin=background_min,
+                    xmax=background_max,
+                    color="gray",
+                    linewidth=8,
+                    zorder=1,
+                )
+
+            violin_parts = ax.violinplot(
+                dataset=[background_values_arr],
+                positions=[0],
+                vert=False,
+                widths=0.75,
+                showmeans=False,
+                showmedians=False,
+                showextrema=False,
+            )
+
+            for body in violin_parts["bodies"]:
+                body.set_facecolor(violin_color)
+                body.set_edgecolor("black")
+                body.set_alpha(0.45)
+                body.set_linewidth(0.8)
+
+            ax.boxplot(
+                [background_values_arr],
+                positions=[0],
+                vert=False,
+                widths=0.22,
+                showfliers=False,
+                patch_artist=True,
+                boxprops=dict(facecolor="white", edgecolor="black", linewidth=1.0),
+                medianprops=dict(color="black", linewidth=1.2),
+                whiskerprops=dict(color="black", linewidth=1.0),
+                capprops=dict(color="black", linewidth=1.0),
+            )
+
+            highlighted_values_all_arr = self._finite_numeric_array(df_plot[col])
+            highlighted_values_visible_arr = self._values_within_xlim(
+                values=highlighted_values_all_arr,
+                x_min=x_min,
+                x_max=x_max,
+            )
+
+            background_values_visible_arr = self._values_within_xlim(
+                values=background_values_arr,
+                x_min=x_min,
+                x_max=x_max,
+            )
+
+            coverage_pct = self._compute_range_coverage_pct(
+                numerator_values=highlighted_values_visible_arr,
+                denominator_values=background_values_visible_arr,
+            )
+
+            coverage_text = self._format_range_coverage_text(
+                coverage_pct=coverage_pct,
+                label=coverage_label,
+                decimals=coverage_decimals,
+            )
+
+            if values_source == "reference" and reference_var_df is not None:
+                numeric_reference_values = pd.to_numeric(
+                    reference_var_df[reference_col],
+                    errors="coerce",
+                )
+
+                valid_reference_values_arr = self._finite_numeric_array(
+                    numeric_reference_values
+                )
+                valid_reference_values_visible_arr = self._values_within_xlim(
+                    values=valid_reference_values_arr,
+                    x_min=x_min,
+                    x_max=x_max,
+                )
+
+                if (
+                    reference_cfg.get("plot_all_points", True)
+                    and valid_reference_values_visible_arr.size > 0
+                ):
+                    all_jitter = rng.uniform(
+                        -all_points_jitter_width,
+                        all_points_jitter_width,
+                        size=len(valid_reference_values_visible_arr),
+                    )
+
+                    ax.scatter(
+                        valid_reference_values_visible_arr,
+                        all_jitter,
+                        s=all_points_size,
+                        alpha=all_points_alpha,
+                        color=all_points_color,
+                        linewidths=0,
+                        zorder=3,
+                    )
+
+                if (
+                    reference_cfg.get("highlight_own_points", True)
+                    and highlighted_values_visible_arr.size > 0
+                ):
+                    highlight_jitter = rng.uniform(
+                        -highlight_jitter_width,
+                        highlight_jitter_width,
+                        size=len(highlighted_values_visible_arr),
+                    )
+
+                    ax.scatter(
+                        highlighted_values_visible_arr,
+                        highlight_jitter,
+                        s=highlight_size,
+                        alpha=highlight_alpha,
+                        color=highlight_color,
+                        edgecolor="black",
+                        linewidths=0.5,
+                        zorder=6,
+                    )
+
+                    any_highlighted_points = True
+
+                    ax.hlines(
+                        y=highlight_range_y,
+                        xmin=float(np.nanmin(highlighted_values_visible_arr)),
+                        xmax=float(np.nanmax(highlighted_values_visible_arr)),
+                        color=highlight_color,
+                        linewidth=highlight_range_linewidth,
+                        alpha=highlight_range_alpha,
+                        zorder=5,
+                    )
+
+            elif show_points:
+                analytic_values_visible_arr = self._values_within_xlim(
+                    values=background_values_arr,
+                    x_min=x_min,
+                    x_max=x_max,
+                )
+
+                if analytic_values_visible_arr.size > 0:
+                    jitter = rng.uniform(
+                        -0.08,
+                        0.08,
+                        size=len(analytic_values_visible_arr),
+                    )
+
+                    ax.scatter(
+                        analytic_values_visible_arr,
+                        jitter,
+                        s=12,
+                        alpha=0.45,
+                        color="black",
+                        linewidths=0,
+                        zorder=3,
+                    )
+
+            if scale_info is not None:
+                show_configured_min_max_points = scale_info.get(
+                    "show_min_max_points",
+                    show_configured_min_max_points_default,
+                )
+
+                if show_configured_min_max_points:
+                    any_configured_extrema = True
+
+                    self._add_configured_min_max_points(
+                        ax=ax,
+                        scale_info=scale_info,
+                        y_pos=highlight_range_y,
+                    )
+
+            ax.set_xlim(x_min, x_max)
+            ax.set_ylim(y_min, y_max)
+            ax.set_yticks([])
+
+            pretty_label = self._format_country_variable_label(
+                col,
+                display_name_mapping=display_name_mapping,
+            )
+            pretty_label = self.line_break_strings(
+                strng=pretty_label,
+                max_char_on_line=24,
+                balance=True,
+            )
+
+            ax.set_title(
+                pretty_label,
+                fontsize=subplot_title_fontsize,
+                fontweight=subplot_title_fontweight,
+                pad=subplot_title_pad,
+            )
+
+            ax.text(
+                0.02,
+                0.95,
+                coverage_text,
+                transform=ax.transAxes,
+                ha="left",
+                va="top",
+                fontsize=coverage_fontsize,
+            )
+
+            for spine in ["top", "right", "left"]:
+                ax.spines[spine].set_visible(False)
+
+            ax.tick_params(axis="x", labelsize=8)
+
+        for ax in axes_flat[n_vars:]:
+            ax.set_axis_off()
+
+        if show_legend:
+            legend_handles = []
+
+            if any_reference_distribution:
+                legend_handles.append(
+                    mlines.Line2D(
+                        [],
+                        [],
+                        color="lightgray",
+                        linewidth=8,
+                        label="All available min–max range",
+                    )
+                )
+            else:
+                legend_handles.append(
+                    mlines.Line2D(
+                        [],
+                        [],
+                        color="gray",
+                        linewidth=8,
+                        label="Observed analytic min–max range",
+                    )
+                )
+
+            legend_handles.extend(
+                [
+                    mpatches.Patch(
+                        facecolor=violin_color,
+                        edgecolor="black",
+                        alpha=0.45,
+                        label=(
+                            "Reference distribution"
+                            if any_reference_distribution
+                            else distribution_label
+                        ),
+                    ),
+                    mpatches.Patch(
+                        facecolor="white",
+                        edgecolor="black",
+                        label="Boxplot based on plotted distribution",
+                    ),
+                ]
+            )
+
+            if any_reference_distribution and reference_cfg.get(
+                "plot_all_points", True
+            ):
+                legend_handles.append(
+                    mlines.Line2D(
+                        [],
+                        [],
+                        color=all_points_color,
+                        marker="o",
+                        linestyle="None",
+                        markersize=5,
+                        alpha=all_points_alpha,
+                        label=reference_cfg.get(
+                            "all_points_label",
+                            "All available data points",
+                        ),
+                    )
+                )
+
+            if any_highlighted_points:
+                legend_handles.append(
+                    mlines.Line2D(
+                        [],
+                        [],
+                        color=highlight_color,
+                        marker="o",
+                        markeredgecolor="black",
+                        linestyle="None",
+                        markersize=6,
+                        alpha=highlight_alpha,
+                        label=reference_cfg.get(
+                            "highlight_label",
+                            "Analytic sample values",
+                        ),
+                    )
+                )
+
+            if any_configured_extrema:
+                legend_handles.extend(
+                    [
+                        mlines.Line2D(
+                            [],
+                            [],
+                            color="#B22222",
+                            marker="v",
+                            linestyle="None",
+                            markersize=7,
+                            label="Configured minimum country",
+                        ),
+                        mlines.Line2D(
+                            [],
+                            [],
+                            color="#006400",
+                            marker="^",
+                            linestyle="None",
+                            markersize=7,
+                            label="Configured maximum country",
+                        ),
+                    ]
+                )
+
+            fig.legend(
+                handles=legend_handles,
+                loc="lower center",
+                bbox_to_anchor=(0.5, -0.01),
+                ncol=3,
+                frameon=False,
+                fontsize=10,
+            )
+
+        title = distribution_label
+        if any_reference_distribution:
+            title = (
+                f"{distribution_label} — boxplots based on all available reference data"
+            )
+
+        if show_suptitle:
+            fig.suptitle(
+                title,
+                fontsize=14,
+                fontweight="bold",
+                y=0.995,
+            )
+
+        if show_legend and show_suptitle:
+            layout_rect = (0, 0.06, 1, 0.94)
+        elif show_legend:
+            layout_rect = (0, 0.06, 1, 0.98)
+        elif show_suptitle:
+            layout_rect = (0, 0, 1, 0.94)
+        else:
+            layout_rect = (0, 0, 1, 0.98)
+
+        fig.tight_layout(
+            rect=layout_rect,
+            h_pad=tight_layout_h_pad,
+            w_pad=tight_layout_w_pad,
+        )
+        fig.subplots_adjust(hspace=row_hspace)
+
+        if store:
+            self.store_plot(
+                plot_name=plot_name,
+                plot_format=plot_format,
+                dpi=dpi,
+            )
+        else:
+            plt.show()
+
+    @staticmethod
+    def _resolve_country_plot_columns(
+        available_columns: list[str],
+        requested_variables: list[str],
+    ) -> tuple[list[str], list[str]]:
+        """
+        Matches requested variable names from config to actual dataframe columns.
+
+        Supports both prefixed and unprefixed names, e.g.
+        - "youth_unemployment"
+        - "mac_youth_unemployment"
+
+        Returns:
+            matched_columns: list of dataframe columns that were found
+            missing_variables: list of requested variables that could not be matched
+        """
+        matched_columns = []
+        missing_variables = []
+
+        for requested_var in requested_variables:
+            matched_col = None
+
+            for col in available_columns:
+                candidate_keys = ResultPlotter._get_country_var_candidate_keys(col)
+
+                if requested_var in candidate_keys:
+                    matched_col = col
+                    break
+
+            if matched_col is None:
+                missing_variables.append(requested_var)
+            else:
+                matched_columns.append(matched_col)
+
+        matched_columns = list(dict.fromkeys(matched_columns))
+
+        return matched_columns, missing_variables
+
+    @staticmethod
+    def _get_scale_info_for_variable(
+        col: str,
+        scale_boundaries: dict[str, dict[str, Any]],
+    ) -> dict[str, Any] | None:
+        """
+        Retrieves configured scale information for a variable.
+
+        The config entry may contain:
+        - unit
+        - x_min
+        - x_max
+        - min_country
+        - max_country
+        - show_min_max_points
+
+        Unlike earlier versions, this method does not require min_country/max_country.
+        This allows using scale info only for axis limits.
+        """
+        candidate_keys = ResultPlotter._get_country_var_candidate_keys(col)
+
+        for key in candidate_keys:
+            if key in scale_boundaries:
+                return scale_boundaries[key]
+
+        return None
+
+    @staticmethod
+    def _get_country_var_candidate_keys(col: str) -> list[str]:
+        """
+        Creates candidate lookup keys for config dictionaries from a possibly prefixed column name.
+        """
+        candidate_keys = [col]
+
+        for prefix in ["mac_", "pl_", "srmc_", "sens_", "crit_"]:
+            if col.startswith(prefix):
+                candidate_keys.append(col[len(prefix) :])
+
+        if "_" in col:
+            candidate_keys.append(col.partition("_")[2])
+
+        return list(dict.fromkeys(candidate_keys))
+
+    @staticmethod
+    def _add_axis_padding(
+        x_min: float,
+        x_max: float,
+        padding_frac: float,
+    ) -> tuple[float, float]:
+        """
+        Adds symmetric padding to an x-axis range.
+        """
+        if x_min == x_max:
+            return x_min - 0.5, x_max + 0.5
+
+        x_range = x_max - x_min
+        padding = x_range * padding_frac
+
+        return x_min - padding, x_max + padding
+
+    @staticmethod
+    def _add_configured_min_max_points(
+        ax: Axes,
+        scale_info: dict[str, Any],
+        y_pos: float,
+    ) -> None:
+        """
+        Adds configured global min/max country points in distinct colors.
+        """
+        point_specs = {
+            "min_country": {
+                "marker": "v",
+                "color": "#B22222",
+                "label_prefix": "min",
+                "y_offset": 0.00,
+                "text_offset": -8,
+                "va": "top",
+            },
+            "max_country": {
+                "marker": "^",
+                "color": "#006400",
+                "label_prefix": "max",
+                "y_offset": 0.00,
+                "text_offset": -8,
+                "va": "top",
+            },
+        }
+
+        for key, spec in point_specs.items():
+            country_info = scale_info.get(key)
+
+            if not country_info:
+                continue
+
+            value = country_info.get("value")
+            country_name = country_info.get("name", "")
+
+            if value is None or pd.isna(value):
+                continue
+
+            try:
+                value = float(value)
+            except (TypeError, ValueError):
+                continue
+
+            y_current = y_pos + spec["y_offset"]
+
+            ax.scatter(
+                value,
+                y_current,
+                s=48,
+                marker=spec["marker"],
+                facecolor=spec["color"],
+                edgecolor="black",
+                linewidth=0.8,
+                zorder=6,
+            )
+
+            label = f"{spec['label_prefix']}: {country_name}"
+
+            ax.annotate(
+                label,
+                xy=(value, y_current),
+                xytext=(0, spec["text_offset"]),
+                textcoords="offset points",
+                ha="center",
+                va=spec["va"],
+                fontsize=7,
+                rotation=0,
+                zorder=7,
+            )
+
+    @staticmethod
+    def _format_country_variable_label(
+        col: str,
+        display_name_mapping: dict[str, str] | None = None,
+    ) -> str:
+        """
+        Creates a readable variable label from a column name.
+
+        Uses special display labels for the top-6 country variables and allows
+        optional config overrides via `country_vars.display_name_mapping`.
+        """
+        default_display_name_mapping = {
+            "inflation_rate": "Inflation rate",
+            "gdp_growth": "GDP growth",
+            "adult_unemployment": "Unemployment rate",
+            "unemployment_rate": "Unemployment rate",
+            "youth_unemployment": "Youth unemployment rate",
+            "youth_unemployment_rate": "Youth unemployment rate",
+            "poverty_rate": "Poverty rate",
+            "shortterm_orientation": "Short- vs. long-term\norientation",
+        }
+
+        if display_name_mapping is None:
+            display_name_mapping = {}
+
+        display_name_mapping = {
+            **default_display_name_mapping,
+            **display_name_mapping,
+        }
+
+        candidate_keys = ResultPlotter._get_country_var_candidate_keys(col)
+
+        for candidate in candidate_keys:
+            if candidate in display_name_mapping:
+                return display_name_mapping[candidate]
+
+        label = col
+
+        for prefix in ["mac_", "pl_", "srmc_", "sens_", "crit_"]:
+            if label.startswith(prefix):
+                label = label[len(prefix) :]
+                break
+
+        return label.replace("_", " ").title()
+
+    @staticmethod
+    def _get_country_var_grouped_columns(
+        columns: list[str],
+        country_var_groups: dict[str, list[str]],
+    ) -> dict[str, list[str]]:
+        """
+        Matches dataframe columns to higher-level country-variable groups.
+
+        Handles both prefixed and unprefixed column names, e.g.,
+        'mac_power_distance' and 'power_distance'.
+        """
+        grouped_columns = {group_name: [] for group_name in country_var_groups}
+
+        for col in columns:
+            candidate_keys = ResultPlotter._get_country_var_candidate_keys(col)
+
+            for group_name, group_vars in country_var_groups.items():
+                if any(candidate in group_vars for candidate in candidate_keys):
+                    grouped_columns[group_name].append(col)
+                    break
+
+        return grouped_columns
+
+    @staticmethod
+    def _load_country_reference_data(reference_cfg: dict[str, Any]) -> pd.DataFrame:
+        """
+        Loads the reference country-level data from an Excel file.
+
+        The file is expected to contain one row per country-year or country observation.
+        """
+        path = reference_cfg.get("path")
+        sheet_name = reference_cfg.get("sheet_name", 0)
+
+        if not path:
+            raise ValueError(
+                "`reference_data.path` must be provided when reference_data.use is true."
+            )
+
+        if not os.path.exists(path):
+            raise FileNotFoundError(f"Reference data file not found: {path}")
+
+        reference_df = pd.read_excel(path, sheet_name=sheet_name)
+        reference_df.columns = [str(col).strip() for col in reference_df.columns]
+
+        return reference_df
+
+    @staticmethod
+    def _resolve_reference_variable_column(
+        plot_col: str,
+        reference_columns: list[str],
+        variable_mapping: dict[str, str],
+    ) -> str | None:
+        """
+        Resolves the plotting variable column to the corresponding reference-data column.
+
+        Supports:
+        - direct matches
+        - prefixed analytic columns, e.g. mac_youth_unemployment
+        - config-based mappings, e.g. youth_unemployment -> youth_unemployment_rate
+        """
+        default_mapping = {
+            "adult_unemployment": "unemployment_rate",
+            "youth_unemployment": "youth_unemployment_rate",
+        }
+
+        variable_mapping = {
+            **default_mapping,
+            **variable_mapping,
+        }
+
+        reference_columns_set = set(reference_columns)
+        candidate_keys = ResultPlotter._get_country_var_candidate_keys(plot_col)
+
+        for candidate in candidate_keys:
+            mapped_col = variable_mapping.get(candidate)
+
+            if mapped_col in reference_columns_set:
+                return mapped_col
+
+        for candidate in candidate_keys:
+            if candidate in reference_columns_set:
+                return candidate
+
+        return None
+
+    @staticmethod
+    def _prepare_reference_variable_df(
+        reference_df: pd.DataFrame,
+        reference_col: str,
+        reference_cfg: dict[str, Any],
+    ) -> pd.DataFrame:
+        """
+        Prepares reference data for one variable.
+
+        Simplified behavior:
+        - uses all available numeric values from the reference column
+        - ignores country and year columns
+        - no country matching
+        - no year filtering
+        """
+        df_var = reference_df[[reference_col]].copy()
+        df_var[reference_col] = pd.to_numeric(df_var[reference_col], errors="coerce")
+        df_var = df_var.dropna(subset=[reference_col])
+
+        return df_var
+
+    @staticmethod
+    def _finite_numeric_array(values: Any) -> np.ndarray:
+        """
+        Converts values to a finite numeric numpy array.
+        """
+        values_arr = pd.to_numeric(pd.Series(values), errors="coerce").to_numpy(
+            dtype=float
+        )
+        values_arr = values_arr[np.isfinite(values_arr)]
+
+        return values_arr
+
+    @staticmethod
+    def _values_within_xlim(
+        values: np.ndarray,
+        x_min: float,
+        x_max: float,
+    ) -> np.ndarray:
+        """
+        Returns values inside the visible x-axis range.
+
+        This ensures that the highlighted range bar aligns with the actually visible
+        highlighted points when configured x-axis limits clip some values.
+        """
+        if values.size == 0:
+            return values
+
+        return values[(values >= x_min) & (values <= x_max)]
+
+    @staticmethod
+    def _compute_range_coverage_pct(
+        numerator_values: np.ndarray,
+        denominator_values: np.ndarray,
+    ) -> float:
+        """
+        Computes the percentage of the denominator range covered by the numerator range.
+
+        Used for:
+            analytic-data range / all-world reference-data range
+        """
+        numerator_values = numerator_values[np.isfinite(numerator_values)]
+        denominator_values = denominator_values[np.isfinite(denominator_values)]
+
+        if numerator_values.size == 0 or denominator_values.size == 0:
+            return np.nan
+
+        numerator_range = float(
+            np.nanmax(numerator_values) - np.nanmin(numerator_values)
+        )
+        denominator_range = float(
+            np.nanmax(denominator_values) - np.nanmin(denominator_values)
+        )
+
+        if denominator_range <= 0:
+            return np.nan
+
+        return 100 * numerator_range / denominator_range
+
+    @staticmethod
+    def _format_range_coverage_text(
+        coverage_pct: float,
+        label: str = "range covered",
+        decimals: int = 1,
+    ) -> str:
+        """
+        Formats the in-panel range-coverage annotation.
+        """
+        if coverage_pct is None or not np.isfinite(coverage_pct):
+            return f"{label}: n/a"
+
+        return f"{label}: {coverage_pct:.{decimals}f}%"
+
+    @staticmethod
+    def _get_percentile_axis_limits(
+        values: np.ndarray,
+        percentile: float,
+        padding_frac: float,
+    ) -> tuple[float, float]:
+        """
+        Computes symmetric percentile-based x-axis limits.
+
+        Example:
+            percentile = 0.90 uses the 5th and 95th percentiles.
+            percentile = 0.80 uses the 10th and 90th percentiles.
+        """
+        values = values[np.isfinite(values)]
+
+        if values.size == 0:
+            return np.nan, np.nan
+
+        percentile = float(percentile)
+
+        # Allow both 0.90 and 90 as input
+        if percentile > 1:
+            percentile = percentile / 100
+
+        if percentile <= 0 or percentile > 1:
+            raise ValueError(
+                "`percentile` must be in the interval (0, 1] or given as a percentage, "
+                "for example 0.90 or 90."
+            )
+
+        lower_q = (1 - percentile) / 2
+        upper_q = 1 - lower_q
+
+        x_min = float(np.nanquantile(values, lower_q))
+        x_max = float(np.nanquantile(values, upper_q))
+
+        return ResultPlotter._add_axis_padding(
+            x_min=x_min,
+            x_max=x_max,
+            padding_frac=padding_frac,
         )

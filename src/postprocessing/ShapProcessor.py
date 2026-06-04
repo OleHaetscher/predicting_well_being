@@ -419,3 +419,90 @@ class ShapProcessor:
             feature_names=feature_names,
         )
         return explanation
+
+    def load_shap_values_for_sanity_checks(
+        self,
+        samples_to_include: tuple[str, str] = ("selected", "all"),
+    ) -> dict:
+        """
+        Loads summarized SHAP values for sanity-check comparisons.
+
+        The method uses the entries defined in
+        cfg_postprocessing["shap_sanity_checks"] and loads SHAP values for each
+        configured feature combination, criterion, model, and sample type.
+
+        Expected folder structure:
+            cv_shap_results_path /
+                feature_combination /
+                    samples_to_include /
+                        crit /
+                            model /
+                                shap_values_file_name
+
+        Returns:
+            dict:
+                {
+                    feature_combination: {
+                        "selected": shap_values_dict,
+                        "all": shap_values_dict,
+                    }
+                }
+        """
+        sanity_cfg = self.cfg_postprocessing["shap_sanity_checks"]
+
+        crit = sanity_cfg["crit"]
+        model = sanity_cfg["model"]
+        feature_combinations = sanity_cfg["feature_combinations"]
+
+        shap_values_dct = self.nested_dict()
+
+        for feature_combination in feature_combinations:
+            for sample in samples_to_include:
+                shap_values_path = os.path.join(
+                    self.cv_shap_results_path,
+                    feature_combination,
+                    sample,
+                    crit,
+                    model,
+                    self.shap_values_file_name,
+                )
+
+                if not os.path.exists(shap_values_path):
+                    print(
+                        f"WARNING: SHAP values not found for "
+                        f"{feature_combination} / {sample} / {crit} / {model}: "
+                        f"{shap_values_path}"
+                    )
+                    continue
+
+                shap_values = self.data_loader.read_pkl(shap_values_path)
+
+                shap_values_dct[feature_combination][sample] = shap_values
+
+        return defaultdict_to_dict(shap_values_dct)
+
+    def get_shap_array_and_features(
+        self,
+        shap_values: dict,
+    ) -> tuple[np.ndarray, list[str]]:
+        """
+        Extracts the summarized SHAP array and feature names from a stored SHAP object.
+
+        Meta variables are removed from the feature-name list so that the remaining names
+        correspond to the SHAP-value columns.
+        """
+        shap_arr = np.asarray(shap_values["shap_values"]["mean"])
+
+        feature_names = [
+            feature
+            for feature in shap_values["feature_names"]
+            if feature not in self.meta_vars
+        ]
+
+        if shap_arr.shape[1] != len(feature_names):
+            raise ValueError(
+                f"Mismatch between SHAP columns and feature names: "
+                f"{shap_arr.shape[1]} SHAP columns vs. {len(feature_names)} feature names."
+            )
+
+        return shap_arr, feature_names
