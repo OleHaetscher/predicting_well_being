@@ -6,7 +6,7 @@ execute_postprocessing: true
 methods_to_apply:
   #- condense_cv_results
   #- prediction_sanity_checks
-  - create_descriptives
+  - create_cv_results_plots
   #- conduct_significance_tests
   #- create_cv_results_plots
   #- create_shap_plots
@@ -24,14 +24,14 @@ general:
       main:  # Note: Remove -lv for Paper CV_Result_Plot due to reviewer comment
         pl: "Person"
         srmc: "Situation (ESM)"
-        sens: "Situation (Sens)"  # Note: Change to Sens for CV_Result Plot
+        sens: "Situation (Sensing)"
         mac: "Country"
         pl_srmc: "Person + Situation (ESM)"
-        pl_sens: "Person + Situation (Sens)"
-        pl_srmc_sens: "Person + Situation (ESM) + Situation (Sens)"
+        pl_sens: "Person + Situation (Sensing)"
+        pl_srmc_sens: "Person + Situation (ESM) + Situation (Sensing)"
         pl_mac: "Person + Country"
         pl_srmc_mac: "Person + Situation (ESM) + Country"
-        all_in: "Person + Situation (ESM) + Situation (Sens) + Country"
+        all_in: "Person + Situation (ESM) + Situation (Sensing) + Country"
 
       supp:
         # As currently implemented, do only include 1x Supp analysis and comment the other out, not ideal but ok
@@ -136,7 +136,7 @@ condense_cv_results:
     - spearman
     - neg_mean_squared_error
   all_results:
-    store: true
+    store: false
     filename: "all_cv_results.json"
 
   main_nnse_diffs:
@@ -145,7 +145,7 @@ condense_cv_results:
     samples_to_include: [ selected ]
     metrics: [ pearson, r2 ]
     decimals: 3
-    store: true
+    store: false
     filename: "main_nnse_diffs.json"
 
   perf_increase:
@@ -162,7 +162,7 @@ condense_cv_results:
     filename: "perf_increase_percent.json"
 
   result_table:
-    store: true
+    store: false
     file_base_name: cv_results
     result_strs:
       main: main
@@ -195,7 +195,7 @@ create_descriptives:
   traits_base_filename: trait_wb_items
 
   compute_predictor_rel:
-    store: false
+    store: true
     filename: "predictor_reliabilities.xlsx"
     decimals: 2
 
@@ -216,442 +216,55 @@ create_descriptives:
     store: false
     filename: "age_gender_per_dataset.json"
 
-  # EXTEND HERE
+  # country var supp. figure
   country_vars:
     store: false
     filename: "country_add_descriptives.xlsx"
     store_plot: true
-    plot_filename: TBA
+    plot_filename: "country_level_variability_top_n"
 
-    # for subplot assignment
-    psycho_political:
-      - power_distance
-      - uncertainty_avoidance
-      - individualism
-      - motivation_achievement
-      - shortterm_orientation
-      - indulgance
-      - religiosity_index
-      - political_rights
-      - civil_liberties
-      - democracy_index
-      - country_openness
-      - country_conscientiousness
-      - country_extraversion
-      - country_agreeableness
-      - country_neuroticism
-      - peacefulness
-      - social_support
-      - social_spending
-      - gender_gap
-    socio_economic:
-      - population_estimates
-      - population_increases
-      - population_density
-      - young_population
-      - old_population
-      - migrant_stock
-      - number_refugees
-      - asylum_applicants
-      - asylum_approvals
-      - gdp_capita
-      - gdp_growth
-      - income_inequality
-      - poverty_rate
-      - stock_capitalization
-      - adult_unemployment
+    plot_top_n: 6
+    top_n_to_plot:
       - youth_unemployment
-      - saving_rate
+      - adult_unemployment
+      - shortterm_orientation
+      - gdp_growth
       - inflation_rate
-      - investments
-      - household_income
-    health_environmental:
-      - fertility_rate
-      - infant_mortality
-      - life_expectancy
-      - obesity_rates
-      - healthcare_expenditure
-      - access_water
-      - health_dalys
-      - health_ylls
-      - environmental_quality
-      - air_pollution
-      - covid_infections
-      - covid_vaccination
-      - daily_smokers
-      - alcohol_consumption
+      - poverty_rate
 
-    # For the variability plots
+    n_cols: 3
+    n_rows: 2
+
+    show_legend: false
+    show_configured_min_max_points: false
+    plot_percentile: true
+    percentile: 0.95
+
+    reference_data:
+      use: true
+      path: "../data/top6_countries_alldata.xlsx"
+      sheet_name: 0
+      plot_all_points: true
+      highlight_own_points: true
+
+      variable_mapping:
+        adult_unemployment: "unemployment_rate"
+        youth_unemployment: "youth_unemployment_rate"
+
     scale_boundaries:
-      power_distance:
-        unit: "Hofstede score"
+      youth_unemployment:
+        unit: "% of labor force ages 15-24"
         min_country:
-          name: "Austria"
-          value: 11
-          year: "static/source score"
-        max_country:
-          name: "Malaysia"
-          value: 100
-          year: "static/source score"
-
-      uncertainty_avoidance:
-        unit: "Hofstede score"
-        min_country:
-          name: "Singapore"
-          value: 8
-          year: "static/source score"
-        max_country:
-          name: "Greece"
-          value: 100
-          year: "static/source score"
-
-      individualism:
-        unit: "Hofstede score"
-        min_country:
-          name: "Guatemala"
-          value: 6
-          year: "static/source score"
-        max_country:
-          name: "United States"
-          value: 91
-          year: "static/source score"
-
-      motivation_achievement:
-        unit: "Hofstede masculinity / achievement score"
-        min_country:
-          name: "Sweden"
-          value: 5
-          year: "static/source score"
-        max_country:
-          name: "Slovakia"
-          value: 100
-          year: "static/source score"
-
-      shortterm_orientation:
-        unit: "Hofstede long-term orientation score"
-        min_country:
-          name: "Puerto Rico"
-          value: 0
-          year: "static/source score"
-        max_country:
-          name: "South Korea"
-          value: 100
-          year: "static/source score"
-
-      indulgance:
-        unit: "Hofstede indulgence score"
-        min_country:
-          name: "Pakistan"
-          value: 0
-          year: "static/source score"
-        max_country:
-          name: "Venezuela"
-          value: 100
-          year: "static/source score"
-
-      religiosity_index:
-        unit: "country religiosity index"
-        min_country:
-          name: "China"
-          value: 15.8
-          year: 2020
-        max_country:
-          name: "Egypt"
-          value: 97.8
-          year: 2020
-
-      political_rights:
-        unit: "Freedom House rating, lower = more rights"
-        min_country:
-          name: "Andorra"
-          value: 1
-          year: 2024
-        max_country:
-          name: "Afghanistan"
-          value: 7
-          year: 2024
-
-      civil_liberties:
-        unit: "Freedom House rating, lower = more liberties"
-        min_country:
-          name: "Andorra"
-          value: 1
-          year: 2024
-        max_country:
-          name: "Afghanistan"
-          value: 7
-          year: 2024
-
-      democracy_index:
-        unit: "EIU Democracy Index score"
-        min_country:
-          name: "Afghanistan"
-          value: 0.26
+          name: "Tanzania"
+          value: 3.49
           year: 2023
-        max_country:
-          name: "Norway"
-          value: 9.81
-          year: 2023
-
-      country_openness:
-        unit: "Schmitt et al. Big Five T-score"
-        min_country:
-          name: "Japan"
-          value: 41.53
-          year: "static/Table 5"
-        max_country:
-          name: "Chile"
-          value: 54.69
-          year: "static/Table 5"
-
-      country_conscientiousness:
-        unit: "Schmitt et al. Big Five T-score"
-        min_country:
-          name: "Japan"
-          value: 37.82
-          year: "static/Table 5"
-        max_country:
-          name: "Congo"
-          value: 55.71
-          year: "static/Table 5"
-
-      country_extraversion:
-        unit: "Schmitt et al. Big Five T-score"
-        min_country:
-          name: "South Korea"
-          value: 44.86
-          year: "static/Table 5"
-        max_country:
-          name: "Serbia"
-          value: 51.95
-          year: "static/Table 5"
-
-      country_agreeableness:
-        unit: "Schmitt et al. Big Five T-score"
-        min_country:
-          name: "Ukraine"
-          value: 39.05
-          year: "static/Table 5"
-        max_country:
-          name: "Congo"
-          value: 54.82
-          year: "static/Table 5"
-
-      country_neuroticism:
-        unit: "Schmitt et al. Big Five T-score"
-        min_country:
-          name: "Congo"
-          value: 44.58
-          year: "static/Table 5"
-        max_country:
-          name: "Japan"
-          value: 57.87
-          year: "static/Table 5"
-
-      peacefulness:
-        unit: "Global Peace Index score, lower = more peaceful"
-        min_country:
-          name: "Iceland"
-          value: 1.112
-          year: 2024
-        max_country:
-          name: "Yemen"
-          value: 3.397
-          year: 2024
-
-      social_support:
-        unit: "% of people reporting relatives/friends to count on"
-        source_scope: "OECD"
-        min_country:
-          name: "Greece"
-          value: 78
-          year: "2016-2018"
-        max_country:
-          name: "Iceland"
-          value: 98
-          year: "2016-2018"
-
-      social_spending:
-        unit: "% of GDP, public social expenditure"
-        source_scope: "OECD"
-        min_country:
-          name: "Mexico"
-          value: 10.0
-          year: 2024
-        max_country:
-          name: "Austria"
-          value: 31.6
-          year: 2024
-
-      gender_gap:
-        unit: "% gender wage gap"
-        source_scope: "OECD"
-        min_country:
-          name: "Luxembourg"
-          value: 0.4
-          year: 2024
-        max_country:
-          name: "South Korea"
-          value: 29.0
-          year: 2024
-
-      population_estimates:
-        unit: "thousand persons"
-        min_country:
-          name: "Tuvalu"
-          value: 9.816
-          year: 2023
-        max_country:
-          name: "India"
-          value: 1438069.596
-          year: 2023
-
-      population_increases:
-        unit: "annual population growth, %"
-        min_country:
-          name: "Qatar"
-          value: -10.927
-          year: 2021
-        max_country:
-          name: "Oman"
-          value: 6.527
-          year: 2023
-
-      population_density:
-        unit: "people per square kilometer"
-        min_country:
-          name: "Mongolia"
-          value: 2.136
-          year: 2020
-        max_country:
-          name: "Monaco"
-          value: 18771.584
-          year: 2020
-
-      young_population:
-        unit: "% population age 0-17"
-        min_country:
-          name: "Italy"
-          value: 15.051
-          year: 2023
-        max_country:
-          name: "Uganda"
-          value: 52.565
-          year: 2020
-
-      old_population:
-        unit: "% older population, aligned to source age definition"
-        min_country:
-          name: "Qatar"
-          value: 1.248
-          year: 2020
-        max_country:
-          name: "Monaco"
-          value: 37.319
-          year: 2021
-
-      migrant_stock:
-        unit: "% of population"
-        min_country:
-          name: "China"
-          value: 0.072
-          year: 2020
-        max_country:
-          name: "United Arab Emirates"
-          value: 88.129
-          year: 2020
-
-      number_refugees:
-        unit: "persons"
-        source_scope: "UNHCR"
-        min_country:
-          name: "Barbados"
-          value: 5
-          year: 2023
-        max_country:
-          name: "Iran"
-          value: 3764517
-          year: 2023
-
-      asylum_applicants:
-        unit: "persons"
-        source_scope: "UNHCR"
-        min_country:
-          name: "Afghanistan"
-          value: 5
-          year: 2020
-        max_country:
-          name: "United States"
-          value: 1189166
-          year: 2023
-
-      asylum_approvals:
-        unit: "recognized / approved asylum decisions"
-        source_scope: "UNHCR"
-        min_country:
-          name: "Angola"
-          value: 0
-          year: 2021
-        max_country:
-          name: "Brazil"
-          value: 77184
-          year: 2023
-
-      gdp_capita:
-        unit: "current US$ per person"
-        min_country:
-          name: "Burundi"
-          value: 250.627
-          year: 2023
-        max_country:
-          name: "Monaco"
-          value: 256799.789
-          year: 2023
-
-      gdp_growth:
-        unit: "annual GDP growth, %"
-        min_country:
-          name: "Macao SAR, China"
-          value: -54.402
-          year: 2020
-        max_country:
-          name: "Macao SAR, China"
-          value: 75.308
-          year: 2023
-
-      income_inequality:
-        unit: "Gini index, 0-100"
-        min_country:
-          name: "Slovak Republic"
-          value: 23.2
-          year: "latest WDI/PIP reference"
         max_country:
           name: "South Africa"
-          value: 63.0
-          year: "latest WDI/PIP reference"
-
-      poverty_rate:
-        unit: "% below national poverty line"
-        source_scope: "national poverty lines; not fully comparable across countries"
-        min_country:
-          name: "multiple countries"
-          value: 0.0
-          year: "varies"
-        max_country:
-          name: "South Sudan"
-          value: 82.3
-          year: 2016
-
-      stock_capitalization:
-        unit: "stock market capitalization, % of GDP"
-        min_country:
-          name: "Armenia"
-          value: 1.29
-          year: 2022
-        max_country:
-          name: "Hong Kong SAR, China"
-          value: 1273.23
-          year: 2022
+          value: 49.866
+          year: 2021
+        x_min: 0
+        x_max: 60
+        show_min_max_points: false  # optional per-variable override
 
       adult_unemployment:
         unit: "% of labor force"
@@ -663,29 +276,37 @@ create_descriptives:
           name: "Eswatini"
           value: 35.359
           year: 2022
+        x_min: 0
+        x_max: 40
+        show_min_max_points: false  # optional per-variable override
 
-      youth_unemployment:
-        unit: "% of labor force ages 15-24"
+      shortterm_orientation:
+        unit: "Hofstede long-term orientation score"
         min_country:
-          name: "Tanzania"
-          value: 3.49
-          year: 2023
+          name: "Puerto Rico"
+          value: 0
+          year: "static/source score"
         max_country:
-          name: "South Africa"
-          value: 49.866
-          year: 2021
+          name: "South Korea"
+          value: 100
+          year: "static/source score"
+        x_min: 0
+        x_max: 100
+        show_min_max_points: false  # optional per-variable override
 
-      saving_rate:
-        unit: "% of household disposable income"
-        source_scope: "OECD"
+      gdp_growth:
+        unit: "annual GDP growth, %"
         min_country:
-          name: "Greece"
-          value: -4.8
-          year: 2023
+          name: "Macao SAR, China"
+          value: -54.402
+          year: 2020
         max_country:
-          name: "Switzerland"
-          value: 19.0
+          name: "Macao SAR, China"
+          value: 75.308
           year: 2023
+        x_min: -25
+        x_max: 25
+        show_min_max_points: false  # optional per-variable override
 
       inflation_rate:
         unit: "annual CPI inflation, %"
@@ -697,187 +318,26 @@ create_descriptives:
           name: "Zimbabwe"
           value: 557.202
           year: 2020
+        x_min: -20
+        x_max: 50
+        show_min_max_points: false  # optional per-variable override
 
-      investments:
-        unit: "gross fixed capital formation, % of GDP"
-        min_country:
-          name: "South Sudan"
-          value: -6.2
-          year: "recent WDI reference"
-        max_country:
-          name: "Guyana"
-          value: 76.0
-          year: "recent WDI reference"
-
-      household_income:
-        unit: "household disposable income per capita, USD PPP"
-        source_scope: "OECD"
-        min_country:
-          name: "Mexico"
-          value: 16831
-          year: "recent OECD reference"
-        max_country:
-          name: "United States"
-          value: 51147
-          year: "recent OECD reference"
-
-      fertility_rate:
-        unit: "births per woman"
-        min_country:
-          name: "Macao SAR, China"
-          value: 0.586
-          year: 2023
-        max_country:
-          name: "Somalia"
-          value: 6.453
-          year: 2020
-
-      infant_mortality:
-        unit: "deaths under age 1 per 1,000 live births"
-        min_country:
-          name: "San Marino"
-          value: 1.3
-          year: "recent WDI reference"
-        max_country:
-          name: "Central African Republic"
-          value: 84.5
-          year: "recent WDI reference"
-
-      life_expectancy:
-        unit: "years at birth"
-        min_country:
-          name: "Chad"
-          value: 52.5
-          year: "recent WDI reference"
-        max_country:
-          name: "Monaco"
-          value: 86.4
-          year: "recent WDI reference"
-
-      obesity_rates:
-        unit: "% of adults"
-        min_country:
-          name: "Vietnam"
-          value: 2.1
-          year: "WHO/WDI reference"
-        max_country:
-          name: "Nauru"
-          value: 61.0
-          year: "WHO/WDI reference"
-
-      healthcare_expenditure:
-        unit: "current health expenditure per capita, current US$"
-        min_country:
-          name: "Ethiopia"
-          value: 26.477
-          year: 2021
-        max_country:
-          name: "United States"
-          value: 12473.791
-          year: 2022
-
-      access_water:
-        unit: "% population using at least basic drinking water services"
-        min_country:
-          name: "Congo, Dem. Rep."
-          value: 35.127
-          year: 2022
-        max_country:
-          name: "American Samoa"
-          value: 100.0
-          year: 2022
-
-      health_dalys:
-        unit: "DALYs, total burden; use rate if normalizing across countries"
-        source_scope: "GBD/IHME-style total burden"
-        min_country:
-          name: "Iceland"
-          value: 86.833
-          year: "source reference"
-        max_country:
-          name: "India"
-          value: 587498.51
-          year: "source reference"
-
-      health_ylls:
-        unit: "YLLs, total burden; use rate if normalizing across countries"
-        source_scope: "GBD/IHME-style total burden"
-        min_country:
-          name: "Iceland"
-          value: 41.991
-          year: "source reference"
-        max_country:
-          name: "India"
-          value: 420445.448
-          year: "source reference"
-
-      environmental_quality:
-        unit: "Environmental Performance Index score"
-        min_country:
-          name: "India"
-          value: 27.6
-          year: 2024
-        max_country:
-          name: "Estonia"
-          value: 75.7
-          year: 2024
-
-      air_pollution:
-        unit: "mean annual PM2.5 exposure, micrograms per cubic meter"
-        min_country:
-          name: "Finland"
-          value: 4.895
-          year: 2020
-        max_country:
-          name: "Bangladesh"
-          value: 74.6
-          year: "recent WDI/WHO reference"
-
-      covid_infections:
-        unit: "cumulative confirmed COVID-19 cases per million people"
-        source_scope: "OWID/WHO"
-        min_country:
-          name: "Kiribati"
-          value: 0.0
-          year: 2020
-        max_country:
-          name: "San Marino"
-          value: 697460.13
-          year: 2023
-
-      covid_vaccination:
-        unit: "COVID-19 vaccine doses administered per 100 people"
-        source_scope: "OWID/WHO; can exceed 100 because boosters count"
+      poverty_rate:
+        unit: "% of population below $2.15/day, 2017 PPP"
+        source_scope: "World Bank WDI / Poverty and Inequality Platform; international extreme poverty line"
+        indicator_code: "SI.POV.DDAY"
+        indicator_name: "Poverty headcount ratio at $2.15 a day (2017 PPP) (% of population)"
         min_country:
           name: "multiple countries"
           value: 0.0
-          year: 2020
+          year: "varies"
         max_country:
-          name: "Cuba"
-          value: 406.9
-          year: 2023
-
-      daily_smokers:
-        unit: "% of people aged 15+ who smoke daily"
-        min_country:
-          name: "Ghana"
-          value: 3.5
-          year: "WHO reference"
-        max_country:
-          name: "Kiribati"
-          value: 52.3
-          year: "WHO reference"
-
-      alcohol_consumption:
-        unit: "litres of pure alcohol per adult per year"
-        min_country:
-          name: "Kuwait"
-          value: 0.0
-          year: "WHO reference"
-        max_country:
-          name: "Latvia"
-          value: 13.2
-          year: "WHO/OECD reference"
+          name: "Zambia"
+          value: 64.3
+          year: 2022
+        x_min: 0
+        x_max: 70
+        show_min_max_points: false  # optional per-variable override
 
   wb_items:  # to ensure consistent tables
     store: false
@@ -970,7 +430,7 @@ conduct_significance_tests:
 
 create_cv_results_plots:
   crits: [ wb_state ] # must be iterable
-  samples_to_include: [ selected ]  # all / selected / combo, must be iterable
+  samples_to_include: [ combo ]  # all / selected / combo, must be iterable
   metrics: [ pearson ]  # must be iterable
   m_metric: M
   sd_metric: SD
@@ -981,7 +441,7 @@ create_cv_results_plots:
   store_params:
     store: true
     dpi: 600
-    format: png  # png, pdf
+    format: pdf  # png, pdf
     name: cv_results
 
   titles:
@@ -1010,7 +470,8 @@ create_cv_results_plots:
     bar_align: center
     bar_capsize: 5
     y_line:
-      x_pos: [ 0.09, 0.4073, 0.725 ]
+      #x_pos: [ 0.09, 0.4073, 0.725 ]  # OLD positions (with Sens)
+      x_pos: [ 0.1075, 0.425, 0.7423 ]  # New positions (with Sensing)
       y_pos: [ [ 0.10, 0.908 ], [ 0.10, 0.908 ], [ 0.5202, 0.908 ] ]
       linestyle: "-"
       linewidth: 1
@@ -1033,7 +494,7 @@ create_cv_results_plots:
     axes:
       yticks:
         which: major
-        pad: 90  # 90
+        pad: 115  # 90
         length: 0
       ylabels:
         hor_align: left
@@ -1094,14 +555,14 @@ create_cv_results_plots:
 
 create_shap_plots:
   analysis: main   # main, supp
-  models: [ randomforestregressor, elasticnet]  # must be iterable
-  crits: [ wb_state, wb_trait ]  # must be iterable
-  samples_to_include: [ selected, all ]   # must be iterable
+  models: [ randomforestregressor]  # must be iterable
+  crits: [ wb_state ] # must be iterable
+  samples_to_include: [ selected ]   # must be iterable
   num_to_display: 6
 
   store_params:
     store: true
-    dpi: 450
+    dpi: 600
     format: png # pdf, png
     name: beeswarm
 
@@ -1133,7 +594,7 @@ create_shap_plots:
       - [ 3, 2 ]
 
   ia_values:
-    add: false
+    add: true
     position: [ 3, 2 ]
     feature_combination: srmc
     short_feature_names: True
