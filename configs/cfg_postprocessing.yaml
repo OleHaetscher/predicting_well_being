@@ -21,7 +21,7 @@ methods_to_apply:
 general:
   feature_combinations:
     name_mapping:
-      main:  # Note: Remove -lv for Paper CV_Result_Plot due to reviewer comment
+      main:  # Note: Remove -lv for Paper CV_Result_Plot and SHAP plot due to reviewer comment
         pl: "Person"
         srmc: "Situation (ESM)"
         sens: "Situation (Sensing)"
@@ -67,7 +67,7 @@ general:
         all_in_altimp: "Person-lv + Situation-lv (ESM) + Situation-lv (Sensing) + Country-lv alternative imputations"
 
       ia_values:
-        srmc_ia_values: "Situation-lv (ESM): Interaction Values"
+        srmc_ia_values: "Situation (ESM): Interaction Values"
 
   samples_to_include:
     name_mapping:
@@ -563,7 +563,7 @@ create_shap_plots:
   store_params:
     store: true
     dpi: 600
-    format: png # pdf, png
+    format: pdf # pdf, png
     name: beeswarm
 
   col_assignment:  # This is only for main, need to be adjusted for supp

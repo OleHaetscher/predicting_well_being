@@ -16,16 +16,17 @@ class DataSaver:
     """
 
     @staticmethod
-    def save_csv(df: pd.DataFrame, output_path: str) -> None:
+    def save_csv(df: pd.DataFrame, output_path: str, index: bool = False) -> None:
         """
         Saves a DataFrame as a CSV file.
 
         Args:
             df: DataFrame to save.
             output_path: Path to save the CSV file (including filename and `.csv` extension).
+            index: If index is saved.
         """
         os.makedirs(os.path.dirname(output_path), exist_ok=True)
-        df.to_csv(output_path, index=False)
+        df.to_csv(output_path, index=index)
 
         print(f"CSV saved to {output_path}")
 

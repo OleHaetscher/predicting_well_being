@@ -119,6 +119,16 @@ if __name__ == "__main__":
                 cfg_preprocessing["general"]["path_to_preprocessed_data"], "full_data"
             )
             df = data_loader.read_pkl(path_to_full_data)
+
+            # Save file also as csv for OSF
+            data_saver.save_csv(
+                df,
+                os.path.join(
+                    cfg_preprocessing["general"]["path_to_preprocessed_data"],
+                    "full_data.csv",
+                ),
+                index=True,
+            )
         else:
             pass
 

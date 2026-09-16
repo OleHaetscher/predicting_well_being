@@ -8,6 +8,7 @@ import rpy2.robjects as ro
 from rpy2.robjects.vectors import StrVector
 
 ro.r('install.packages("lavaan.mi", repos="https://cran.rstudio.com")')
+ro.r('install.packages("semTools.mi", repos="https://cran.rstudio.com")')
 
 from rpy2.robjects import pandas2ri
 from rpy2.robjects.conversion import localconverter
