@@ -745,6 +745,7 @@ si_numbering:
 create_source_data:
   output_dir: "../results/source_data"
   dir_name: Source Data  # folder name and zip name required by the journal
+  shap_matrices_link: "https://osf.io/mjn4h/, Supplements/Supplementary Files/S5_SHAP_Values.zip"  # cited in the README
   max_file_size_mb: 30  # editor's limit per file
   model_names: {elasticnet: ENR, randomforestregressor: RFR}
   fold_level_skip_dirs: [tables_old]  # directories in data_paths: sig_tests that hold no fold-level results

@@ -383,7 +383,13 @@ def main() -> None:
         for _, _, filename, _ in written
     }
     write_readme(
-        output_dir, written, sizes, missing, si_numbering, cfg["regenerated_by"]
+        output_dir,
+        written,
+        sizes,
+        missing,
+        si_numbering,
+        cfg["regenerated_by"],
+        cfg["shap_matrices_link"],
     )
     shutil.make_archive(
         os.path.join(cfg["output_dir"], cfg["dir_name"]),
@@ -412,6 +418,7 @@ def write_readme(
     missing: list[tuple[str, str]],
     si_numbering: SINumbering,
     regenerated_by: dict[str, str],
+    shap_matrices_link: str,
 ) -> None:
     """
     Writes the README of the Source Data folder.
@@ -423,6 +430,7 @@ def write_readme(
         missing: Display item and result file for each item that could not be included.
         si_numbering: Final numbers of the Supplementary Tables and Figures.
         regenerated_by: Display item (R2 numbers): postprocessing method that regenerates it.
+        shap_matrices_link: Link to the deposit with the full SHAP matrices.
     """
     lines = [
         "# Source Data",
@@ -435,7 +443,7 @@ def write_readme(
         "",
         "All files were created by `src/create_source_data.py` from the result files in `results/`, without",
         "re-running the cross-validation. The SHAP files contain one row per participant and are therefore",
-        "summarized per predictor here; the full SHAP matrices are part of the data deposit.",
+        f"summarized per predictor here; the full SHAP matrices are available on OSF ({shap_matrices_link}).",
         "",
         "| Display item | R2 number | File | Content | Size (MB) |",
         "|---|---|---|---|---|",

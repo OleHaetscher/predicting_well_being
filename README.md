@@ -1,12 +1,18 @@
 # Predicting Well-Being Across Person-, Situation-, and Country-Level Variables
 
 
-This repository contains the complete analysis code. 
+This repository contains the complete analysis code.
 
-- Code (this repository, archived release): [CODE DOI: Zenodo, to be added]
-- Processed data (N = 10,015) and codebooks: [DATA DOI: to be added]
-- Code for extracting the sensing features: [DOI: to be added]
-- Result files of the cross-validation (input for all figures and tables): [DOI: to be added]
+- Code (this repository) and the code for extracting the sensing features, archived together:
+  [CODE DOI: Zenodo, to be added]
+- Processed data (N = 10,015; `full_data` as pickle and CSV): https://doi.org/10.17605/OSF.IO/Z274Q
+- Codebooks, preregistration, and supplementary files on the Open Science Framework (OSF):
+  https://osf.io/mjn4h/. The supplementary files (folder Supplements/Supplementary Files, described in
+  `S1_ReadMe.txt`) hold the summarized prediction results (S2), the fold-level prediction results used in the
+  significance tests (S3), the ENR coefficients (S4), the SHAP values (S5), the SHAP interaction values (S6), and
+  the code for extracting the sensing features (S7).
+- Raw data: not publicly available; access conditions are described in the Data Availability statement of
+  the article.
 
 
 ## Table of Contents
@@ -28,7 +34,8 @@ This repository contains the complete analysis code.
    - [Speed up Computations](#speed-up-computations)
    - [Troubleshooting](#troubleshooting)
 4. [Reproducing Results](#reproducing-results)
-   - [Reproducing Figures and Tables Without Rerunning the Analysis](#reproducing-figures-and-tables-without-rerunning-the-analysis)
+   - [Reproducing Figures and Tables](#reproducing-figures-and-tables)
+   - [Source Data and Supplementary Data](#source-data-and-supplementary-data)
    - [Rerunning the Full Pipeline](#general-description)
 5. [Project Structure](#project-structure)
 6. [License](#license)
@@ -37,10 +44,14 @@ This repository contains the complete analysis code.
 
 To reproduce the results, please execute the following steps:
 - Clone the repository
-- Download the data 
-- Install Python 
-- Install the requirements 
-- Run the analyses as described below
+- Download the processed data
+- Install Python
+- Install the requirements
+- Run the machine-learning-based analysis and the postprocessing as described below
+
+The data deposit contains the processed data, which are the input of the machine-learning-based analysis.
+The raw data are not publicly available, so the preprocessing (which turns the raw data into the processed
+data) can only be rerun with raw data obtained on request.
 
 ---
 
@@ -77,21 +88,25 @@ This method does not require any special software and is perfect for those unfam
 
 ### Get the Data
 
-1. **Download the data**:
-   - Download the zip file **data** from the data deposit ([DATA DOI: to be added]).  
+1. **Download the processed data** from the data deposit (https://doi.org/10.17605/OSF.IO/Z274Q). It contains the file
+   `full_data` (pickle, read by the code) and `full_data.csv` (the same data as CSV, for use without Python),
+   with one row per participant (N = 10,015).
 
-2. **Unzip the data**:
-   - Unzip the **data** file without changing its structure. (e.g., unpacking the folder to the **downloads** directory) 
-
-3. **Paste the data in the repository**:
-   - Paste the unzipped **data** folder in the repository. Ensure that the data folder is placed directly within the main repository directory as shown below. 
+2. **Place the data in the repository.** Create the folder `data/preprocessed/` in the main repository
+   directory and copy `full_data` into it:
 ```plaintext
 predicting_well_being/
 │
 ├── configs/
 ├── data/
+│   └── preprocessed/
+│       └── full_data
+├── src/
 ├── ...
 ```
+
+The raw data are not part of the deposit. If you obtain them on request, place them in `data/raw/` to rerun
+the preprocessing (see [Preprocessing Config](#preprocessing-config)).
 
 ### Installing Python
 
@@ -190,6 +205,10 @@ The `cfg_preprocessing.yaml` file is the user interface for the preprocessing of
 
 Preprocessing steps are logged in the `logs/` folder. The resulting preprocessed data is stored in the `data/preprocessed/` folder under the name `full_data`.
 
+The preprocessing needs the raw data, which are not publicly available. To run the machine-learning-based
+analysis, use the processed data from the data deposit instead (see [Get the Data](#get-the-data)) and keep
+`execute_preprocessing: false`.
+
 To conduct preprocessing, set the following parameter in the `cfg_preprocessing.yaml` file:
 ```yaml
 execute_preprocessing: true
@@ -248,9 +267,11 @@ To conduct postprocessing, adjust the `methods_to_apply` section at the top of t
 
 ### Recommended Execution Workflow
 
-1. Preprocess the raw data (or use the preprocessed file "full_data").
-2. Run the machine learning analysis (for most analyses, this may be heavily time-consuming on a local computer).
-3. Conduct postprocessing analyses as needed to summarize the results. 
+1. Use the processed data `full_data` from the data deposit (preprocessing the raw data requires the raw data,
+   which are available on request only).
+2. Run the machine learning analysis with `execute_analysis: true` in `cfg_analysis.yaml` (for most analyses,
+   this may be heavily time-consuming on a local computer).
+3. Conduct postprocessing analyses as needed to summarize the results.
 
 ### Computation of SHAP Interaction Values 
 
@@ -289,18 +310,29 @@ If main.py is not running as expected, consider the following steps
 
 ---
 
-## Reproducing Results 
+## Reproducing Results
 
-### Reproducing Figures and Tables Without Rerunning the Analysis
+### Reproducing Figures and Tables
 
-The figures and tables can be regenerated from the stored result files, without the participant data and
-without rerunning the cross-validation.
+The complete result files of the cross-validation (about 28 GB) are not deposited. The figures and tables are
+regenerated in two steps:
 
-1. Download the result files ([DOI: to be added]) and place the folder **results** directly within the main
-   repository directory (next to `configs/` and `src/`).
-2. In `cfg_postprocessing.yaml`, set the postprocessing methods to apply in `methods_to_apply` and run
-   `main.py` with `execute_postprocessing: true` (see [Main Function](#main-function) and Step 4 of the
-   Walk-Through below). These methods only use the result files:
+1. Rerun the machine-learning-based analysis with the processed data (see [Walk-Through](#walk-through),
+   Steps 2 and 3). The results are written to `results/`.
+2. Run the postprocessing: set `execute_postprocessing: true` and the methods in `methods_to_apply` in
+   `cfg_postprocessing.yaml`, then run `main.py` (see [Main Function](#main-function)).
+
+Figure 2 and the significance tests can also be regenerated without rerunning the analysis, from the
+supplementary files on OSF:
+
+- Save `S2_All_Prediction_Results.json` as `results/final_results/all_cv_results.json`.
+- Unzip `S3_Prediction_Results_for_Sig_Tests.zip` and copy the content of its folder `CV_Results_for_Sig_Tests`
+  into `results/sig_tests_1312/`.
+- Run the postprocessing with `create_cv_results_plots` and `conduct_significance_tests` in `methods_to_apply`.
+
+The SHAP values (S5) and SHAP interaction values (S6) on OSF are provided for inspection. They use the display
+names of the predictors and contain no participant IDs, so they are not the input format of `create_shap_plots`;
+the SHAP figures are regenerated by rerunning the analysis.
 
 | Display item | Method in `methods_to_apply` | Output |
 |---|---|---|
@@ -308,31 +340,48 @@ without rerunning the cross-validation.
 | Figure 3, Supplementary Figures S1 to S15 | `create_shap_plots` | `results/plots/<samples>/<crit>/<model>/` |
 | Performance tables | `condense_cv_results` | `results/final_results/cv_results_*.xlsx` |
 | Tables of significance tests | `conduct_significance_tests` | `results/sig_tests_1312/` |
+| Regression tables | `calculate_exp_lin_models` | `results/final_results/reg_table_*.xlsx` |
+| Descriptive statistics | `create_descriptives` | `results/descriptives/` |
+| Measurement invariance tests | `test_measurement_invariance` | `results/mi_across_datasets/`, `results/mi_across_countries/` |
 | Correspondence of SHAP values | `shap_sanity_checks` | `results/shap_summary_tables/` |
 
-   The regression tables (`calculate_exp_lin_models`), the descriptive statistics (`create_descriptives`), and
-   the measurement invariance tests (`test_measurement_invariance`) need the preprocessed data (see
-   [Get the Data](#get-the-data)).
-3. The Source Data file of the article is created with `create_source_data.py`, run like `main.py` (from `src/`:
-   `PYTHONPATH=.. python create_source_data.py`). It reads only the
-   result files and writes one Excel file per display item, a README that maps each display item to its file,
-   and a zipped folder to `results/source_data/`. The SHAP values contain one row per participant and are
-   summarized per predictor in the Source Data. The display items, their result files, and the output folder
-   are set in the block `create_source_data` of `cfg_postprocessing.yaml`.
-4. The Supplementary Data files are created with `create_supplementary_data.py`, run like `main.py` (from
-   `src/`: `PYTHONPATH=.. python create_supplementary_data.py <path to the Supplementary Information docx>`).
-   They hold the
-   Supplementary Tables that extended over more than one page in the revised submission (R2): the overview of
-   statistical tests, the codebooks of the sensed and country-level predictors, and the descriptives (read
-   from the docx, where these tables exist only), and the measurement invariance tables (built from
-   `results/mi_across_datasets/` and `results/mi_across_countries/`). Output: `results/supplementary_data/`.
-   The block `si_numbering` in `cfg_postprocessing.yaml` sets which R2 tables became Supplementary Data and the
-   prefix of the final numbers; `src/utils/SINumbering.py` derives the final numbers from it, and both scripts
-   label their files with them. The block `create_supplementary_data` holds the other settings.
+The values underlying the figures and tables are also provided with the article as Source Data, so they can be
+inspected without rerunning the analysis.
 
 Figures 2 and 3 are rendered at their final print size with the settings in `cfg_postprocessing.yaml`
-(`create_cv_results_plots: plot_type: box`, `general: figure_style`). Setting `plot_type: bar` and
+(`create_cv_results_plots: plot_type: box` and `general: figure_style`). Setting `plot_type: bar` and
 `figure_style: apply: false` restores the bar plots of earlier versions.
+
+### Source Data and Supplementary Data
+
+Both scripts are run like `main.py`, from `src/` with the repository root on the Python path.
+
+**Source Data.** `create_source_data.py` reads only the result files and writes one Excel file per display item,
+a README that maps each display item to its file, and a zipped folder to `results/source_data/`:
+```bash
+cd src
+PYTHONPATH=.. python create_source_data.py
+```
+The SHAP files contain one row per participant and are summarized per predictor in the Source Data. The display
+items, their result files, and the output folder are set in the block `create_source_data` of
+`cfg_postprocessing.yaml`.
+
+**Supplementary Data.** `create_supplementary_data.py` creates the Supplementary Data files, which hold the
+Supplementary Tables that extended over more than one page in the revised submission (R2):
+```bash
+cd src
+PYTHONPATH=.. python create_supplementary_data.py <path to the Supplementary Information docx>
+```
+- The overview of statistical tests, the codebooks of the sensed and country-level predictors, and the
+  descriptive statistics are read from the Supplementary Information docx, where these tables exist only.
+- The measurement invariance tables are built from `results/mi_across_datasets/` and
+  `results/mi_across_countries/`.
+- The output is written to `results/supplementary_data/`.
+
+**Numbering.** The block `si_numbering` in `cfg_postprocessing.yaml` sets which R2 tables became Supplementary
+Data and the prefix of the final numbers. `src/utils/SINumbering.py` derives the final numbers from it, and
+both scripts label their files with them. The block `create_supplementary_data` holds the other settings of
+the Supplementary Data.
 
 ### General Description 
 To reproduce the results, adjust the params in `cfg_analysis.yaml` in lines 7-10 and execute the analyses sequentially. 
@@ -349,8 +398,9 @@ procedure and generate the corresponding results.
 
 ### Walk-Through 
 We provide a walk-through how to reproduce the ML-based analysis for a specific configuration. 
-The **data** folder contains the raw data (data/raw) as well as the preprocessed data (data/preprocessed) for the machine learning-based analysis. 
-If one only wishes to run the machine learning-based analysis, one may skip Steps 1. Step 1 will reproduce the data used for the machine learning-based analysis. 
+The data deposit contains the processed data (`data/preprocessed/full_data`) for the machine-learning-based
+analysis. Step 1 reproduces these data from the raw data, which are not publicly available; skip it and start
+with Step 2 when using the deposited data.
 
 #### Step 1: Run preprocessing
 Modify the top lines in the configuration files to execute preprocessing
@@ -406,8 +456,8 @@ predicting_well_being/
 │   └── name_mapping.yaml
 │
 ├── data/ 
-│   ├── preprocessed/  # needs to be created / inserted 
-│   └── raw/  # needs to be inserted
+│   ├── preprocessed/  # create and insert full_data from the data deposit
+│   └── raw/  # raw data, available on request only (needed for preprocessing)
 │
 ├── logs/  # created when producing logs 
 │
