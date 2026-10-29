@@ -4,15 +4,15 @@
 This repository contains the complete analysis code.
 
 - Code (this repository) and the code for extracting the sensing features, archived together:
-  [CODE DOI: Zenodo, to be added]
+  https://doi.org/10.5281/zenodo.23758512
 - Processed data (N = 10,015; `full_data` as pickle and CSV): https://doi.org/10.17605/OSF.IO/Z274Q
 - Codebooks, preregistration, and supplementary files on the Open Science Framework (OSF):
   https://osf.io/mjn4h/. The supplementary files (folder Supplements/Supplementary Files, described in
   `S1_ReadMe.txt`) hold the summarized prediction results (S2), the fold-level prediction results used in the
   significance tests (S3), the ENR coefficients (S4), the SHAP values (S5), the SHAP interaction values (S6), and
   the code for extracting the sensing features (S7).
-- Raw data: not publicly available; access conditions are described in the Data Availability statement of
-  the article.
+- Raw data: except for the EMOTIONS dataset (https://osf.io/6kzx3), not publicly available; access conditions
+  are described in the Data Availability statement of the article.
 
 
 ## Table of Contents
@@ -50,7 +50,7 @@ To reproduce the results, please execute the following steps:
 - Run the machine-learning-based analysis and the postprocessing as described below
 
 The data deposit contains the processed data, which are the input of the machine-learning-based analysis.
-The raw data are not publicly available, so the preprocessing (which turns the raw data into the processed
+Except for the EMOTIONS dataset, the raw data are not publicly available, so the preprocessing (which turns the raw data into the processed
 data) can only be rerun with raw data obtained on request.
 
 ---
@@ -205,7 +205,7 @@ The `cfg_preprocessing.yaml` file is the user interface for the preprocessing of
 
 Preprocessing steps are logged in the `logs/` folder. The resulting preprocessed data is stored in the `data/preprocessed/` folder under the name `full_data`.
 
-The preprocessing needs the raw data, which are not publicly available. To run the machine-learning-based
+The preprocessing needs the raw data, which (except for EMOTIONS) are not publicly available. To run the machine-learning-based
 analysis, use the processed data from the data deposit instead (see [Get the Data](#get-the-data)) and keep
 `execute_preprocessing: false`.
 
@@ -268,7 +268,7 @@ To conduct postprocessing, adjust the `methods_to_apply` section at the top of t
 ### Recommended Execution Workflow
 
 1. Use the processed data `full_data` from the data deposit (preprocessing the raw data requires the raw data,
-   which are available on request only).
+   which, except for EMOTIONS, are available on request only).
 2. Run the machine learning analysis with `execute_analysis: true` in `cfg_analysis.yaml` (for most analyses,
    this may be heavily time-consuming on a local computer).
 3. Conduct postprocessing analyses as needed to summarize the results.
@@ -399,7 +399,7 @@ procedure and generate the corresponding results.
 ### Walk-Through 
 We provide a walk-through how to reproduce the ML-based analysis for a specific configuration. 
 The data deposit contains the processed data (`data/preprocessed/full_data`) for the machine-learning-based
-analysis. Step 1 reproduces these data from the raw data, which are not publicly available; skip it and start
+analysis. Step 1 reproduces these data from the raw data, which (except for EMOTIONS) are not publicly available; skip it and start
 with Step 2 when using the deposited data.
 
 #### Step 1: Run preprocessing
