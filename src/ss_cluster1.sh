@@ -9,14 +9,14 @@ Key parameters:
 
 Changeable variables/settings:
 - prediction_model ("elasticnet", "randomforestregressor")
-- crit ("state_wb", "state_pa", "state_na", "trait_wb", "trait_na", "trait_pa")
+- crit ("wb_state", "state_pa", "state_na", "trait_wb", "trait_na", "trait_pa")
 - feature_combination ("pl", "srmc", "sens", "mac", -> see cfg_analysis for all options)
 - samples_to_include ("all", "selected", "control")
 '
 
 # Variables
 PREDICTION_MODELS=("randomforestregressor")
-CRITERIA=("state_wb")
+CRITERIA=("wb_state")
 FEATURE_COMBINATIONS=("srmc")
 SAMPLES_TO_INCLUDE=("selected")
 
