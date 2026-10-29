@@ -1,4 +1,4 @@
-# Predicting Well-Being Across Person-, Situation-, and Country-Level Variables
+# Combining person-, situation-, and country-level variables improves the prediction of well-being
 
 
 This repository contains the complete analysis code.
